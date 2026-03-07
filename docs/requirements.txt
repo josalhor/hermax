@@ -1,0 +1,4 @@
+sphinx>=8,<9
+pydata-sphinx-theme>=0.16,<1
+myst-parser>=4,<5
+python-sat>=1.8.dev13

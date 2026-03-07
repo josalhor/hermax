@@ -1,0 +1,59 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+*.or
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+lib.a
+lib_release.a
+
+# Executables
+*.exe
+*.out
+*.app
+open-wbo
+open-wbo_static
+open-wbo-inc
+open-wbo-inc_static
+
+# Backup
+*~
+
+# Dependencies
+depend.mk
+
+# Build artifacts
+build/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake

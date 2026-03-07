@@ -1,0 +1,4 @@
+$ python examples/model/11_int_objective.py
+status: optimum
+cost: 12
+x,y,use_bonus: 2 6 False

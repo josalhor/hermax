@@ -1,0 +1,4 @@
+$ python examples/model/01_toy_soft_clauses.py
+status: optimum
+cost: 0
+a,b,c: True False True

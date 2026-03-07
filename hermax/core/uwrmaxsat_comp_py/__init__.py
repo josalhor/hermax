@@ -1,0 +1,2 @@
+from .urmaxsat_solver import UWrMaxSATCompSolver
+from .urmaxsat_reentrant import UWrMaxSATCompReentrant

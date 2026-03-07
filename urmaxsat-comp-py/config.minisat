@@ -1,0 +1,11 @@
+BUILD_DIR?=build
+MINISATP_RELSYM?=-g
+MINISATP_REL?=-std=c++11 -O3 -D NDEBUG -Wno-strict-aliasing -D MINISAT
+MINISATP_DEB?=-std=c++11 -O0 -D DEBUG  -Wno-strict-aliasing -D MINISAT
+MINISATP_PRF?=-std=c++11 -O3 -D NDEBUG -Wno-strict-aliasing -D MINISAT
+MINISATP_FPIC?=-fpic
+MINISAT_INCLUDE?=-I../minisat/include -I../minisat/include/minisat
+MINISAT_LIB?=-L../minisat/lib -lminisat
+MCL_INCLUDE?=
+MCL_LIB?=
+prefix?=../minisat

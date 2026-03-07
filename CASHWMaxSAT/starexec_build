@@ -1,0 +1,28 @@
+#!/bin/bash
+
+cd code
+cd cominisatps  
+rm core simp mtl utils && ln -s minisat/core minisat/simp minisat/mtl minisat/utils .  
+make lr  
+cd ..
+
+cd cadical  
+patch -p1 <../uwrmaxsat/cadical.patch  
+./configure  
+make  
+cd ..
+
+tar -zxvf scipoptsuite-8.1.0.tgz
+cd scipoptsuite-8.1.0  
+mkdir build && cd build  
+cmake -DSHARED=off -DNO_EXTERNAL_CODE=on -DSOPLEX=on -DTPI=tny ..  
+cmake --build . --config Release --target libscip libsoplex-pic  
+cd ../..  
+
+cd uwrmaxsat
+make distclean
+cp config.cadical config.mk
+MAXPRE=  make r
+cp -p build/release/bin/cashwmaxsat-disjcad ../../bin/
+rm -rf build
+cd ../..

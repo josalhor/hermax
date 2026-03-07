@@ -1,0 +1,88 @@
+diff -urB glucose-syrup-4.1-org/core/Solver.cc glucose-syrup-4.1/core/Solver.cc
+--- glucose-syrup-4.1-org/core/Solver.cc	2016-12-08 13:48:26.000000000 +0100
++++ glucose-syrup-4.1/core/Solver.cc	2020-10-16 12:58:30.625926197 +0200
+@@ -1645,7 +1645,7 @@
+                 decisions++;
+                 next = pickBranchLit();
+                 if(next == lit_Undef) {
+-                    printf("c last restart ## conflicts  :  %d %d \n", conflictC, decisionLevel());
++                    if (!incremental && verbosity >= 1) printf("c last restart ## conflicts  :  %d %d \n", conflictC, decisionLevel());
+                     // Model found:
+                     return l_True;
+                 }
+diff -urB glucose-syrup-4.1-org/core/Solver.h glucose-syrup-4.1/core/Solver.h
+--- glucose-syrup-4.1-org/core/Solver.h	2016-12-08 13:48:26.000000000 +0100
++++ glucose-syrup-4.1/core/Solver.h	2022-04-25 12:41:57.588009132 +0200
+@@ -106,7 +106,14 @@
+     Solver(const  Solver &s);
+     
+     virtual ~Solver();
+-    
++
++    void* termCallbackState;
++    int (*termCallback)(void* state);
++    void setTermCallback(void* state, int (*termCallback)(void*)) {
++      this->termCallbackState = state;
++      this->termCallback = termCallback;
++    }
++
+     /**
+      * Clone function
+      */
+@@ -545,7 +552,7 @@
+ inline void     Solver::clearInterrupt(){ asynch_interrupt = false; }
+ inline void     Solver::budgetOff(){ conflict_budget = propagation_budget = -1; }
+ inline bool     Solver::withinBudget() const {
+-    return !asynch_interrupt &&
++    return !asynch_interrupt && (termCallback == NULL || 0 == termCallback(termCallbackState)) &&
+            (conflict_budget    < 0 || conflicts < (uint64_t)conflict_budget) &&
+            (propagation_budget < 0 || propagations < (uint64_t)propagation_budget); }
+ 
+diff -urB glucose-syrup-4.1-org/core/SolverTypes.h glucose-syrup-4.1/core/SolverTypes.h
+--- glucose-syrup-4.1-org/core/SolverTypes.h	2016-12-08 13:48:26.000000000 +0100
++++ glucose-syrup-4.1/core/SolverTypes.h	2020-10-16 14:19:39.110214753 +0200
+@@ -264,10 +264,10 @@
+     unsigned int getExported() {return header.exported;}
+     void setOneWatched(bool b) {header.oneWatched = b;}
+     bool getOneWatched() {return header.oneWatched;}
+-#ifdef INCREMNENTAL
++//#ifdef INCREMNENTAL
+     void setSizeWithoutSelectors   (unsigned int n)              {header.szWithoutSelectors = n; }
+     unsigned int        sizeWithoutSelectors   () const        { return header.szWithoutSelectors; }
+-#endif
++//#endif
+ 
+ };
+ 
+diff -urB glucose-syrup-4.1-org/mtl/config.mk glucose-syrup-4.1/mtl/config.mk
+--- glucose-syrup-4.1-org/mtl/config.mk	2016-12-08 13:48:26.000000000 +0100
++++ glucose-syrup-4.1/mtl/config.mk	2019-01-14 15:31:05.751354589 +0100
+@@ -4,3 +4,4 @@
+ ##
+ ##  CFLAGS += -I/usr/local/include
+ ##  LFLAGS += -L/usr/local/lib
++CFLAGS += -D INCREMENTAL
+diff -urB glucose-syrup-4.1-org/mtl/template.mk glucose-syrup-4.1/mtl/template.mk
+--- glucose-syrup-4.1-org/mtl/template.mk	2016-12-08 13:48:26.000000000 +0100
++++ glucose-syrup-4.1/mtl/template.mk	2020-10-16 14:27:37.608306755 +0200
+@@ -43,7 +43,7 @@
+ %.o:			CFLAGS +=$(COPTIMIZE) -g -D DEBUG
+ %.op:			CFLAGS +=$(COPTIMIZE) -pg -g -D NDEBUG
+ %.od:			CFLAGS +=-O0 -g -D DEBUG
+-%.or:			CFLAGS +=$(COPTIMIZE) -g -D NDEBUG
++%.or:			CFLAGS +=$(COPTIMIZE) -D NDEBUG
+ 
+ ## Link options
+ $(EXEC):		LFLAGS += -g
+diff -urB glucose-syrup-4.1-org/simp/SimpSolver.cc glucose-syrup-4.1/simp/SimpSolver.cc
+--- glucose-syrup-4.1-org/simp/SimpSolver.cc	2016-12-08 13:48:26.000000000 +0100
++++ glucose-syrup-4.1/simp/SimpSolver.cc	2020-10-16 12:45:37.636700599 +0200
+@@ -784,7 +784,7 @@
+         checkGarbage();
+     }
+ 
+-    if (verbosity >= 0 && elimclauses.size() > 0)
++    if (verbosity >= 1 && elimclauses.size() > 0)
+         printf("c |  Eliminated clauses:     %10.2f Mb                                                                |\n", 
+                double(elimclauses.size() * sizeof(uint32_t)) / (1024*1024));
+ 

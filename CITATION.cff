@@ -1,0 +1,89 @@
+cff-version: 1.2.0
+message: "If you use Hermax, please cite this software and the relevant solver papers."
+title: "Hermax"
+type: software
+authors:
+  - family-names: "Salvia Hornos"
+    given-names: "Josep Maria"
+repository-code: "https://github.com/josalhor/hermax"
+url: "https://github.com/josalhor/hermax"
+license: "Apache-2.0"
+version: "1.0.0"
+date-released: 2026-02-18
+preferred-citation:
+  type: software
+  title: "Hermax"
+  authors:
+    - family-names: "Salvia Hornos"
+      given-names: "Josep Maria"
+  repository-code: "https://github.com/josalhor/hermax"
+  url: "https://github.com/josalhor/hermax"
+references:
+  - type: conference-paper
+    authors:
+      - family-names: "Niskanen"
+        given-names: "Andreas"
+      - family-names: "Berg"
+        given-names: "Jeremias"
+      - family-names: "Jarvisalo"
+        given-names: "Matti"
+    title: "Incremental Maximum Satisfiability"
+    year: 2022
+  - type: article
+    authors:
+      - family-names: "Ignatiev"
+        given-names: "Alexey"
+      - family-names: "Morgado"
+        given-names: "Antonio"
+      - family-names: "Marques-Silva"
+        given-names: "Joao"
+    title: "RC2: An Efficient MaxSAT Solver"
+    year: 2019
+  - type: conference-paper
+    authors:
+      - family-names: "Ignatiev"
+        given-names: "Alexey"
+      - family-names: "Morgado"
+        given-names: "Antonio"
+      - family-names: "Marques-Silva"
+        given-names: "Joao"
+    title: "PySAT: A Python Toolkit for Prototyping with SAT Oracles"
+    year: 2018
+  - type: conference-paper
+    authors:
+      - family-names: "Piotrow"
+        given-names: "Marek"
+    title: "UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems"
+    year: 2020
+  - type: article
+    authors:
+      - family-names: "Avellaneda"
+        given-names: "Florent"
+    title: "EvalMaxSAT"
+    year: 2023
+  - type: article
+    authors:
+      - family-names: "Bacchus"
+        given-names: "Fahiem"
+    title: "MaxHS in the 2020 MaxSAT Evaluation"
+    year: 2020
+  - type: conference-paper
+    authors:
+      - family-names: "Niskanen"
+        given-names: "Andreas"
+      - family-names: "Berg"
+        given-names: "Jeremias"
+      - family-names: "Jarvisalo"
+        given-names: "Matti"
+    title: "Enabling Incrementality in the Implicit Hitting Set Approach to MaxSAT Under Changing Weights"
+    year: 2021
+  - type: conference-paper
+    authors:
+      - family-names: "Pan"
+        given-names: "Shiwei"
+      - family-names: "Wang"
+        given-names: "Yiyuan"
+      - family-names: "Cai"
+        given-names: "Shaowei"
+    title: "An Efficient Core-Guided Solver for Weighted Partial MaxSAT"
+    year: 2025

@@ -1,0 +1,50 @@
+# name: Build wheels
+
+# on:
+#   push:
+#     branches:
+#       - "**"
+#   pull_request:
+#   workflow_dispatch:
+# permissions:
+#   contents: read
+
+# jobs:
+#   build-wheels:
+#     name: Build wheels on ${{ matrix.os }}
+#     runs-on: ${{ matrix.os }}
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         include:
+#           # - os: ubuntu-latest
+#           #   artifact: wheels-linux
+#           - os: ubuntu-24.04-arm
+#             artifact: wheels-linux-arm
+#           - os: macos-14
+#             artifact: wheels-macos
+#           - os: macos-15-intel
+#             artifact: wheels-macos-intel
+#           #- os: windows-latest
+#           #  artifact: wheels-windows
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
+
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.11"
+
+#       - name: Install cibuildwheel
+#         run: python -m pip install --upgrade pip "cibuildwheel[uv]"
+
+#       - name: Build wheels
+#         run: python -m cibuildwheel --output-dir wheelhouse
+
+#       - name: Upload wheels
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: ${{ matrix.artifact }}
+#           path: wheelhouse/*.whl
+#           retention-days: 90

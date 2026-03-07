@@ -1,0 +1,44 @@
+# General ignores
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dll
+*.lib
+*.exp
+*.ilk
+*.pdb
+
+# CMake build files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+install_manifest.txt
+
+# Python specific
+*.pyc
+__pycache__/
+.Python/
+*.egg-info/
+dist/
+*.whl
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# Project specific build directories
+build/
+
+# IDE specific
+.vscode/
+.idea/
+
+# My generated files
+all_changes_diff.txt
+changes_diff.txt

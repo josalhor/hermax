@@ -1,0 +1,4 @@
+$ python examples/model/12_wifi_nullable_enum.py
+status: optimum
+cost: 4
+router_state: {0: 'f3', 1: 'f1', 2: 'f3', 3: 'f1'}

@@ -1,0 +1,4 @@
+$ python examples/model/06_enum_subset_shift.py
+status: optimum
+cost: 1
+shift: day

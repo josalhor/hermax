@@ -1,0 +1,4 @@
+$ python examples/model/15_domain_holes_and_distance.py
+x = 29
+y = 29
+distance = 0

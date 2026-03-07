@@ -1,0 +1,7 @@
+$ python examples/incremental_assumptions.py
+assumption [-1] -> feasible=True
+  cost: 2
+  model: [-1, 2]
+assumption [2] -> feasible=True
+  cost: 2
+  model: [-1, 2]

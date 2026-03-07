@@ -1,0 +1,4 @@
+$ python examples/model/03_set_cover.py
+status: optimum
+cost: 4
+chosen_sets: ['S2', 'S4']

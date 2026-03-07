@@ -1,0 +1,81 @@
+[build-system]
+requires = [
+    "setuptools>=42",
+    "cmake>=3.15",
+    "pybind11>=2.10,<3",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+
+[tool.cibuildwheel]
+# Build for CPython 3.10 to 3.14
+build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
+# build = "cp312-*"
+build-frontend = "build[uv]"
+skip = "*-musllinux_* cp*-win32"
+build-verbosity = 1
+
+# Test settings - pure import smoke test from /tmp
+test-requires = ["pytest", "python-sat"]
+test-sources = ["tests"]
+test-command = "python tests/cibw_test_entrypoint.py"
+
+[tool.cibuildwheel.environment]
+SKIP_IMAXHS = "1"
+SKIP_MAXHS = "1"
+PIP_NO_BUILD_ISOLATION = "1"
+HERMAX_CIBW_TEST_PROFILE = "full"
+HERMAX_CIBW_ALLOW_TEST_FAILURE = "0"
+HERMAX_CIBW_COMPLIANCE_TIMEOUT = "180"
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+before-all = "C:\\msys64\\usr\\bin\\bash -lc \"pacman -Sy --noconfirm --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils mingw-w64-x86_64-make mingw-w64-x86_64-zlib mingw-w64-x86_64-gmp mingw-w64-x86_64-tools\""
+before-build = "uv pip install cmake 'pybind11<3' setuptools wheel delvewheel"
+repair-wheel-command = "uv run --active python -m delvewheel repair --add-path C:\\msys64\\mingw64\\bin -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.windows.environment]
+MSYS2_ROOT = "C:\\msys64"
+MSYSTEM = "MINGW64"
+MINGW_PREFIX = "C:\\msys64\\mingw64"
+
+[tool.cibuildwheel.linux]
+# Future native-loading integration deps:
+# - zlib-devel  (gzip)
+# - bzip2-devel (bz2)
+# - xz-devel    (lzma/xz)
+# - libzstd-devel (zstd)
+before-all = "yum install -y patch zlib-devel bzip2-devel xz-devel libzstd-devel gmp-devel python3-devel glibc-static zlib-static gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ && yum install -y ccache"
+before-build = "rm -rf build hermax.egg-info *.so *.pyd *.dylib loading/*.so && find hermax -type f \\( -name '*.so' -o -name '*.pyd' -o -name '*.dylib' \\) -delete && uv pip install --system cmake 'pybind11<3' setuptools wheel"
+
+[tool.cibuildwheel.linux.environment]
+# Pin toolchain for Linux
+CC = "/opt/rh/gcc-toolset-11/root/usr/bin/gcc"
+CXX = "/opt/rh/gcc-toolset-11/root/usr/bin/g++"
+PATH = "/opt/rh/gcc-toolset-11/root/usr/bin:$PATH"
+CCACHE_DIR = "/tmp/ccache"
+CCACHE_MAXSIZE = "2G"
+# Linux uses gnu++17 and Manylinux glibc shims
+CFLAGS = "-fPIC -O2 -U_ISOC23_SOURCE -D_DEFAULT_SOURCE -D_GNU_SOURCE -std=gnu11"
+CXXFLAGS = "-fPIC -O2 -U_ISOC23_SOURCE -D_DEFAULT_SOURCE -D_GNU_SOURCE -std=gnu++17"
+CMAKE_ARGS = "-DCMAKE_C_COMPILER=/opt/rh/gcc-toolset-11/root/usr/bin/gcc -DCMAKE_CXX_COMPILER=/opt/rh/gcc-toolset-11/root/usr/bin/g++"
+
+[tool.cibuildwheel.macos]
+# Future native-loading integration deps:
+# - zstd (zstd)
+# - xz   (lzma/xz via liblzma)
+# (bzip2 is available on macOS, but can be added explicitly later if needed)
+before-all = "brew install gmp zstd xz ccache"
+before-build = "rm -rf build hermax.egg-info *.so *.pyd *.dylib loading/*.so && find hermax -type f \\( -name '*.so' -o -name '*.pyd' -o -name '*.dylib' \\) -delete && uv pip install --system cmake 'pybind11<3' setuptools wheel"
+
+[tool.cibuildwheel.macos.environment]
+MACOSX_DEPLOYMENT_TARGET = "14.0"
+CMAKE_ARGS = "-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0"
+
+# Overrides specifically for Intel
+[[tool.cibuildwheel.overrides]]
+select = "*-macosx_x86_64"
+[tool.cibuildwheel.overrides.environment]
+MACOSX_DEPLOYMENT_TARGET = "15.0"
+CMAKE_ARGS = "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0"

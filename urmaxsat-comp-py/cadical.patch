@@ -1,0 +1,31 @@
+diff --git a/src/cadical.hpp b/src/cadical.hpp
+index b681260..42be9dc 100644
+--- a/src/cadical.hpp
++++ b/src/cadical.hpp
+@@ -490,6 +490,7 @@ public:
+   int64_t redundant () const;   // Number of active redundant clauses.
+   int64_t irredundant () const; // Number of active irredundant clauses.
+ 
++  int64_t conflicts () const;   // Number of conflicts
+   //------------------------------------------------------------------------
+   // This function executes the given number of preprocessing rounds. It is
+   // similar to 'solve' with 'limits ("preprocessing", rounds)' except that
+diff --git a/src/solver.cpp b/src/solver.cpp
+index b111dde..6ce8f57 100644
+--- a/src/solver.cpp
++++ b/src/solver.cpp
+@@ -760,6 +760,14 @@ int64_t Solver::irredundant () const {
+   return res;
+ }
+ 
++int64_t Solver::conflicts () const {
++  TRACE ("conflicts");
++  REQUIRE_VALID_STATE ();
++  int64_t res = internal->stats.conflicts;
++  LOG_API_CALL_RETURNS ("conflicts", res);
++  return res;
++}
++
+ /*------------------------------------------------------------------------*/
+ 
+ void Solver::freeze (int lit) {

@@ -1,0 +1,5 @@
+NuWLS-c-IBR: an anytime solver by Menghua Jiang, Email: jiangmenghua@m.scnu.edu.cn
+
+./bin/starexec_run_default-runsolver instance-name
+
+./bin/starexec_run_short-runsolver instance-name
