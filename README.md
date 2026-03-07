@@ -12,9 +12,9 @@ iterative optimization workflows.
 
 - High-level modeling API (`hermax.model`) with typed variables, vectors, matrices, intervals, and lazy arithmetic.
 - Unified API across heterogeneous MaxSAT engines.
-- Incremental and non-incremental solver families under the same contract.
-- Scientific and reproducible workflow orientation (papers, references, benchmark-ready APIs).
-- Native compatibility with PySAT `WCNF` / `WCNFPlus`.
+- Incremental and non-incremental solver families
+- Scientific and reproducible workflow
+- Native compatibility with PySAT
 
 ## Installation
 
@@ -73,16 +73,6 @@ finally:
 Hermax is designed for the incremental MaxSAT setting formalized by:
 
 - Niskanen, Berg, Jarvisalo. *Incremental Maximum Satisfiability*. SAT 2022.
-
-Solver families available in Hermax are linked to established research lines:
-
-- RC2: Ignatiev, Morgado, Marques-Silva. *RC2: An Efficient MaxSAT Solver*. JSAT 2019.
-- UWrMaxSAT: Piotrow. *UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems*. ICTAI 2020.
-- EvalMaxSAT: Avellaneda. *EvalMaxSAT*. MaxSAT Evaluation (solver descriptions), 2023.
-- MaxHS: Bacchus. *MaxHS in the 2020 MaxSAT Evaluation*, 2020.
-- iMaxHS: Niskanen, Berg, Jarvisalo. *Enabling Incrementality in the Implicit Hitting Set Approach to MaxSAT Under Changing Weights*. CP 2021.
-- CASHWMaxSAT line: Pan, Wang, Cai. *An Efficient Core-Guided Solver for Weighted Partial MaxSAT*. IJCAI 2025.
-
 
 ## Documentation
 
