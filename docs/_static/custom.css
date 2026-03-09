@@ -1,0 +1,111 @@
+/* Keep homepage banner rendering fully transparent across themes. */
+img.hero-banner,
+.hero-banner img {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* PyData Sphinx Theme adds a white boxed treatment to regular content images
+ * in dark mode. Override that for the homepage hero banner only.
+ */
+html[data-theme="dark"] .bd-content img.hero-banner,
+html[data-theme="light"] .bd-content img.hero-banner,
+.bd-content img.hero-banner {
+  background-color: transparent !important;
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Improve display-math readability in long formal docs pages.
+ * Some themes wrap Sphinx/MathJax blocks in narrow overflow containers that
+ * render an ugly vertical scrollbar next to each equation. Keep horizontal
+ * scrolling available when needed, but suppress vertical overflow and give the
+ * math a little breathing room.
+ */
+div.math,
+.math.notranslate.nohighlight,
+div.math-wrapper,
+div.math-block {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: auto !important;
+  max-height: none !important;
+  max-width: 100%;
+  padding-bottom: 0.15rem;
+}
+
+/* MathJax v3 display containers used by Sphinx themes. */
+mjx-container[display="true"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: auto !important;
+  max-height: none !important;
+  max-width: 100%;
+}
+
+/* MathJax sometimes emits overflow-managed display containers with explicit
+ * inline overflow metadata/behavior. Target that exact case too. */
+div.math.notranslate.nohighlight > mjx-container[display="true"],
+mjx-container[display="true"][overflow="overflow"] {
+  display: block !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
+/* Prevent nested wrappers from reintroducing vertical scrollbars. */
+.rst-content .math,
+.wy-nav-content .math,
+.document .math {
+  overflow-y: hidden;
+  height: auto !important;
+  max-height: none !important;
+}
+
+/* Hide vertical scrollbar chrome if a theme still forces overflow on these
+ * wrappers. Horizontal scrolling remains available for long equations. */
+div.math.notranslate.nohighlight::-webkit-scrollbar:vertical,
+mjx-container[display="true"]::-webkit-scrollbar:vertical {
+  width: 0 !important;
+  height: 0 !important;
+}
+
+div.math.notranslate.nohighlight,
+mjx-container[display="true"] {
+  scrollbar-width: thin;
+}
+
+/* Interactive example embeds */
+.example-embed {
+  margin: 0.75rem 0 1rem;
+  overflow: hidden;
+  background: transparent;
+}
+
+.example-embed iframe {
+  display: block;
+  width: 100%;
+  min-height: 420px;
+  border: 0;
+  background: transparent;
+}
+
+html[data-theme="dark"] .example-embed {
+  background: transparent;
+}
+
+img.cvrp-problem-view {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.75rem 0 1rem;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}

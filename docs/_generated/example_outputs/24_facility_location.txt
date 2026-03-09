@@ -1,0 +1,5 @@
+$ python examples/model/24_facility_location.py
+status: optimum
+cost: 10
+open: {'north': True, 'south': False}
+assign: {'A': 'north', 'B': 'north', 'C': 'north'}

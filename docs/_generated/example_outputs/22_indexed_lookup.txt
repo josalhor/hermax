@@ -1,0 +1,6 @@
+$ python examples/model/22_indexed_lookup.py
+status: optimum
+cost: 3
+durations: [6, 3, 5]
+machine: 1
+chosen_duration: 3

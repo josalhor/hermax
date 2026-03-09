@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 320" role="img" aria-label="Job shop scheduling problem data">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --stroke: rgba(74, 64, 54, 0.22);
+      --panel: rgba(244, 239, 232, 0.82);
+      --j1: rgba(20, 99, 86, 0.16);
+      --j1s: #146356;
+      --j2: rgba(200, 76, 9, 0.14);
+      --j2s: #c84c09;
+      --j3: rgba(54, 89, 160, 0.14);
+      --j3s: #3659a0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --stroke: rgba(255, 255, 255, 0.16);
+        --panel: rgba(36, 35, 33, 0.88);
+        --j1: rgba(79, 210, 181, 0.18);
+        --j1s: #4fd2b5;
+        --j2: rgba(255, 156, 91, 0.18);
+        --j2s: #ff9c5b;
+        --j3: rgba(125, 160, 255, 0.18);
+        --j3s: #7da0ff;
+      }
+    }
+
+    text {
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    .meta {
+      font-size: 13px;
+      font-weight: 600;
+      fill: var(--ink);
+    }
+
+    .secondary {
+      fill: var(--muted);
+      font-weight: 400;
+    }
+
+    .card {
+      fill: var(--panel);
+      stroke: var(--stroke);
+      stroke-width: 1.4;
+      rx: 16;
+    }
+
+    .job {
+      font-size: 15px;
+      font-weight: 700;
+      fill: var(--ink);
+    }
+
+    .op {
+      stroke-width: 1.5;
+      rx: 12;
+    }
+
+    .optext {
+      font-size: 12px;
+      fill: var(--ink);
+      font-weight: 600;
+      text-anchor: middle;
+    }
+
+    .j1 { fill: var(--j1); stroke: var(--j1s); }
+    .j2 { fill: var(--j2); stroke: var(--j2s); }
+    .j3 { fill: var(--j3); stroke: var(--j3s); }
+  </style>
+
+  <text class="meta" x="40" y="28">
+    Job shop instance
+    <tspan class="secondary"> · each job is a fixed route through machines with fixed durations</tspan>
+  </text>
+
+  <rect class="card" x="40" y="58" width="680" height="220" />
+
+  <text class="job" x="70" y="110">J1</text>
+  <rect class="op j1" x="120" y="86" width="120" height="34" />
+  <text class="optext" x="180" y="107">M1 · 3</text>
+  <rect class="op j1" x="258" y="86" width="120" height="34" />
+  <text class="optext" x="318" y="107">M2 · 2</text>
+  <rect class="op j1" x="396" y="86" width="120" height="34" />
+  <text class="optext" x="456" y="107">M3 · 2</text>
+
+  <text class="job" x="70" y="168">J2</text>
+  <rect class="op j2" x="120" y="144" width="120" height="34" />
+  <text class="optext" x="180" y="165">M2 · 2</text>
+  <rect class="op j2" x="258" y="144" width="120" height="34" />
+  <text class="optext" x="318" y="165">M3 · 1</text>
+  <rect class="op j2" x="396" y="144" width="120" height="34" />
+  <text class="optext" x="456" y="165">M1 · 4</text>
+
+  <text class="job" x="70" y="226">J3</text>
+  <rect class="op j3" x="120" y="202" width="120" height="34" />
+  <text class="optext" x="180" y="223">M3 · 4</text>
+  <rect class="op j3" x="258" y="202" width="120" height="34" />
+  <text class="optext" x="318" y="223">M1 · 3</text>
+  <rect class="op j3" x="396" y="202" width="120" height="34" />
+  <text class="optext" x="456" y="223">M2 · 1</text>
+</svg>

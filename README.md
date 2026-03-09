@@ -16,6 +16,30 @@ iterative optimization workflows.
 - Scientific and reproducible workflow
 - Native compatibility with PySAT
 
+Who Is This For?
+----------------
+
+Hermax is for combinatorially hard problems where:
+
+* finding even a good base solution is already difficult
+* the search state is mostly boolean
+
+This is usually a better fit than MILP tooling when your problem is not mainly
+about floating-point structure, large integer arithmetic, or strong LP
+relaxations. In those cases, a MILP such as PuLP, SCIP, or Gurobi is
+often the more natural first choice.
+
+If your problem is highly combinatorial but can benefit from a broader
+black-box CP approach, CP-SAT may also be a good alternative.
+
+Hermax is especially relevant for:
+
+* engineers building repeated optimization workflows around hard clauses, soft
+  literals, assumptions, and iterative solve loops,
+* users who already work with clauses, WCNF, or incremental solver-style APIs,
+  and
+* researchers comparing MaxSAT backends behind a common Python interface.
+
 ## Installation
 
 Core install:
@@ -68,17 +92,15 @@ finally:
     solver.close()
 ```
 
-## Scientific Context
-
-Hermax is designed for the incremental MaxSAT setting formalized by:
-
-- Niskanen, Berg, Jarvisalo. *Incremental Maximum Satisfiability*. SAT 2022.
-
 ## Documentation
 
 - User and API docs: https://hermax.readthedocs.io
 
 ## Citation
+
+Hermax is designed for the incremental MaxSAT setting formalized by:
+
+- Niskanen, Berg, Jarvisalo. *Incremental Maximum Satisfiability*. SAT 2022.
 
 If you use Hermax in research:
 

@@ -14,6 +14,9 @@ optimization ecosystem. Relevant references include:
 SAT Solvers
 -----------
 
+Selected SAT solver references used across the wider ecosystem include
+Glucose [1]_, CaDiCaL [2]_, MiniSat [3]_, and CominiSatPS [4]_.
+
 .. [1] Gilles Audemard and Laurent Simon. *On the glucose SAT solver*.
    International Journal on Artificial Intelligence Tools, 27(01):1840001, 2018.
 .. [2] Armin Biere, Tobias Faller, Katalin Fazekas, Mathias Fleury,

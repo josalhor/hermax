@@ -1,4 +1,4 @@
 $ python examples/model/09_sudoku9_single_clue.py
 status: sat
 center: 5
-first_row: [1, 2, 6, 3, 7, 9, 5, 4, 8]
+first_row: ['4', '5', '8', '3', '7', '2', '9', '1', '6']

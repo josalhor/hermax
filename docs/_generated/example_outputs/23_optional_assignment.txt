@@ -1,0 +1,4 @@
+$ python examples/model/23_optional_assignment.py
+status: optimum
+cost: 4
+assign: {'api': 'alice', 'ui': 'bob', 'ops': None}

@@ -39,8 +39,10 @@ Backend mapping:
   ``hermax.core.evalmaxsat_latest_py.EvalMaxSATLatestReentrant`` [5]_.
 * :class:`hermax.non_incremental.CASHWMaxSAT`:
   ``hermax.core.cashwmaxsat_py.CASHWMaxSATSolver`` [6]_.
+
 .. * :class:`hermax.non_incremental.CASHWMaxSATNoSCIP`:
 ..   same backend as CASHWMaxSAT with SCIP disabled (adapter mode).
+
 * :class:`hermax.non_incremental.CGSS`:
   ``hermax.core.cgss_py.CGSSSolver`` (vendored RC2WCE/CGSS-style wrapper [7]_).
 * :class:`hermax.non_incremental.CGSSPMRES`:

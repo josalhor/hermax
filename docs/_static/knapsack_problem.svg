@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" role="img" aria-label="Knapsack problem data">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --stroke: rgba(74, 64, 54, 0.22);
+      --panel: rgba(244, 239, 232, 0.82);
+      --accent: #146356;
+      --capacity-bg: rgba(20, 99, 86, 0.12);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --stroke: rgba(255, 255, 255, 0.16);
+        --panel: rgba(36, 35, 33, 0.88);
+        --accent: #4fd2b5;
+        --capacity-bg: rgba(79, 210, 181, 0.16);
+      }
+    }
+
+    text {
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    .meta {
+      font-size: 13px;
+      font-weight: 600;
+      fill: var(--ink);
+    }
+
+    .secondary {
+      fill: var(--muted);
+      font-weight: 400;
+    }
+
+    .item {
+      fill: var(--panel);
+      stroke: var(--stroke);
+      stroke-width: 1.4;
+      rx: 16;
+    }
+
+    .item-label {
+      font-size: 16px;
+      font-weight: 700;
+      fill: var(--ink);
+    }
+
+    .item-meta {
+      font-size: 13px;
+      fill: var(--muted);
+    }
+
+    .capacity-box {
+      fill: var(--capacity-bg);
+      stroke: var(--accent);
+      stroke-width: 1.5;
+      rx: 16;
+    }
+
+    .capacity-title {
+      font-size: 15px;
+      font-weight: 700;
+      fill: var(--accent);
+    }
+
+    .capacity-text {
+      font-size: 13px;
+      fill: var(--ink);
+    }
+  </style>
+
+  <text class="meta" x="40" y="28">
+    Knapsack instance
+    <tspan class="secondary"> · capacity 8 · items carry weight and profit</tspan>
+  </text>
+
+  <rect class="item" x="40" y="58" width="150" height="120" />
+  <text class="item-label" x="58" y="90">Item 0</text>
+  <text class="item-meta" x="58" y="118">weight 2</text>
+  <text class="item-meta" x="58" y="142">profit 6</text>
+
+  <rect class="item" x="210" y="58" width="150" height="120" />
+  <text class="item-label" x="228" y="90">Item 1</text>
+  <text class="item-meta" x="228" y="118">weight 3</text>
+  <text class="item-meta" x="228" y="142">profit 8</text>
+
+  <rect class="item" x="380" y="58" width="150" height="120" />
+  <text class="item-label" x="398" y="90">Item 2</text>
+  <text class="item-meta" x="398" y="118">weight 4</text>
+  <text class="item-meta" x="398" y="142">profit 9</text>
+
+  <rect class="item" x="550" y="58" width="150" height="120" />
+  <text class="item-label" x="568" y="90">Item 3</text>
+  <text class="item-meta" x="568" y="118">weight 5</text>
+  <text class="item-meta" x="568" y="142">profit 10</text>
+
+  <rect class="capacity-box" x="40" y="195" width="660" height="34" />
+  <text class="capacity-title" x="58" y="217">Constraint</text>
+  <text class="capacity-text" x="154" y="217">choose any subset with total weight at most 8</text>
+</svg>

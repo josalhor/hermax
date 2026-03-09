@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" role="img" aria-label="Set cover solution">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --stroke: rgba(74, 64, 54, 0.22);
+      --panel: rgba(244, 239, 232, 0.82);
+      --accent: #146356;
+      --accent-fill: rgba(20, 99, 86, 0.16);
+      --faded: rgba(127, 109, 88, 0.12);
+      --totals: rgba(200, 76, 9, 0.12);
+      --totals-stroke: #c84c09;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --stroke: rgba(255, 255, 255, 0.16);
+        --panel: rgba(36, 35, 33, 0.88);
+        --accent: #4fd2b5;
+        --accent-fill: rgba(79, 210, 181, 0.18);
+        --faded: rgba(255, 255, 255, 0.08);
+        --totals: rgba(255, 156, 91, 0.16);
+        --totals-stroke: #ff9c5b;
+      }
+    }
+
+    text {
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    .meta {
+      font-size: 13px;
+      font-weight: 600;
+      fill: var(--ink);
+    }
+
+    .secondary {
+      fill: var(--muted);
+      font-weight: 400;
+    }
+
+    .chip {
+      fill: var(--panel);
+      stroke: var(--stroke);
+      stroke-width: 1.4;
+      rx: 14;
+    }
+
+    .selected {
+      fill: var(--accent-fill);
+      stroke: var(--accent);
+      stroke-width: 1.8;
+    }
+
+    .faded {
+      fill: var(--faded);
+      opacity: 0.65;
+    }
+
+    .head {
+      font-size: 15px;
+      font-weight: 700;
+      fill: var(--ink);
+    }
+
+    .sub {
+      font-size: 12px;
+      fill: var(--muted);
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      fill: var(--accent);
+    }
+
+    .grid {
+      stroke: var(--stroke);
+      stroke-width: 1;
+    }
+
+    .dot {
+      fill: rgba(127, 109, 88, 0.16);
+      stroke: var(--stroke);
+      stroke-width: 1;
+    }
+
+    .selected-dot {
+      fill: var(--accent-fill);
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+
+    .totals {
+      fill: var(--totals);
+      stroke: var(--totals-stroke);
+      stroke-width: 1.5;
+      rx: 16;
+    }
+
+    .totals-title {
+      font-size: 15px;
+      font-weight: 700;
+      fill: var(--totals-stroke);
+    }
+
+    .totals-text {
+      font-size: 13px;
+      fill: var(--ink);
+    }
+  </style>
+
+  <text class="meta" x="40" y="28">
+    Solved set cover
+    <tspan class="secondary"> · chosen sets ['S2', 'S4'] · total cost 4</tspan>
+  </text>
+
+  <rect class="chip faded" x="40" y="58" width="150" height="110" />
+  <text class="head" x="58" y="88">S1</text>
+  <text class="sub" x="58" y="110">covers u1, u2</text>
+  <text class="sub" x="58" y="130">cost 3</text>
+
+  <rect class="chip selected" x="210" y="58" width="150" height="110" />
+  <text class="head" x="228" y="88">S2</text>
+  <text class="sub" x="228" y="110">covers u2, u3</text>
+  <text class="sub" x="228" y="130">cost 2</text>
+  <text class="badge" x="228" y="154">selected</text>
+
+  <rect class="chip faded" x="380" y="58" width="150" height="110" />
+  <text class="head" x="398" y="88">S3</text>
+  <text class="sub" x="398" y="110">covers u3, u4</text>
+  <text class="sub" x="398" y="130">cost 3</text>
+
+  <rect class="chip selected" x="550" y="58" width="150" height="110" />
+  <text class="head" x="568" y="88">S4</text>
+  <text class="sub" x="568" y="110">covers u1, u4</text>
+  <text class="sub" x="568" y="130">cost 2</text>
+  <text class="badge" x="568" y="154">selected</text>
+
+  <rect class="totals" x="40" y="188" width="660" height="30" />
+  <text class="totals-title" x="58" y="208">Objective</text>
+  <text class="totals-text" x="132" y="208">minimize selected-set cost: 2 + 2 = 4</text>
+</svg>

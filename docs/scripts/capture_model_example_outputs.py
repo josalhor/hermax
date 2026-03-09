@@ -97,6 +97,7 @@ def main() -> int:
             "examples/optilog_formula_compat.py",
             "examples/portfolio_mixed.py",
             "examples/portfolio_presets.py",
+            "examples/cvrp_flat.py",
             "examples/wifi_minimal.py",
         ]:
             p = repo_root / rel

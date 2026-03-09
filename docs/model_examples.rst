@@ -21,11 +21,11 @@ clauses.
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``Model``
-* ``bool()``
+* :class:`hermax.model.Model`
+* :meth:`hermax.model.Model.bool`
 * Hard constraints with ``model &=``
 * Soft constraints with ``model.obj[w] +=``
-* ``Model.solve()``
+* :meth:`hermax.model.Model.solve`
 
 Model
 ^^^^^
@@ -61,6 +61,8 @@ This output shows one optimal assignment and the resulting weighted MaxSAT cost.
    :language: console
 
 
+.. _example-knapsack:
+
 Example 02: Knapsack
 ----------------------------------------------------
 
@@ -73,14 +75,16 @@ maximizes profit by minimizing penalties for not selecting items.
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``BoolVector``
+* :class:`hermax.model.BoolVector`
 * PB expressions over booleans (``sum(w_i * x_i) <= C``)
 
 Model
 ^^^^^
 
 This is the first pseudo-boolean: one weighted capacity inequality and a
-linear profit objective.
+linear profit objective. Knapsack is one of Karp's original NP-complete
+problems [1]_, and it is also a standard optimization reference problem in its
+own right [2]_.
 
 .. math::
 
@@ -95,6 +99,18 @@ linear profit objective.
    \end{aligned}
 
 The code uses soft unit clauses ``[x_i]`` so the cost is paid when ``x_i=0``, which is exactly the transformed minimization objective.
+
+Problem
+^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/knapsack_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (knapsack problem). See the HTML docs for the diagram.*
 
 Code
 ^^^^
@@ -112,6 +128,20 @@ the chosen items.
 .. literalinclude:: _generated/example_outputs/02_knapsack_pb.txt
    :language: console
 
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/knapsack_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (knapsack solution). See the HTML docs for the diagram.*
+
+
+.. _example-set-cover:
 
 Example 03: Minimum Set Cover
 -----------------------------
@@ -125,15 +155,17 @@ weighted soft penalties on selected sets.
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``BoolDict`` (keyed booleans)
-* ``Model.vector(...).at_least_one()`` for generated disjunctions
+* :class:`hermax.model.BoolDict` (keyed booleans)
+* :meth:`hermax.model.Model.vector` with :meth:`hermax.model.BoolVector.at_least_one`
 
 Model
 ^^^^^
 
 This is the standard weighted set-cover formulation. It is a good example of
 generated disjunctions over a dictionary of booleans and objective terms tied
-to selected decisions.
+to selected decisions. Set cover is one of Karp's original NP-complete
+problems [1]_ and is also a standard reference problem in Garey and Johnson
+[3]_.
 
 .. math::
 
@@ -147,6 +179,18 @@ to selected decisions.
 
 The code encodes the objective with soft unit clauses ``[~x_S]``, so a
 cost is paid when ``x_S`` is true.
+
+Problem
+^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/set_cover_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (set cover problem). See the HTML docs for the diagram.*
 
 Code
 ^^^^
@@ -163,6 +207,20 @@ The output shows a minimum-cost cover and the selected sets.
 .. literalinclude:: _generated/example_outputs/03_set_cover.txt
    :language: console
 
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/set_cover_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (set cover solution). See the HTML docs for the diagram.*
+
+
+.. _example-vertex-cover:
 
 Example 04: Minimum Vertex Cover
 --------------------------------
@@ -182,7 +240,8 @@ Model
 
 Vertex cover is the graph analogue of set cover, but it is pedagogically useful
 because the hard constraints are visually obvious and local (one clause per
-edge).
+edge). It is one of Karp's original NP-complete problems [1]_ and one of the
+canonical graph problems discussed in Garey and Johnson [3]_.
 
 .. math::
 
@@ -196,6 +255,18 @@ edge).
 
 As with the previous example, the code uses soft unit clauses ``[~x_v]`` so selecting a vertex
 incurs its cost.
+
+Problem
+^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/vertex_cover_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (vertex cover problem). See the HTML docs for the diagram.*
 
 Code
 ^^^^
@@ -212,6 +283,18 @@ The solver returns one minimum-cost vertex cover for the small graph instance.
 .. literalinclude:: _generated/example_outputs/04_vertex_cover.txt
    :language: console
 
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/vertex_cover_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (vertex cover solution). See the HTML docs for the diagram.*
+
 
 Example 05: Job Assignment
 ----------------------------------------------
@@ -225,16 +308,18 @@ and minimize assignment cost.
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``EnumVar`` / ``EnumDict``
+* :class:`hermax.model.EnumVar` / :class:`hermax.model.EnumDict`
 * Enum equality literals ``(assign[t] == worker)``
-* Cardinality helper ``at_most_one()``
+* :meth:`hermax.model.BoolVector.at_most_one`
 
 Model
 ^^^^^
 
 A single typed variable per task replaces a full Boolean assignment matrix
 while still exposing exact
-equality literals for capacity and cost constraints.
+equality literals for capacity and cost constraints. Unlike the NP-hard
+examples above, the classical assignment problem is polynomial-time and is
+famously solved by the Hungarian method [4]_.
 
 .. math::
 
@@ -249,6 +334,18 @@ equality literals for capacity and cost constraints.
 
 The bracket term ``[a_t = w]`` is realized in code by the literal
 ``(assign[t] == w)`` and softened as ``[~(assign[t] == w)]``.
+
+Problem
+^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/job_assignment_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (job assignment problem). See the HTML docs for the diagram.*
 
 Code
 ^^^^
@@ -266,6 +363,18 @@ resulting total cost.
 .. literalinclude:: _generated/example_outputs/05_job_assignment.txt
    :language: console
 
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/job_assignment_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (job assignment solution). See the HTML docs for the diagram.*
+
 
 Example 06: Enum Subset Disjunction
 -------------------------------------------------------
@@ -273,12 +382,13 @@ Example 06: Enum Subset Disjunction
 Purpose
 ^^^^^^^
 
-Demonstrate the fast categorical subset helper ``EnumVar.is_in(...)``.
+Demonstrate the fast categorical subset helper
+:meth:`hermax.model.EnumVar.is_in`.
 
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``EnumVar.is_in([...])``
+* :meth:`hermax.model.EnumVar.is_in`
 
 Model
 ^^^^^
@@ -325,8 +435,8 @@ typed vector view.
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``Model.vector([...])`` typed view
-* ``IntVector.is_in(rows)``
+* :meth:`hermax.model.Model.vector` typed view
+* :meth:`hermax.model.IntVector.is_in`
 
 Model
 ^^^^^
@@ -428,10 +538,10 @@ columns, and 3x3 subgrids.
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``IntMatrix``
+* :class:`hermax.model.EnumMatrix`
 * NumPy-like indexing (``grid[r, :]``, ``grid[:, c]``, ``grid[a:b, c:d]``)
 * ``flatten()`` on matrix views
-* ``IntVector.all_different()``
+* :meth:`hermax.model.EnumVector.all_different`
 
 Model
 ^^^^^
@@ -442,15 +552,23 @@ boxes are easy to inspect with the same typed-vector operations.
 .. math::
 
    \begin{aligned}
-   \text{Variables:}\quad & x_{r,c} \in \{1,\dots,9\} \\
+   \text{Variables:}\quad & x_{r,c} \in \{\texttt{"1"},\dots,\texttt{"9"}\} \\
    \text{Row constraints:}\quad &
       \mathrm{AllDifferent}(x_{r,1},\dots,x_{r,9}) \qquad \forall r \\
    \text{Column constraints:}\quad &
       \mathrm{AllDifferent}(x_{1,c},\dots,x_{9,c}) \qquad \forall c \\
    \text{Block constraints:}\quad &
       \mathrm{AllDifferent}(\text{cells in each } 3\times3 \text{ block}) \\
-   \text{Example clue:}\quad & x_{5,5} = 5
+   \text{Example clue:}\quad & x_{5,5} = \texttt{"5"}
    \end{aligned}
+
+.. warning::
+
+   Sudoku "digits" are better modeled as enums than as ints.
+   The puzzle is really about exact symbols, not about arithmetic values.
+   If sudoku had letters instead of digits, it would be played the same way,
+   so the numeric nature of the symbols is not relevant to the combinatorial search.
+   Using enums is more efficient when possible.
 
 Code
 ^^^^
@@ -480,9 +598,9 @@ Show scheduling-style constraints with object-oriented interval methods.
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``IntervalVar``
-* ``Model.interval(...)``
-* ``ends_before()``, ``no_overlap()``
+* :class:`hermax.model.IntervalVar`
+* :meth:`hermax.model.Model.interval`
+* :meth:`hermax.model.IntervalVar.ends_before`, :meth:`hermax.model.IntervalVar.no_overlap`
 
 Model
 ^^^^^
@@ -536,7 +654,7 @@ hard PB constraints.
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``model.obj[w] += int_var``
+* ``model.obj[w] += int_var`` with :class:`hermax.model.IntVar`
 
 Model
 ^^^^^
@@ -586,7 +704,7 @@ Show a compact domain model using nullable enum states for router channels, hard
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``EnumDict`` with ``nullable=True``
+* :class:`hermax.model.EnumDict` with ``nullable=True``
 * Practical composition of enum equality literals and soft penalties
 
 Model
@@ -612,6 +730,18 @@ The model uses nullable enums so "offline" is represented directly as the
 absence of a selected frequency (decoded as ``None``), rather than as an extra
 binary-variable layer.
 
+Problem
+^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/wifi_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (wifi problem). See the HTML docs for the diagram.*
+
 Code
 ^^^^
 
@@ -626,3 +756,34 @@ The result shows router states and the resulting objective cost.
 
 .. literalinclude:: _generated/example_outputs/12_wifi_nullable_enum.txt
    :language: console
+
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/wifi_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (wifi solution). See the HTML docs for the diagram.*
+
+
+References
+----------
+
+.. [1] Richard M. Karp. *Reducibility among combinatorial problems*. In
+   *Complexity of Computer Computations*, pages 85--103. Springer, 1972.
+.. [2] Silvano Martello and Paolo Toth. *Knapsack Problems: Algorithms and
+   Computer Implementations*. John Wiley & Sons, 1990.
+.. [3] Michael R. Garey and David S. Johnson. *Computers and Intractability:
+   A Guide to the Theory of NP-Completeness*. W. H. Freeman, 1979.
+.. [4] Harold W. Kuhn. *The Hungarian method for the assignment problem*.
+   *Naval Research Logistics Quarterly*, 2(1-2):83--97, 1955.
+
+
+Next
+----
+
+Advanced modelling examples continue in :doc:`model_examples_tricks`.

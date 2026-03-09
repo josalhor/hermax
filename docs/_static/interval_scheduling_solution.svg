@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 260" role="img" aria-label="Interval scheduling solution timeline">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --line: rgba(74, 64, 54, 0.24);
+      --tick: rgba(74, 64, 54, 0.14);
+      --a: #d46a4b;
+      --b: #146356;
+      --c: #4b6cb7;
+      --bar-text: #fffaf3;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --line: rgba(255, 255, 255, 0.18);
+        --tick: rgba(255, 255, 255, 0.08);
+        --a: #ef8d6f;
+        --b: #4fd2b5;
+        --c: #8aa8ff;
+        --bar-text: #171614;
+      }
+    }
+
+    text {
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    .meta {
+      font-size: 13px;
+      font-weight: 600;
+      fill: var(--ink);
+    }
+
+    .secondary {
+      fill: var(--muted);
+      font-weight: 400;
+    }
+
+    .axis, .grid {
+      stroke: var(--line);
+      fill: none;
+    }
+
+    .tickline {
+      stroke: var(--tick);
+      fill: none;
+    }
+
+    .label {
+      fill: var(--ink);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .tick {
+      fill: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      text-anchor: middle;
+    }
+
+    .barlabel {
+      fill: var(--bar-text);
+      font-size: 15px;
+      font-weight: 700;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+
+    .ann {
+      fill: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      text-anchor: middle;
+    }
+  </style>
+
+  <text class="meta" x="40" y="28">
+    Interval schedule solution
+    <tspan class="secondary"> · makespan = 7</tspan>
+  </text>
+
+  <line class="axis" x1="120" y1="70" x2="680" y2="70" />
+  <line class="axis" x1="120" y1="110" x2="680" y2="110" />
+  <line class="axis" x1="120" y1="150" x2="680" y2="150" />
+  <line class="axis" x1="120" y1="190" x2="680" y2="190" />
+
+  <line class="grid" x1="120" y1="70" x2="120" y2="190" />
+  <line class="grid" x1="200" y1="70" x2="200" y2="190" />
+  <line class="grid" x1="280" y1="70" x2="280" y2="190" />
+  <line class="grid" x1="360" y1="70" x2="360" y2="190" />
+  <line class="grid" x1="440" y1="70" x2="440" y2="190" />
+  <line class="grid" x1="520" y1="70" x2="520" y2="190" />
+  <line class="grid" x1="600" y1="70" x2="600" y2="190" />
+  <line class="grid" x1="680" y1="70" x2="680" y2="190" />
+
+  <text class="tick" x="120" y="58">0</text>
+  <text class="tick" x="200" y="58">1</text>
+  <text class="tick" x="280" y="58">2</text>
+  <text class="tick" x="360" y="58">3</text>
+  <text class="tick" x="440" y="58">4</text>
+  <text class="tick" x="520" y="58">5</text>
+  <text class="tick" x="600" y="58">6</text>
+  <text class="tick" x="680" y="58">7</text>
+
+  <text class="label" x="80" y="96">A</text>
+  <text class="label" x="80" y="136">B</text>
+  <text class="label" x="80" y="176">C</text>
+
+  <rect x="120" y="80" width="240" height="20" rx="10" fill="var(--a)" />
+  <text class="barlabel" x="240" y="91">A</text>
+  <text class="ann" x="240" y="113">0 → 3</text>
+
+  <rect x="360" y="120" width="320" height="20" rx="10" fill="var(--b)" />
+  <text class="barlabel" x="520" y="131">B</text>
+  <text class="ann" x="520" y="153">3 → 7</text>
+
+  <rect x="120" y="160" width="160" height="20" rx="10" fill="var(--c)" />
+  <text class="barlabel" x="200" y="171">C</text>
+  <text class="ann" x="200" y="193">0 → 2</text>
+</svg>

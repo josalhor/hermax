@@ -51,27 +51,3 @@ Unsupported source forms
 ------------------------
 
 * :class:`hermax.model.ClauseGroup`
-
-Why ``Clause.implies(...)`` is allowed
---------------------------------------
-
-Clause implication is distributed over literals:
-
-.. code-block:: python
-
-   (a | b).implies(t)
-
-It is compiled as:
-
-* ``a.implies(t)``
-* ``b.implies(t)``
-
-and returns a :class:`hermax.model.ClauseGroup`.
-
-Design Rule of Thumb
---------------------
-
-If the condition/source is not a **single literal**, the API will usually
-reject it.
-
-That is by design.

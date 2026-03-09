@@ -92,7 +92,8 @@ Modelling References
 -----------------------------
 
 The Hermax modelling layer is inspired by established optimization and CP
-tooling patterns.
+tooling patterns, including PuLP [1]_, COIN-OR [2]_, and OR-Tools / CP-SAT
+[3]_ [4]_.
 
 .. [1] J. S. Roy, Stuart A. Mitchell, and PuLP contributors.
    *PuLP*, version 3.3.0, 2025.

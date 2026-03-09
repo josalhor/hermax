@@ -7,6 +7,18 @@ and SAT-like workflows, with eager evaluation.
 The design goal is to let users model naturally while maintaining an efficient
 path from high-level objects to exported ``CNF``/``WCNF``
 
+Examples
+--------
+
+Start here if you want runnable modelling examples and outputs:
+
+.. toctree::
+   :maxdepth: 1
+
+   model_examples
+   model_examples_tricks
+   np_problems
+
 Core Concepts
 -------------
 
@@ -27,11 +39,6 @@ Solving And Export
 
    modeling_export_solve
    modeling_tricks
-
-Examples
---------
-
-See :doc:`examples` for runnable modelling examples and outputs.
 
 API Reference
 -------------

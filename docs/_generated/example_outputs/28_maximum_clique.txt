@@ -1,0 +1,4 @@
+$ python examples/model/28_maximum_clique.py
+status: optimum
+size: 4
+clique: [0, 1, 2, 3]

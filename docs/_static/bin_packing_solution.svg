@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 340" role="img" aria-label="Bin packing solution">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --stroke: rgba(74, 64, 54, 0.22);
+      --bin: rgba(244, 239, 232, 0.82);
+      --bin-stroke: rgba(74, 64, 54, 0.22);
+      --a: rgba(20, 99, 86, 0.18);
+      --as: #146356;
+      --b: rgba(200, 76, 9, 0.16);
+      --bs: #c84c09;
+      --c: rgba(54, 89, 160, 0.16);
+      --cs: #3659a0;
+      --d: rgba(124, 87, 32, 0.16);
+      --ds: #7c5720;
+      --total: rgba(200, 76, 9, 0.12);
+      --total-s: #c84c09;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --stroke: rgba(255, 255, 255, 0.16);
+        --bin: rgba(36, 35, 33, 0.88);
+        --bin-stroke: rgba(255, 255, 255, 0.16);
+        --a: rgba(79, 210, 181, 0.18);
+        --as: #4fd2b5;
+        --b: rgba(255, 156, 91, 0.18);
+        --bs: #ff9c5b;
+        --c: rgba(125, 160, 255, 0.18);
+        --cs: #7da0ff;
+        --d: rgba(244, 208, 112, 0.18);
+        --ds: #f4d070;
+        --total: rgba(255, 156, 91, 0.16);
+        --total-s: #ff9c5b;
+      }
+    }
+
+    text {
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    .meta {
+      font-size: 13px;
+      font-weight: 600;
+      fill: var(--ink);
+    }
+
+    .secondary {
+      fill: var(--muted);
+      font-weight: 400;
+    }
+
+    .bin {
+      fill: var(--bin);
+      stroke: var(--bin-stroke);
+      stroke-width: 1.5;
+      rx: 16;
+    }
+
+    .seg {
+      stroke-width: 1.4;
+    }
+
+    .a { fill: var(--a); stroke: var(--as); }
+    .b { fill: var(--b); stroke: var(--bs); }
+    .c { fill: var(--c); stroke: var(--cs); }
+    .d { fill: var(--d); stroke: var(--ds); }
+
+    .label {
+      font-size: 13px;
+      fill: var(--ink);
+      font-weight: 600;
+      text-anchor: middle;
+    }
+
+    .title {
+      font-size: 15px;
+      fill: var(--ink);
+      font-weight: 700;
+      text-anchor: middle;
+    }
+
+    .total {
+      fill: var(--total);
+      stroke: var(--total-s);
+      stroke-width: 1.5;
+      rx: 16;
+    }
+
+    .tt {
+      font-size: 15px;
+      font-weight: 700;
+      fill: var(--total-s);
+    }
+
+    .tx {
+      font-size: 13px;
+      fill: var(--ink);
+    }
+  </style>
+
+  <text class="meta" x="40" y="28">
+    Solved packing
+    <tspan class="secondary"> · 2 bins used · each used bin reaches load 10</tspan>
+  </text>
+
+  <rect class="bin" x="150" y="68" width="160" height="180" />
+  <text class="title" x="230" y="54">bin 0</text>
+  <rect class="seg b" x="170" y="88" width="120" height="96" />
+  <text class="label" x="230" y="138">item 1 · 8</text>
+  <rect class="seg a" x="170" y="184" width="120" height="24" />
+  <text class="label" x="230" y="200">item 4 · 2</text>
+  <text class="label" x="230" y="228">load 10 / 10</text>
+
+  <rect class="bin" x="450" y="68" width="160" height="180" />
+  <text class="title" x="530" y="54">bin 1</text>
+  <rect class="seg c" x="470" y="88" width="120" height="48" />
+  <text class="label" x="530" y="116">item 0 · 4</text>
+  <rect class="seg d" x="470" y="136" width="120" height="12" />
+  <text class="label" x="530" y="145">item 2 · 1</text>
+  <rect class="seg b" x="470" y="148" width="120" height="48" />
+  <text class="label" x="530" y="176">item 3 · 4</text>
+  <rect class="seg a" x="470" y="196" width="120" height="12" />
+  <text class="label" x="530" y="205">item 5 · 1</text>
+  <text class="label" x="530" y="228">load 10 / 10</text>
+
+  <rect class="total" x="40" y="286" width="680" height="30" />
+  <text class="tt" x="58" y="306">Objective</text>
+  <text class="tx" x="132" y="306">minimize the number of used bins: optimum = 2</text>
+</svg>

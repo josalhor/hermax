@@ -1,6 +1,9 @@
 Advanced Modelling Examples
 ==========================================================
 
+This page is a continuation of :doc:`model_examples`. For the more basic
+modelling examples, start there first.
+
 Conventions
 -----------
 
@@ -19,7 +22,7 @@ When to use this
 Use this pattern when a cost or penalty depends on an integer variable through
 tiers, and you want to use that cost in both constraints and the objective.
 
-Why this is efficient
+Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
 The piecewise expression is compiled as a weighted sum over the existing ladder
@@ -80,7 +83,7 @@ When to use this
 Use this when you need counts over integer buckets and want those counts in constraints
 or the objective.
 
-Why this is efficient
+Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
 ``in_range()`` returns a reusable boolean indicator for an interval, which can be summed directly, whic is very efficient.
@@ -138,7 +141,7 @@ Use this when the domain itself carries structure and you want to encode
 that structure directly instead of routing through generic pseudo-Boolean
 constraints.
 
-Why this is efficient
+Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
 These constraints compile to very small clause sets and do not need PB/Card encoders. They are especially useful when the
@@ -195,7 +198,7 @@ When to use this
 Use this when your model has coarse units or derived quantities and you still want to write natural
 algebraic constraints.
 
-Why this is efficient
+Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
 The syntax looks like generic arithmetic, but the compiler recognizes these
@@ -242,7 +245,7 @@ derived expressions are being used correctly in the affine constraints.
    :language: console
 
 
-Example 17: Big-M Capacity Constraint
+Example 17: Big-M Constraint
 -------------------------------------
 
 When to use this
@@ -252,7 +255,7 @@ Use this for the classic Opertions Research (OR) pattern \[if boolean is on, int
 This appears in optional resources, setup-dependent capacities, truck/worker
 activation, and many Big-M formulations.
 
-Why this is efficient
+Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
 This pattern is compiled as a pair of conditional ladder bounds instead of a generic
@@ -308,7 +311,7 @@ Show the ``running_max()`` helper, which packages the efficient cumulative-fold
 pattern for prefix maxima and avoids the common quadratic prefix-max modelling
 mistake.
 
-Why this is efficient
+Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
 The naive way to compute every prefix maximum recomputes larger and larger
@@ -453,3 +456,313 @@ scheduling optimization model with an explicit aggregate objective.
 
 .. literalinclude:: _generated/example_outputs/20_interval_makespan_watermark.txt
    :language: console
+
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/interval_scheduling_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (interval scheduling solution). See the HTML docs for the diagram.*
+
+
+Example 21: Decode Collections
+------------------------------
+
+When to use this
+^^^^^^^^^^^^^^^^
+
+Use this when the model contains vectors, matrices, dictionaries, or enum
+collections and you want to inspect the decoded result in ordinary Python
+structures.
+
+The collections are a small integer vector, an integer matrix, a boolean
+dictionary, and an enum dictionary. The model pins each entry to a known value
+and then shows how the result object decodes them back into ordinary Python
+containers.
+
+Code
+^^^^
+
+.. literalinclude:: ../examples/model/21_decode_collections.py
+   :language: python
+   :caption: examples/model/21_decode_collections.py
+
+Output
+^^^^^^
+
+The result object decodes each collection into the matching Python container.
+
+.. literalinclude:: _generated/example_outputs/21_decode_collections.txt
+   :language: console
+
+
+Example 22: Indexed Lookup
+--------------------------
+
+When to use this
+^^^^^^^^^^^^^^^^
+
+Use this when one decision chooses a value from a table. Common cases are
+machine processing times, worker costs, or plan limits.
+
+New primitives
+^^^^^^^^^^^^^^
+
+* variable-index element constraints with ``vec[idx]``
+
+Model
+^^^^^
+
+Each job chooses one machine. The chosen machine determines the processing
+time through a table lookup.
+
+.. math::
+
+   \begin{aligned}
+   \text{Variables:}\quad &
+      m_j \in \{0,\dots,k-1\}\ \text{(machine chosen for job } j\text{)} \\
+   \text{Lookup:}\quad &
+      p_j = duration_j[m_j] \\
+   \text{Objective:}\quad &
+      \min \sum_j p_j
+   \end{aligned}
+
+This is a good pattern when the data is already stored as Python lists or
+vectors and you want the model to follow that structure directly.
+
+.. warning::
+
+   Indexed lookup is a good fit for small tables and menu-style choices, but it
+   does not scale well. Use it when the lookup itself is the natural model. For
+   large tables or many repeated lookups, prefer a formulation with more direct
+   structure if one is available.
+
+Code
+^^^^
+
+.. literalinclude:: ../examples/model/22_indexed_lookup.py
+   :language: python
+   :caption: examples/model/22_indexed_lookup.py
+
+Output
+^^^^^^
+
+The solver chooses the cheapest allowed machine and returns the matched value
+from the duration table.
+
+.. literalinclude:: _generated/example_outputs/22_indexed_lookup.txt
+   :language: console
+
+
+Example 23: Optional Assignment
+-------------------------------
+
+When to use this
+^^^^^^^^^^^^^^^^
+
+Use this when an item may be assigned to a resource, but leaving it unassigned
+is also allowed with a penalty.
+
+Why this is useful
+^^^^^^^^^^^^^^^^^^
+
+Many real problems are not "assign everything no matter what". This pattern is
+better for overload planning, staff shortages, fallback scheduling, and
+"serve the most important requests first" problems.
+
+New primitives
+^^^^^^^^^^^^^^
+
+* nullable :class:`hermax.model.EnumVar`
+* enum equality literals ``(assign[t] == worker)``
+
+Model
+^^^^^
+
+Each task is assigned to one worker, or to ``None`` if it is left unassigned.
+Leaving a task unassigned pays a penalty.
+
+.. math::
+
+   \begin{aligned}
+   \text{Variables:}\quad &
+      a_t \in W \cup \{\text{None}\} \\
+   \text{Capacity:}\quad &
+      \sum_t [a_t = w] \le cap_w \qquad \forall w \in W \\
+   \text{Penalty for skipping work:}\quad &
+      penalty_t \cdot [a_t = \text{None}] \\
+   \text{Objective:}\quad &
+      \min \sum_t penalty_t [a_t = \text{None}]
+      + \sum_{t,w} c_{t,w}[a_t = w]
+   \end{aligned}
+
+This is often easier to read than a full Boolean assignment matrix, especially
+when each item can go to at most one place.
+
+Code
+^^^^
+
+.. literalinclude:: ../examples/model/23_optional_assignment.py
+   :language: python
+   :caption: examples/model/23_optional_assignment.py
+
+Output
+^^^^^^
+
+The result leaves the least important task unassigned and decodes that choice
+as ``None``.
+
+.. literalinclude:: _generated/example_outputs/23_optional_assignment.txt
+   :language: console
+
+
+Example 24: Facility Location
+-----------------------------
+
+When to use this
+^^^^^^^^^^^^^^^^
+
+Use this when opening a site has a fixed cost, and each client must be attached
+to one open site.
+
+Why this is useful
+^^^^^^^^^^^^^^^^^^
+
+This is a classic optimization pattern because it combines three common ideas:
+open-or-close decisions, assignment decisions, and fixed costs.
+
+New primitives
+^^^^^^^^^^^^^^
+
+* booleans for opening sites
+* enums for client assignment
+* linking constraints between assignment and activation
+
+Model
+^^^^^
+
+Each facility may be opened or closed. Each client is assigned to one facility.
+Assignments are only allowed to open facilities.
+
+.. math::
+
+   \begin{aligned}
+   \text{Variables:}\quad &
+      open_f \in \{0,1\},\quad a_c \in F \\
+   \text{Open-link rule:}\quad &
+      [a_c = f] \Rightarrow open_f \qquad \forall c,f \\
+   \text{Capacity:}\quad &
+      \sum_c demand_c [a_c = f] \le cap_f \cdot open_f \qquad \forall f \\
+   \text{Objective:}\quad &
+      \min \sum_f fixed_f\,open_f + \sum_{c,f} ship_{c,f}[a_c = f]
+   \end{aligned}
+
+The same structure appears in
+warehouses, server placement, clinic selection, and planning problems.
+
+Problem
+^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/facility_location_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (facility location problem). See the HTML docs for the diagram.*
+
+Code
+^^^^
+
+.. literalinclude:: ../examples/model/24_facility_location.py
+   :language: python
+   :caption: examples/model/24_facility_location.py
+
+Output
+^^^^^^
+
+The solver opens the cheaper facility and routes every client through it.
+
+.. literalinclude:: _generated/example_outputs/24_facility_location.txt
+   :language: console
+
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/facility_location_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (facility location solution). See the HTML docs for the diagram.*
+
+
+Example 25: Portfolio Solve
+---------------------------
+
+When to use this
+^^^^^^^^^^^^^^^^
+
+Use this when the model is already written and you want a better default solve
+strategy without manually choosing a single backend.
+
+* :meth:`hermax.model.Model.solve` with ``solver=CompletePortfolioSolver``
+* ``solver_kwargs`` for solver selection and worker settings
+
+Solver performance can vary a lot from one model family to another. A
+portfolio lets you keep the same model and try several solvers behind the same
+interface.
+
+
+Model
+^^^^^
+
+The optimization model itself does not change. The point of the example is to
+keep the same constraints and objective, but switch the solve strategy to a
+complete preset portfolio.
+
+This is a good pattern when you want to keep the modeling layer stable while
+still tuning for performance.
+
+
+Code
+^^^^
+
+.. literalinclude:: ../examples/model/25_portfolio_solve.py
+   :language: python
+   :caption: examples/model/25_portfolio_solve.py
+
+
+
+.. warning::
+
+   Hermax also provides broader portfolio presets, including incomplete
+   solvers. Those can be useful for speed, but they need more care: incomplete
+   backends and looser finishing policies do not carry the exactness
+   guarantees as the complete preset used in this example.
+
+For the full portfolio API, preset classes, and selection policies, see
+:doc:`portfolio`.
+
+Output
+^^^^^^
+
+The model is unchanged; only the solve strategy is switched to a portfolio
+wrapper.
+
+.. literalinclude:: _generated/example_outputs/25_portfolio_solve.txt
+   :language: console
+
+
+Next
+----
+
+For classic NP-hard optimization examples, continue in :doc:`np_problems`.

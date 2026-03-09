@@ -1,11 +1,16 @@
 $ python examples/quickstart_uwrmaxsat.py
+Solve with no assumptions:
+  feasible: True
+  status: OPTIMUM
+  cost: 2
+  model: [1, -2, 3]
 Solve with assumption [-x1] (force x1=False):
   feasible: True
   status: OPTIMUM
-  cost: 2
+  cost: 5
   model: [-1, 2, 3]
-Solve with assumption [x2] (force x2=True):
+Solve after updating weight on -x3 from 1 to 7:
   feasible: True
   status: OPTIMUM
-  cost: 2
-  model: [-1, 2, 3]
+  cost: 6
+  model: [-1, 2, -3]
