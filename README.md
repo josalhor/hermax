@@ -1,4 +1,4 @@
-# Hermax: Incremental MaxSAT Solvers for Python
+# Hermax: MaxSAT Optimization for Python
 
 [![PyPI version](https://img.shields.io/pypi/v/hermax.svg)](https://pypi.org/project/hermax/)
 [![PyPI wheel](https://img.shields.io/pypi/wheel/hermax.svg)](https://pypi.org/project/hermax/)
