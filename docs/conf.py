@@ -79,6 +79,13 @@ html_theme_options = {
     "logo": {
         "text": "", # No text, just logo
     },
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/josalhor/hermax",
+            "icon": "fa-brands fa-github",
+        },
+    ],
     "show_prev_next": False,
     "navbar_start": ["navbar-logo"],
     "navbar_center": ["navbar-nav"],
