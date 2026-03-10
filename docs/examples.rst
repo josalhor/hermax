@@ -34,6 +34,52 @@ constraints:
   the cost is paid when the **clause is violated**. For a unit clause
   ``[x]``, that means paying when ``x=False``.
 
+
+.. _example-cvrp:
+
+CVRP
+----
+
+This is a capacitated vehicle routing (CVRP) example with depot-to-customer
+routes, capacity tracking, and MTZ load constraints [5]_.
+
+Related API: :class:`hermax.model.Model`.
+
+Problem
+^^^^^^^^^^^^^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/cvrp_flat_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (cvrp problem). See the HTML docs for the diagram.*
+
+.. literalinclude:: ../examples/cvrp_flat.py
+   :language: python
+   :caption: examples/cvrp_flat.py
+
+Output
+^^^^^^^^^^^^^^^^^^^^
+
+.. literalinclude:: _generated/example_outputs/cvrp_flat.txt
+   :language: console
+
+Solution
+^^^^^^^^^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/cvrp_flat_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (cvrp solution). See the HTML docs for the diagram.*
+
+
 Incremental MaxSAT
 ----------------------
 
@@ -159,50 +205,6 @@ Output
 
 .. literalinclude:: _generated/example_outputs/portfolio_presets.txt
    :language: console
-
-.. _example-cvrp:
-
-CVRP
-----
-
-This is a capacitated vehicle routing (CVRP) example with depot-to-customer
-routes, capacity tracking, and MTZ load constraints [5]_.
-
-Related API: :class:`hermax.model.Model`.
-
-Problem
-^^^^^^^^^^^^^^^^^^^^
-
-.. only:: html
-
-   .. image:: _static/cvrp_flat_problem.svg
-      :class: cvrp-problem-view
-
-.. only:: latex
-
-   *Visualization omitted from PDF build (cvrp problem). See the HTML docs for the diagram.*
-
-.. literalinclude:: ../examples/cvrp_flat.py
-   :language: python
-   :caption: examples/cvrp_flat.py
-
-Output
-^^^^^^^^^^^^^^^^^^^^
-
-.. literalinclude:: _generated/example_outputs/cvrp_flat.txt
-   :language: console
-
-Interactive view
-^^^^^^^^^^^^^^^^
-
-.. only:: html
-
-   .. image:: _static/cvrp_flat_solution.svg
-      :class: cvrp-problem-view
-
-.. only:: latex
-
-   *Visualization omitted from PDF build (cvrp solution). See the HTML docs for the diagram.*
 
 References
 ----------
