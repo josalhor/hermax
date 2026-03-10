@@ -82,18 +82,15 @@ print(r.status, r.cost)
 from hermax.incremental import UWrMaxSAT
 
 solver = UWrMaxSAT()
-try:
-    solver.add_clause([1, 2])   # hard
-    solver.set_soft(-1, 10)     # soft weight
-    solver.set_soft(-1, 6)      # update weight (last-wins)
+solver.add_clause([1, 2])   # hard
+solver.set_soft(-1, 10)     # soft weight
+solver.set_soft(-1, 6)      # update weight (last-wins)
 
-    ok = solver.solve(assumptions=[-1])
-    print("status:", solver.get_status().name)
-    if ok:
-        print("cost:", solver.get_cost())
-        print("model:", solver.get_model())
-finally:
-    solver.close()
+ok = solver.solve(assumptions=[-2])
+print("status:", solver.get_status().name)
+if ok:
+    print("cost:", solver.get_cost())
+    print("model:", solver.get_model())
 ```
 
 ## Documentation
