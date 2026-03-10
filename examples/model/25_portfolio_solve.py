@@ -9,7 +9,6 @@ b = m.bool("b")
 
 m &= (a | b)
 
-# Prefer a=False and b=True.
 m.obj[3] += ~a
 m.obj[1] += ~b
 

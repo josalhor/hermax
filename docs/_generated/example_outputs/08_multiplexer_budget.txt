@@ -1,5 +1,5 @@
 $ python examples/model/08_multiplexer_budget.py
-status: sat
-worker: 0
-budget: 20
-selected_cost: 20
+status: optimum
+worker: 1
+budget: 40
+selected_cost: 40

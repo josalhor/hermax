@@ -3,80 +3,58 @@ Modelling Overview
 
 ``hermax.model`` is a Python modelling layer for SAT/MaxSAT.
 
-The API is strict in that:
+This page is decision oriented: what to use, when, and what workflow to follow.
+For internal compilation and mutability rules, see
+:doc:`modeling_internal_overview`.
 
-* Expressions are evaluated immediately
-* Unsupported operations fail early with explicit errors
-* The ``Model`` object is the only mutable sink for constraints/objectives
+Model vs Direct Solvers
+-----------------------
 
-Core ideas
-----------
+Use :mod:`hermax.model` when your problem is easier to express with typed
+variables and constraints (booleans, bounded integers, enums, intervals,
+collections, PB constraints), and you want Hermax to lower that to CNF/WCNF.
 
-The modelling API has three main layers:
+Use direct solver wrappers when you already have low-level CNF/WCNF/IPAMIR
+logic and want explicit control over incremental operations:
 
-1. **Description objects** (immutable by operator)
+* :mod:`hermax.incremental`
+* :mod:`hermax.non_incremental`
 
-   * :class:`hermax.model.Literal`
-   * :class:`hermax.model.Clause`
-   * :class:`hermax.model.ClauseGroup`
-   * :class:`hermax.model.Term`
-   * :class:`hermax.model.PBExpr`
-   * :class:`hermax.model.PBConstraint`
+In short:
 
-2. **Typed variables / containers**
+* If your thinking is at the level of "variables + constraints + objective",
+  use ``Model``.
+* If your thinking is already at the level of literals/clauses/assumptions and
+  backend-specific calls, use the solver wrappers.
 
-   * Booleans, enums, bounded integers
-   * Vectors, matrices, keyed dictionaries
+Variable and Domain Choices
+---------------------------
 
-3. **Model accumulation and solving**
+Choose variable families by problem semantics:
 
-   * ``model &= ...`` for hard constraints
-   * ``model.obj[w] += ...`` for weighted soft constraints
-   * ``model.tier_obj[...] += ...`` for lexicographic (tiered) objectives
-   * ``model.to_cnf()``, ``model.to_wcnf()``, ``model.solve()``
+* :meth:`hermax.model.Model.bool`:
+  pure logical decisions.
+* :meth:`hermax.model.Model.enum`:
+  one-of-k categorical decisions.
+* :meth:`hermax.model.Model.int`:
+  bounded integer decisions.
+* :meth:`hermax.model.Model.interval`:
+  start/end/duration scheduling decisions.
 
-Eager vs. lazy evaluation
------------------------------------------
+For structured models, use containers:
 
-The API is immediate, but not everything is compiled at the same time:
+* vectors: ``bool_vector``, ``enum_vector``, ``int_vector``
+* matrices: ``bool_matrix``, ``enum_matrix``, ``int_matrix``
+* keyed dictionaries: ``bool_dict``, ``enum_dict``, ``int_dict``
 
-* Boolean operators produce clauses/groups immediately.
-* PB comparisons produce a **lazy** :class:`hermax.model.PBConstraint`.
-* The PB constraint compiles to CNF only when:
+Hard vs Soft Constraints
+------------------------
 
-  * Added to the model (``model &= ...``),
-  * Added as a soft constraint (``model.obj[w] += ...``), or
-  * Explicitly requested via ``pb_constraint.clauses()``.
-
-This keeps the design expressive while preserving enough PB metadata for safe
-operations like ``PB.implies(literal)``.
-
-Mutability contract
--------------------
-
-Operator syntax is **immutable by contract** for modelling objects:
-
-* ``ClauseGroup &= ...`` returns a new ``ClauseGroup`` (it does not mutate).
-* ``PBExpr += ...`` returns a new ``PBExpr`` (it does not mutate).
-
-The only intended mutable sinks are:
+Hard constraints define feasibility:
 
 * ``model &= constraint``
-* ``model.obj[w] += constraint``
 
-Inplace Mutation APIs
-----------------------
-
-For performance-oriented or builder-style code, the model exposes explicit
-mutators with a mandatory keyword guard:
-
-* ``clause.append(lit, inplace=True)``
-* ``group.extend(x, inplace=True)``
-* ``expr.add(x, inplace=True)``
-* ``expr.sub(x, inplace=True)``
-
-Soft constraint
--------------------------
+Soft constraints define optimization penalties:
 
 Hermax model softs follow **WCNF / MaxSAT**:
 
@@ -87,6 +65,38 @@ For unit literals:
 
 * ``model.obj[w] += a`` pays when ``a`` is false
 * ``model.obj[w] += ~a`` pays when ``a`` is true
+
+Single vs Tiered Objective
+--------------------------
+
+Use a single objective when all soft penalties belong to one scale:
+
+* ``model.obj[w] += ...``
+
+Use tiered objective when priorities are lexicographic and must not be mixed:
+
+* ``model.tier_obj[tier][w] += ...``
+
+This is useful when, for example, service-level violations must be minimized
+before any secondary cost.
+
+Solve / Export / Decode Loop
+----------------------------
+
+Typical modelling workflow:
+
+1. Declare variables/domains
+2. Add hard constraints
+3. Add objective terms (single or tiered)
+4. Solve or export
+5. Decode typed assignments
+
+Core calls:
+
+* ``model.solve()``
+* ``model.to_cnf()``
+* ``model.to_wcnf()``
+* decode via returned assignment/solve result objects
 
 Modelling References
 -----------------------------

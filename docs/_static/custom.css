@@ -109,3 +109,13 @@ img.cvrp-problem-view {
   box-shadow: none !important;
   padding: 0 !important;
 }
+
+/* Code blocks: keep native horizontal scrolling and avoid odd centering. */
+.bd-content div.highlight {
+  overflow-x: auto;
+}
+
+.bd-content div.highlight pre {
+  overflow-x: auto;
+  white-space: pre;
+}

@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" role="img" aria-label="Domain holes and distance bound problem">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --stroke: rgba(74, 64, 54, 0.22);
+      --panel: rgba(244, 239, 232, 0.82);
+      --grid: rgba(73, 144, 226, 0.20);
+      --axis: rgba(74, 64, 54, 0.50);
+      --forbid-x: rgba(184, 38, 93, 0.20);
+      --forbid-y: rgba(184, 38, 93, 0.85);
+      --dist-strip: rgba(20, 99, 86, 0.14);
+      --dist-line: rgba(20, 99, 86, 0.70);
+      --legend-bg: rgba(20, 99, 86, 0.10);
+      --legend-stroke: rgba(20, 99, 86, 0.50);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --stroke: rgba(255, 255, 255, 0.16);
+        --panel: rgba(36, 35, 33, 0.88);
+        --grid: rgba(122, 190, 255, 0.26);
+        --axis: rgba(235, 225, 210, 0.45);
+        --forbid-x: rgba(255, 111, 161, 0.24);
+        --forbid-y: rgba(255, 111, 161, 0.90);
+        --dist-strip: rgba(79, 210, 181, 0.16);
+        --dist-line: rgba(79, 210, 181, 0.75);
+        --legend-bg: rgba(79, 210, 181, 0.12);
+        --legend-stroke: rgba(79, 210, 181, 0.55);
+      }
+    }
+
+    text {
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+      fill: var(--ink);
+    }
+
+    .title { font-size: 16px; font-weight: 700; }
+    .subtitle { font-size: 13px; fill: var(--muted); }
+    .grid { stroke: var(--grid); stroke-width: 1; }
+    .axis { stroke: var(--axis); stroke-width: 1.8; }
+    .tick { font-size: 11px; fill: var(--muted); }
+    .legend-box { fill: var(--legend-bg); stroke: var(--legend-stroke); stroke-width: 1.2; rx: 12; }
+    .legend-title { font-size: 13px; font-weight: 700; fill: var(--ink); }
+    .legend-item { font-size: 12px; fill: var(--ink); }
+  </style>
+
+  <!-- title -->
+  <text class="title" x="36" y="34">Domain holes + distance bound (problem geometry)</text>
+
+  <!-- plotting area -->
+  <!-- coordinate map: [0..29] -> [90..530] both axes -->
+  <rect x="90" y="90" width="440" height="440" fill="var(--panel)" stroke="var(--stroke)" stroke-width="1.2" />
+
+  <!-- distance strip |x-y| <= 2 -->
+  <!-- y = x+2 line endpoints in box: (0,2) to (27,29) -->
+  <!-- y = x-2 line endpoints: (2,0) to (29,27) -->
+  <polygon
+    points="
+      90,499.655
+      499.655,90
+      530,120.345
+      120.345,530
+    "
+    fill="var(--dist-strip)"
+    stroke="none"
+  />
+
+  <!-- forbidden x interval [10,20] -->
+  <rect x="241.724" y="90" width="166.552" height="440" fill="var(--forbid-x)" />
+
+  <!-- grid lines -->
+  <g>
+    <!-- vertical -->
+    <line class="grid" x1="90" y1="90" x2="90" y2="530" />
+    <line class="grid" x1="105.172" y1="90" x2="105.172" y2="530" />
+    <line class="grid" x1="120.345" y1="90" x2="120.345" y2="530" />
+    <line class="grid" x1="135.517" y1="90" x2="135.517" y2="530" />
+    <line class="grid" x1="150.690" y1="90" x2="150.690" y2="530" />
+    <line class="grid" x1="165.862" y1="90" x2="165.862" y2="530" />
+    <line class="grid" x1="181.034" y1="90" x2="181.034" y2="530" />
+    <line class="grid" x1="196.207" y1="90" x2="196.207" y2="530" />
+    <line class="grid" x1="211.379" y1="90" x2="211.379" y2="530" />
+    <line class="grid" x1="226.552" y1="90" x2="226.552" y2="530" />
+    <line class="grid" x1="241.724" y1="90" x2="241.724" y2="530" />
+    <line class="grid" x1="256.897" y1="90" x2="256.897" y2="530" />
+    <line class="grid" x1="272.069" y1="90" x2="272.069" y2="530" />
+    <line class="grid" x1="287.241" y1="90" x2="287.241" y2="530" />
+    <line class="grid" x1="302.414" y1="90" x2="302.414" y2="530" />
+    <line class="grid" x1="317.586" y1="90" x2="317.586" y2="530" />
+    <line class="grid" x1="332.759" y1="90" x2="332.759" y2="530" />
+    <line class="grid" x1="347.931" y1="90" x2="347.931" y2="530" />
+    <line class="grid" x1="363.103" y1="90" x2="363.103" y2="530" />
+    <line class="grid" x1="378.276" y1="90" x2="378.276" y2="530" />
+    <line class="grid" x1="393.448" y1="90" x2="393.448" y2="530" />
+    <line class="grid" x1="408.621" y1="90" x2="408.621" y2="530" />
+    <line class="grid" x1="423.793" y1="90" x2="423.793" y2="530" />
+    <line class="grid" x1="438.966" y1="90" x2="438.966" y2="530" />
+    <line class="grid" x1="454.138" y1="90" x2="454.138" y2="530" />
+    <line class="grid" x1="469.310" y1="90" x2="469.310" y2="530" />
+    <line class="grid" x1="484.483" y1="90" x2="484.483" y2="530" />
+    <line class="grid" x1="499.655" y1="90" x2="499.655" y2="530" />
+    <line class="grid" x1="514.828" y1="90" x2="514.828" y2="530" />
+    <line class="grid" x1="530" y1="90" x2="530" y2="530" />
+    <!-- horizontal -->
+    <line class="grid" x1="90" y1="90" x2="530" y2="90" />
+    <line class="grid" x1="90" y1="105.172" x2="530" y2="105.172" />
+    <line class="grid" x1="90" y1="120.345" x2="530" y2="120.345" />
+    <line class="grid" x1="90" y1="135.517" x2="530" y2="135.517" />
+    <line class="grid" x1="90" y1="150.690" x2="530" y2="150.690" />
+    <line class="grid" x1="90" y1="165.862" x2="530" y2="165.862" />
+    <line class="grid" x1="90" y1="181.034" x2="530" y2="181.034" />
+    <line class="grid" x1="90" y1="196.207" x2="530" y2="196.207" />
+    <line class="grid" x1="90" y1="211.379" x2="530" y2="211.379" />
+    <line class="grid" x1="90" y1="226.552" x2="530" y2="226.552" />
+    <line class="grid" x1="90" y1="241.724" x2="530" y2="241.724" />
+    <line class="grid" x1="90" y1="256.897" x2="530" y2="256.897" />
+    <line class="grid" x1="90" y1="272.069" x2="530" y2="272.069" />
+    <line class="grid" x1="90" y1="287.241" x2="530" y2="287.241" />
+    <line class="grid" x1="90" y1="302.414" x2="530" y2="302.414" />
+    <line class="grid" x1="90" y1="317.586" x2="530" y2="317.586" />
+    <line class="grid" x1="90" y1="332.759" x2="530" y2="332.759" />
+    <line class="grid" x1="90" y1="347.931" x2="530" y2="347.931" />
+    <line class="grid" x1="90" y1="363.103" x2="530" y2="363.103" />
+    <line class="grid" x1="90" y1="378.276" x2="530" y2="378.276" />
+    <line class="grid" x1="90" y1="393.448" x2="530" y2="393.448" />
+    <line class="grid" x1="90" y1="408.621" x2="530" y2="408.621" />
+    <line class="grid" x1="90" y1="423.793" x2="530" y2="423.793" />
+    <line class="grid" x1="90" y1="438.966" x2="530" y2="438.966" />
+    <line class="grid" x1="90" y1="454.138" x2="530" y2="454.138" />
+    <line class="grid" x1="90" y1="469.310" x2="530" y2="469.310" />
+    <line class="grid" x1="90" y1="484.483" x2="530" y2="484.483" />
+    <line class="grid" x1="90" y1="499.655" x2="530" y2="499.655" />
+    <line class="grid" x1="90" y1="514.828" x2="530" y2="514.828" />
+    <line class="grid" x1="90" y1="530" x2="530" y2="530" />
+  </g>
+
+  <!-- distance borders y=x-2 and y=x+2 -->
+  <line x1="120.345" y1="530" x2="530" y2="120.345" stroke="var(--dist-line)" stroke-width="2.0" />
+  <line x1="90" y1="499.655" x2="499.655" y2="90" stroke="var(--dist-line)" stroke-width="2.0" />
+
+  <!-- forbidden y=11 -->
+  <line x1="90" y1="363.103" x2="530" y2="363.103" stroke="var(--forbid-y)" stroke-width="2.6" />
+
+  <!-- solution point (x=9, y=10) -->
+  <circle cx="226.552" cy="378.276" r="5.2" fill="var(--forbid-y)" stroke="var(--ink)" stroke-width="1.2" />
+
+  <!-- axes -->
+  <line class="axis" x1="90" y1="530" x2="530" y2="530" />
+  <line class="axis" x1="90" y1="530" x2="90" y2="90" />
+
+  <!-- ticks -->
+  <text class="tick" x="86" y="548">0</text>
+  <text class="tick" x="236" y="548">10</text>
+  <text class="tick" x="388" y="548">20</text>
+  <text class="tick" x="522" y="548">29</text>
+  <text class="tick" x="72" y="533">0</text>
+  <text class="tick" x="66" y="366">11</text>
+  <text class="tick" x="66" y="100">29</text>
+
+  <text class="subtitle" x="300" y="552">x</text>
+  <text class="subtitle" x="72" y="82">y</text>
+
+  <!-- legend / explanations -->
+  <rect class="legend-box" x="570" y="90" width="300" height="188" />
+  <text class="legend-title" x="590" y="116">Constraint layers</text>
+
+  <rect x="590" y="136" width="24" height="14" fill="var(--forbid-x)" />
+  <text class="legend-item" x="624" y="148">forbidden x-range: x in [10,20]</text>
+
+  <line x1="590" y1="170" x2="614" y2="170" stroke="var(--forbid-y)" stroke-width="2.6" />
+  <text class="legend-item" x="624" y="174">forbidden y value: y = 11</text>
+
+  <rect x="590" y="190" width="24" height="14" fill="var(--dist-strip)" />
+  <line x1="590" y1="197" x2="614" y2="197" stroke="var(--dist-line)" stroke-width="2.0" />
+  <text class="legend-item" x="624" y="202">distance strip: |x-y| &lt;= 2</text>
+
+  <line x1="590" y1="232" x2="614" y2="232" stroke="var(--grid)" stroke-width="2.4" />
+  <text class="legend-item" x="624" y="236">grid intersections are integer lattice points</text>
+  <circle cx="602" cy="264" r="5.2" fill="var(--forbid-y)" stroke="var(--ink)" stroke-width="1.2" />
+  <text class="legend-item" x="624" y="268">solution point: (9,10)</text>
+</svg>

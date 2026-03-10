@@ -5,14 +5,12 @@ m = Model()
 x = m.int("x", lb=0, ub=30)
 y = m.int("y", lb=0, ub=50)
 
-q = x // 4          # lazy DivExpr
-s = x.scale(3)      # lazy ScaleExpr
+q = x // 4
+s = x.scale(3)
 
-# These compile through ladder-native fast paths (not generic PB encoders).
 m &= (s + 2 <= y)
 m &= (q == 3)
 
-# Prefer a smaller y while respecting the affine constraints.
 m.obj[1] += y
 
 r = m.solve()

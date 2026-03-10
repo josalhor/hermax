@@ -24,21 +24,21 @@ Parent wrapper (public API)
 
 The public wrapper in ``hermax.non_incremental.incomplete``:
 
-* caches hard/soft clauses in Python (fake incrementality),
-* accepts incremental API calls (``add_clause``, ``add_soft_unit``, etc.),
-* builds a serializable snapshot on each ``solve()``, and
-* launches a one-shot worker subprocess.
+* caches hard/soft clauses in Python (fake incrementality)
+* accepts incremental API calls (``add_clause``, ``add_soft_unit``, etc.)
+* builds a serializable snapshot on each ``solve()``
+* launches a one-shot worker subprocess
 
 Child worker
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The worker:
 
-* imports the native binding-backed solver wrapper,
-* replays the snapshot into a fresh solver instance,
-* runs exactly one ``solve()``,
+* imports the native binding-backed solver wrapper
+* replays the snapshot into a fresh solver instance
+* runs exactly one ``solve()``
 * returns status/model/cost/signature, then
-* exits.
+* exits
 
 Timeout
 -----------------
@@ -55,9 +55,6 @@ Typical timeout sequence:
 4. Wait ``timeout_grace_s``.
 5. Force kill if still running.
 
-This design is reusable for portfolio-style execution (multiple subprocesses
-racing on the same snapshot).
-
 Portfolio reuse
 ---------------
 
@@ -73,7 +70,7 @@ classes (not the public subprocess wrappers) to avoid nested subprocesses.
 Assumptions And Incrementality
 -----------------------------------
 
-These wrappers are not natively incremental. Hermax emulates an IPAMIR-style
+These wrappers are not natively incremental. Hermax emulates an IPAMIR
 API by rebuilding solver state on each ``solve()``.
 
 Assumptions are emulated by adding temporary hard unit clauses to the

@@ -8,7 +8,6 @@ for i, v in enumerate([1, 4, 2, 7, 6, 8]):
 
 watermark = timeline.running_max(name="watermark")
 
-# Check the running-maximum semantics at one position.
 m &= (watermark[3] == 7)
 
 r = m.solve()

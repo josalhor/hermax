@@ -37,7 +37,10 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',
+    'sphinx_copybutton',
     'myst_parser',
+    'sphinx_sitemap',
+    'sphinxext.opengraph',
 ]
 
 # Allow API docs to render even when native solver extensions are unavailable
@@ -69,6 +72,8 @@ html_css_files = ['custom.css']
 html_logo = "../images/banner.png"
 html_favicon = "../images/favicon.png"
 html_show_sourcelink = False
+html_baseurl = os.environ.get("READTHEDOCS_CANONICAL_URL", "https://hermax.readthedocs.io/en/latest/")
+html_search_language = "en"
 
 html_theme_options = {
     "logo": {
@@ -114,3 +119,14 @@ autodoc_default_options = {
 autosummary_generate = True
 autodoc_class_signature = 'separated'
 autodoc_typehints = 'description'
+
+# Code block UX
+copybutton_prompt_text = ""
+copybutton_prompt_is_regexp = False
+copybutton_only_copy_prompt_lines = False
+copybutton_remove_prompts = False
+
+# SEO / social metadata
+ogp_site_url = html_baseurl
+ogp_site_name = "Hermax Documentation"
+ogp_use_first_image = True

@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 430" role="img" aria-label="Incremental queries timeline">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --stroke: rgba(74, 64, 54, 0.22);
+      --panel: rgba(244, 239, 232, 0.82);
+      --accent: #146356;
+      --accent-bg: rgba(20, 99, 86, 0.12);
+      --temp: #b8265d;
+      --temp-bg: rgba(184, 38, 93, 0.14);
+      --arrow: rgba(74, 64, 54, 0.42);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --stroke: rgba(255, 255, 255, 0.16);
+        --panel: rgba(36, 35, 33, 0.88);
+        --accent: #4fd2b5;
+        --accent-bg: rgba(79, 210, 181, 0.16);
+        --temp: #ff6fa1;
+        --temp-bg: rgba(255, 111, 161, 0.16);
+        --arrow: rgba(235, 225, 210, 0.42);
+      }
+    }
+
+    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; }
+    .title { font-size: 16px; font-weight: 700; fill: var(--ink); }
+    .subtitle { font-size: 13px; fill: var(--muted); }
+    .step { fill: var(--panel); stroke: var(--stroke); stroke-width: 1.4; rx: 14; }
+    .step-title { font-size: 13px; font-weight: 700; fill: var(--ink); }
+    .label { font-size: 12px; fill: var(--muted); }
+    .value { font-size: 12px; fill: var(--ink); }
+    .tag-persist { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.2; rx: 10; }
+    .tag-temp { fill: var(--temp-bg); stroke: var(--temp); stroke-width: 1.2; rx: 10; }
+    .tag-text-persist { font-size: 11px; font-weight: 700; fill: var(--accent); }
+    .tag-text-temp { font-size: 11px; font-weight: 700; fill: var(--temp); }
+    .arrow { stroke: var(--arrow); stroke-width: 1.8; fill: none; marker-end: url(#arr); }
+    .legend { fill: var(--accent-bg); stroke: var(--stroke); stroke-width: 1.2; rx: 12; }
+  </style>
+
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="currentColor" />
+    </marker>
+  </defs>
+
+  <text class="title" x="28" y="30">Incremental Query Flow</text>
+  <text class="subtitle" x="236" y="30">hard update persists · assumptions are temporary · objective replacement persists</text>
+
+  <path class="arrow" d="M226,170 L244,170" />
+  <path class="arrow" d="M452,170 L470,170" />
+  <path class="arrow" d="M678,170 L696,170" />
+  <path class="arrow" d="M904,170 L922,170" />
+
+  <rect class="step" x="20" y="56" width="206" height="238" />
+  <text class="step-title" x="34" y="82">1) Baseline solve</text>
+  <rect class="tag-persist" x="34" y="92" width="84" height="20" />
+  <text class="tag-text-persist" x="44" y="106">model state</text>
+  <text class="label" x="34" y="132">cost</text>
+  <text class="value" x="88" y="132">3</text>
+  <text class="label" x="34" y="154">T1</text><text class="value" x="88" y="154">M1</text>
+  <text class="label" x="34" y="174">T2</text><text class="value" x="88" y="174">M1</text>
+  <text class="label" x="34" y="194">T3</text><text class="value" x="88" y="194">M1</text>
+  <text class="subtitle" x="34" y="224">all prefer M1 initially</text>
+
+  <rect class="step" x="246" y="56" width="206" height="238" />
+  <text class="step-title" x="260" y="82">2) Add hard rule</text>
+  <rect class="tag-persist" x="260" y="92" width="128" height="20" />
+  <text class="tag-text-persist" x="270" y="106">persistent update</text>
+  <text class="label" x="260" y="132">added</text>
+  <text class="value" x="314" y="132">T2 != M1</text>
+  <text class="label" x="260" y="154">cost</text>
+  <text class="value" x="314" y="154">5</text>
+  <text class="label" x="260" y="174">T1</text><text class="value" x="314" y="174">M1</text>
+  <text class="label" x="260" y="194">T2</text><text class="value" x="314" y="194">M2</text>
+  <text class="label" x="260" y="214">T3</text><text class="value" x="314" y="214">M1</text>
+
+  <rect class="step" x="472" y="56" width="206" height="238" />
+  <text class="step-title" x="486" y="82">3) Assumption solve</text>
+  <rect class="tag-temp" x="486" y="92" width="128" height="20" />
+  <text class="tag-text-temp" x="496" y="106">temporary only</text>
+  <text class="label" x="486" y="132">assume</text>
+  <text class="value" x="540" y="132">T1 == M2</text>
+  <text class="label" x="486" y="154">cost</text>
+  <text class="value" x="540" y="154">7</text>
+  <text class="label" x="486" y="174">T1</text><text class="value" x="540" y="174">M2</text>
+  <text class="label" x="486" y="194">T2</text><text class="value" x="540" y="194">M2</text>
+  <text class="label" x="486" y="214">T3</text><text class="value" x="540" y="214">M1</text>
+
+  <rect class="step" x="698" y="56" width="206" height="238" />
+  <text class="step-title" x="712" y="82">4) Assumption removed</text>
+  <rect class="tag-persist" x="712" y="92" width="128" height="20" />
+  <text class="tag-text-persist" x="722" y="106">model state</text>
+  <text class="label" x="712" y="132">cost</text>
+  <text class="value" x="766" y="132">5</text>
+  <text class="label" x="712" y="154">T1</text><text class="value" x="766" y="154">M1</text>
+  <text class="label" x="712" y="174">T2</text><text class="value" x="766" y="174">M2</text>
+  <text class="label" x="712" y="194">T3</text><text class="value" x="766" y="194">M1</text>
+  <text class="subtitle" x="712" y="224">reverts assumption only</text>
+
+  <rect class="step" x="924" y="56" width="236" height="238" />
+  <text class="step-title" x="938" y="82">5) Replace objective</text>
+  <rect class="tag-persist" x="938" y="92" width="144" height="20" />
+  <text class="tag-text-persist" x="948" y="106">persistent update</text>
+  <text class="label" x="938" y="132">change</text>
+  <text class="value" x="1002" y="132">penalty(T3=M1): 1→5</text>
+  <text class="label" x="938" y="154">cost</text>
+  <text class="value" x="1002" y="154">7</text>
+  <text class="label" x="938" y="174">T1</text><text class="value" x="1002" y="174">M1</text>
+  <text class="label" x="938" y="194">T2</text><text class="value" x="1002" y="194">M2</text>
+  <text class="label" x="938" y="214">T3</text><text class="value" x="1002" y="214">M2</text>
+
+</svg>

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 280" role="img" aria-label="Element constraint problem visualization">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --line: rgba(74, 64, 54, 0.16);
+      --card: rgba(244, 239, 232, 0.82);
+      --card-stroke: rgba(74, 64, 54, 0.18);
+      --worker: #4b6cb7;
+      --budget: #146356;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --line: rgba(255, 255, 255, 0.14);
+        --card: rgba(36, 35, 33, 0.88);
+        --card-stroke: rgba(255, 255, 255, 0.12);
+        --worker: #8aa8ff;
+        --budget: #4fd2b5;
+      }
+    }
+    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; }
+    .meta { font-size: 13px; font-weight: 600; fill: var(--ink); }
+    .secondary { fill: var(--muted); font-weight: 400; }
+    .box { fill: var(--card); stroke: var(--card-stroke); stroke-width: 1.4; rx: 16; }
+    .label { font-size: 16px; font-weight: 700; fill: var(--ink); }
+    .small { font-size: 13px; font-weight: 600; fill: var(--muted); }
+    .num { font-size: 16px; font-weight: 700; fill: var(--ink); text-anchor: middle; dominant-baseline: middle; }
+    .head { font-size: 14px; font-weight: 700; fill: var(--ink); text-anchor: middle; }
+    .worker { fill: color-mix(in srgb, var(--worker) 12%, transparent); stroke: color-mix(in srgb, var(--worker) 40%, var(--card-stroke)); }
+    .budget { fill: color-mix(in srgb, var(--budget) 10%, transparent); stroke: color-mix(in srgb, var(--budget) 38%, var(--card-stroke)); }
+    .line { stroke: var(--line); stroke-width: 1.4; }
+  </style>
+
+  <text class="meta" x="40" y="28">
+    Element constraint instance
+    <tspan class="secondary"> · choose one worker index and constrain the selected cost by budget</tspan>
+  </text>
+
+  <rect class="box worker" x="60" y="66" width="400" height="148" />
+  <text class="label" x="82" y="92">worker_costs</text>
+
+  <line class="line" x1="160" y1="104" x2="160" y2="196" />
+  <line class="line" x1="240" y1="104" x2="240" y2="196" />
+  <line class="line" x1="320" y1="104" x2="320" y2="196" />
+  <line class="line" x1="400" y1="104" x2="400" y2="196" />
+  <line class="line" x1="80" y1="136" x2="440" y2="136" />
+
+  <text class="head" x="120" y="126">0</text>
+  <text class="head" x="200" y="126">1</text>
+  <text class="head" x="280" y="126">2</text>
+  <text class="head" x="360" y="126">3</text>
+
+  <text class="num" x="120" y="166">20</text>
+  <text class="num" x="200" y="166">40</text>
+  <text class="num" x="280" y="166">75</text>
+  <text class="num" x="360" y="166">120</text>
+
+  <rect class="box budget" x="500" y="96" width="200" height="88" />
+  <text class="label" x="522" y="124">budget</text>
+  <text class="small" x="522" y="148">0 ≤ budget ≤ 120</text>
+  <text class="small" x="522" y="170">30 ≤ costs[worker] ≤ budget</text>
+</svg>

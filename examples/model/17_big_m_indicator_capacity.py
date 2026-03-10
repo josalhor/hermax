@@ -9,7 +9,6 @@ load = m.int("load", lb=0, ub=20)
 # if truck is used, load <= 12; otherwise load <= 4
 m &= (load - 8 * use_truck <= 4)
 
-# Prefer using the truck, but also prefer larger load.
 m.obj[3] += ~use_truck
 m.obj[1] += -load.piecewise(base_value=0, steps={k: k for k in range(1, 20)})
 

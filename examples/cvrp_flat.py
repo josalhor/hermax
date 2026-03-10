@@ -37,7 +37,7 @@ for i in range(n):
 for i in range(n):
     for j in range(n):
         if i != j:
-            m.add_soft(~edge[i][j], weight=dist[i][j])
+            m.obj += dist[i][j] * edge[i][j]
 
 res = m.solve()
 

@@ -12,7 +12,6 @@ m &= task_b.no_overlap(task_c)
 m &= task_a.no_overlap(task_c)
 m &= task_a.ends_before(task_c)
 
-# Prefer earlier completion for C (soft lateness penalties on start threshold bits via Int objective).
 m.obj[1] += task_c.start
 
 r = m.solve()

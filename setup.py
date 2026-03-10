@@ -1113,6 +1113,9 @@ def _parse_csv_env(name: str) -> set[str]:
 
 def _filter_solver_extensions(exts):
     include = _parse_csv_env("HERMAX_SOLVER_INCLUDE")
+    if include and {tok.lower() for tok in include} <= {"none", "off", "null"}:
+        print("HERMAX_SOLVER_INCLUDE active: (none)")
+        return []
     if not include:
         return exts
     filtered = [e for e in exts if e.name in include]

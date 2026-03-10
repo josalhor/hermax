@@ -3,14 +3,14 @@ Basic Usage
 
 .. quickstart-basic-body-start
 
-Start with the modelling path. This is the most natural entry point if your
+Start with the modelling path. This is the entry point if your
 problem is already expressed in terms of decisions, constraints, and an
 objective.
 
 Model Example
 -------------
 
-This flat CVRP example shows the usual Hermax workflow with MTZ-style load
+This CVRP example shows the usual Hermax workflow with MTZ load
 constraints [1]_:
 
 1. declare variables,
@@ -28,7 +28,7 @@ Problem
 
 .. only:: latex
 
-   *Visualization omitted from PDF build (cvrp flat problem). See the HTML docs for the diagram.*
+   *Visualization omitted from PDF build (cvrp problem). See the HTML docs for the diagram.*
 
 .. literalinclude:: ../examples/cvrp_flat.py
    :language: python
@@ -51,12 +51,12 @@ Solution
 
 .. only:: latex
 
-   *Visualization omitted from PDF build (cvrp flat solution). See the HTML docs for the diagram.*
+   *Visualization omitted from PDF build (cvrp solution). See the HTML docs for the diagram.*
 
-Direct Solver Example
----------------------
+Incremental MaxSAT Example
+--------------------------
 
-If you already work directly with literals and clauses, use the solver API
+If you already work with literals and clauses, use the solver API
 without going through the modelling layer. This version uses
 ``pysat.formula.IDPool`` from PySAT [2]_ to manage variable identifiers and
 ``hermax.incremental.UWrMaxSAT`` [3]_ as the backend.

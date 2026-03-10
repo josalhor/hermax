@@ -29,9 +29,9 @@ def main() -> int:
     allow_fail = _as_bool_env("HERMAX_CIBW_ALLOW_TEST_FAILURE", "0")
     timeout_s = int(os.environ.get("HERMAX_CIBW_COMPLIANCE_TIMEOUT", "180"))
 
-    if profile not in {"smoke", "compliance", "full"}:
+    if profile not in {"smoke", "compliance", "full", "pyodide"}:
         print(
-            f"Unknown HERMAX_CIBW_TEST_PROFILE={profile!r}; expected one of: smoke, compliance, full",
+            f"Unknown HERMAX_CIBW_TEST_PROFILE={profile!r}; expected one of: smoke, compliance, full, pyodide",
             file=sys.stderr,
         )
         return 2
@@ -57,6 +57,18 @@ def main() -> int:
                 str(timeout_s),
                 "--ci-policy",
                 "pass-skip",
+            ]
+        )
+    elif profile == "pyodide":
+        commands.append(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "tests/core/test_rc2_reentrant_soft_zero.py",
+                "tests/model/test_model_solve_convenience.py",
+                "tests/pyodide/test_pyodide_solver_surface.py",
             ]
         )
     else:

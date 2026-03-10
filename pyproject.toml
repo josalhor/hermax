@@ -73,6 +73,15 @@ before-build = "rm -rf build hermax.egg-info *.so *.pyd *.dylib loading/*.so && 
 MACOSX_DEPLOYMENT_TARGET = "14.0"
 CMAKE_ARGS = "-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0"
 
+[tool.cibuildwheel.pyodide]
+before-build = "python -m pip install cmake 'pybind11<3' setuptools wheel"
+test-command = "python -m pytest -q -k 'not test_model_solve_accepts_portfolio_solver_class_with_kwargs' tests/core/test_rc2_reentrant_soft_zero.py tests/model/test_model_solve_convenience.py tests/pyodide/test_pyodide_solver_surface.py"
+
+[tool.cibuildwheel.pyodide.environment]
+HERMAX_SOLVER_INCLUDE = "none"
+HERMAX_CIBW_TEST_PROFILE = "pyodide"
+HERMAX_CIBW_ALLOW_TEST_FAILURE = "0"
+
 # Overrides specifically for Intel
 [[tool.cibuildwheel.overrides]]
 select = "*-macosx_x86_64"

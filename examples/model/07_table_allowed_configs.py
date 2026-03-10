@@ -17,7 +17,6 @@ valid_configs = [
 spec = m.vector([cpu, ram, mobo], name="system_spec")
 m &= spec.is_in(valid_configs)
 
-# Partial choices can propagate the rest through the table encoding.
 m &= (cpu == 2)
 m &= (ram == 4)
 

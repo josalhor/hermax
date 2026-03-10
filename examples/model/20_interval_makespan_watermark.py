@@ -14,7 +14,6 @@ m &= a.ends_before(b)
 
 makespan = m.max([a.end, b.end, c.end], name="makespan")
 
-# Minimize the schedule end time directly through IntVar objective lowering.
 m.obj[1] += makespan
 
 r = m.solve()

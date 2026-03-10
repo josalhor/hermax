@@ -1,5 +1,9 @@
 # Hermax: Incremental MaxSAT Solvers for Python
 
+[![PyPI version](https://img.shields.io/pypi/v/hermax.svg)](https://pypi.org/project/hermax/)
+[![PyPI wheel](https://img.shields.io/pypi/wheel/hermax.svg)](https://pypi.org/project/hermax/)
+[![Python versions](https://img.shields.io/pypi/pyversions/hermax.svg)](https://pypi.org/project/hermax/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Documentation Status](https://readthedocs.org/projects/hermax/badge/?version=latest)](https://hermax.readthedocs.io/en/latest/?badge=latest)
 
 ![Hermax Banner](https://raw.githubusercontent.com/josalhor/hermax/main/images/banner.png)

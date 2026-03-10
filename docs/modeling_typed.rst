@@ -1,4 +1,4 @@
-Enum and Int
+Enum, Int and Intervals
 =============================
 
 Typed finite-domain variables on top of Boolean literals:
@@ -32,15 +32,15 @@ Enum subset membership
 
    model &= shift_type.is_in(["morning", "day"])
 
-This returns a flat :class:`Clause` over the underlying choice literals
+This returns a :class:`Clause` over the underlying choice literals
 without introducing auxiliary variables.
 
 * Non-nullable enum -> Exactly one choice must be selected
-* Nullable enum -> At most one choice, with ``None`` meaning "no choice"
+* Nullable enum -> At most one choice, with ``None`` meaning no choice
 
-Nullable enums are useful for "optional assignment" modelling.
+Nullable enums are useful for optional assignment modelling.
 
-Enum-to-Enum Relations
+Enum-Enum Comparisons
 ----------------------
 
 Enum variables support:
@@ -99,10 +99,7 @@ The model implements exact integer relations across int variables:
 
 which return :class:`ClauseGroup`.
 
-Full Boolean reification of Int relations
------------------------------------------
-
-Boolean indicators can be tied to native integer relations directly:
+Boolean indicators can be tied to native integer relations:
 
 .. code-block:: python
 
@@ -139,8 +136,7 @@ This avoids naive quadratic approaches.
 Ladder constraints
 -------------------------
 
-The ladder encoding enables constraints that compile to small CNF directly,
-without PB/cardinality encoders.
+The ladder encoding enables constraints that compile to small CNF without PB/Card encoders.
 
 Distance bound: ``|x - y| <= D``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -200,7 +196,7 @@ Use this instead of many ``forbid_value()`` calls for large gaps.
 Range membership indicator: ``in_range()``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Use :meth:`hermax.model.IntVar.in_range` to build a reusable Boolean literal
+Use :meth:`hermax.model.IntVar.in_range` to build a Boolean literal
 representing inclusive range membership:
 
 .. code-block:: python
@@ -247,7 +243,7 @@ Using ``IntVar`` in PB expressions
 Piecewise Step Functions as PB
 -----------------------------------------------
 
-``IntVar`` can also be mapped to a step function directly as a lazy
+``IntVar`` can also be mapped to a step function as a lazy
 :class:`~hermax.model.PBExpr`:
 
 .. code-block:: python
@@ -278,10 +274,10 @@ expression is represented as:
 
 where ``[x >= t_i]`` is the ladder-threshold literal for the integer variable.
 
-This construction:
+This:
 
 * Burns no new variables
-* Emits no clauses at construction time
+* Emits no clauses
 * Reuses the existing ladder literals of ``x``
 * Composes into later PB constraints
 
@@ -313,7 +309,7 @@ Thresholds are clipped against the integer domain:
 ``IntVar`` in objective
 -----------------------
 
-You can add an integer variable directly to the weighted objective:
+You can add an integer variable to the weighted objective:
 
 .. code-block:: python
 
@@ -390,7 +386,7 @@ Lazy array indexing via ``@``
    model &= (costs @ w <= 50)
 
 The expression ``costs @ w`` creates a lazy descriptor. On comparison, the
-model unrolls the index domain and compiles a flat :class:`ClauseGroup`.
+model unrolls the index domain and compiles a :class:`ClauseGroup`.
 
 Supported forms:
 
@@ -400,7 +396,7 @@ Supported forms:
 Variable index on ``IntVector``
 ---------------------------------------------------
 
-``IntVector`` also supports variable indexing directly:
+``IntVector`` also supports variable indexing:
 
 .. code-block:: python
 
@@ -422,7 +418,7 @@ Current constraints:
 * ``idx.lb >= 0``
 * vector length covers ``[idx.lb, idx.ub)``
 
-For canonical element equality/ordering shapes, this compiles to flat conditional
+For element equality/ordering shapes, this compiles to conditional
 clauses and avoids generic PB/Card dispatch.
 
 Intervals
@@ -474,8 +470,8 @@ Performance
 The interval identity ``end == start + duration`` is **not** compiled through
 the generic PB/Cardinality encoder pipeline.
 
-Instead, because both endpoints use the same ladder width by construction, the
-model directly welds the endpoint ladders with threshold-bit equivalences:
+Instead, because both endpoints use the same ladder width and the
+model welds the endpoint ladders with threshold-bit equivalences:
 
 * ``start_t[i] <-> end_t[i]`` for each ladder position ``i``
 

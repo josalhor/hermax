@@ -16,8 +16,6 @@ Conventions
 Example 13: Piecewise
 --------------------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
 
 Use this pattern when a cost or penalty depends on an integer variable through
 tiers, and you want to use that cost in both constraints and the objective.
@@ -28,7 +26,7 @@ Efficiency
 The piecewise expression is compiled as a weighted sum over the existing ladder
 literals of the integer variable. It does **not** create a proxy integer
 variable for the mapped cost. In practice, this removes a large amount of
-unnecessary encoding work in budget-style models.
+unnecessary encoding work in budget models.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -77,8 +75,7 @@ budget cap.
 Example 14: Histogram Binning
 -----------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Use this when you need counts over integer buckets and want those counts in constraints
 or the objective.
@@ -86,7 +83,7 @@ or the objective.
 Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
-``in_range()`` returns a reusable boolean indicator for an interval, which can be summed directly, whic is very efficient.
+``in_range()`` returns a boolean indicator for an interval, which can be summed directly, which is very efficient.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -124,7 +121,7 @@ Code
 Output
 ^^^^^^
 
-The decoded list output shows the chosen completion times, and the three bin
+The output shows the chosen completion times, and the three bin
 counts match the target histogram exactly.
 
 .. literalinclude:: _generated/example_outputs/14_histogram_binning.txt
@@ -134,18 +131,16 @@ counts match the target histogram exactly.
 Example 15: Domain Holes + Distance Bound
 -----------------------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Use this when the domain itself carries structure and you want to encode
-that structure directly instead of routing through generic pseudo-Boolean
-constraints.
+that structure instead of routing through generic PB constraints.
 
 Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
-These constraints compile to very small clause sets and do not need PB/Card encoders. They are especially useful when the
-domain is large but the forbidden structure is simple.
+These constraints compile to very small sets of clauses.
+They are useful when the domain is large but the forbidden structure is simple.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -157,20 +152,19 @@ New primitives
 Model
 ^^^^^
 
-This model is domain-constraint heavy and uses ladder operations
-throughout.
+This model is constraint heavy and uses ladder operations.
 
 .. math::
 
    \begin{aligned}
    \text{Variables:}\quad & x,y \in \{0,\dots,29\} \\
-   \text{Holes:}\quad & x \notin [10,20],\quad y \neq 13 \\
+   \text{Holes:}\quad & x \notin [10,20],\quad y \neq 11 \\
    \text{Proximity:}\quad & |x-y| \le 2 \\
    \text{Objective:}\quad & \min \; -score(x) - score(y)
    \end{aligned}
 
-where ``score`` is expressed with ``piecewise(...)`` and lowered directly as a
-step-cost expression in the objective.
+where ``score`` is expressed with ``piecewise(...)`` and lowered as a
+target-preference expression in the objective.
 
 Code
 ^^^^
@@ -182,18 +176,29 @@ Code
 Output
 ^^^^^^
 
-The solver returns values that avoid the forbidden hole and satisfy the distance
-bound without using generic PB/Card encoders for these constraints.
+The solution satisfies the distance bound and avoids both domain
+holes.
 
 .. literalinclude:: _generated/example_outputs/15_domain_holes_and_distance.txt
    :language: console
 
+Solution
+^^^^^^^^
 
-Example 16: Lazy Division + Scaling
+.. only:: html
+
+   .. image:: /_static/domain_holes_distance_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (domain-holes + distance solution). See the HTML docs for the diagram.*
+
+
+Example 16: Division + Scaling
 -------------------------------------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Use this when your model has coarse units or derived quantities and you still want to write natural
 algebraic constraints.
@@ -201,7 +206,7 @@ algebraic constraints.
 Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
-The syntax looks like generic arithmetic, but the compiler recognizes these
+The compiler recognizes these arithmetic
 forms and compiles them with ladder fast paths instead of generic PB/Card
 encoders. This can remove a large amount of auxiliary-variable bloat in
 scheduling/resource models.
@@ -209,9 +214,8 @@ scheduling/resource models.
 New primitives
 ^^^^^^^^^^^^^^
 
-* ``x // d`` (lazy division expression)
-* ``x.scale(c)`` (lazy scaling expression)
-* Affine integer fast paths (transparent compiler optimization)
+* ``x // d`` (division expression)
+* ``x.scale(c)`` (scaling/multiplication expression)
 
 Model
 ^^^^^
@@ -238,18 +242,14 @@ Code
 Output
 ^^^^^^
 
-The printed quotient and scaled value make it easy to verify that the lazy
-derived expressions are being used correctly in the affine constraints.
-
 .. literalinclude:: _generated/example_outputs/16_lazy_div_scale_affine.txt
    :language: console
 
 
-Example 17: Big-M Constraint
+Example 17: Big-M
 -------------------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Use this for the classic Opertions Research (OR) pattern \[if boolean is on, integer bound shifts\].
 This appears in optional resources, setup-dependent capacities, truck/worker
@@ -259,18 +259,13 @@ Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
 This pattern is compiled as a pair of conditional ladder bounds instead of a generic
-PB encoding. In practice, that usually means fewer clauses and far fewer
-auxiliary variables than a naive Big-M lowering.
-
-New primitives
-^^^^^^^^^^^^^^
-
-No new user primitives are introduced; This example showcases a transparent compiler fast path.
+PB encoding. That means fewer clauses and fewer
+auxiliary variables than a naive Big-M.
 
 Model
 ^^^^^
 
-The user writes ordinary affine syntax. The boolean toggles a tighter or looser
+The user writes ordinary syntax. The boolean toggles a tighter or looser
 bound on the integer variable.
 
 .. math::
@@ -301,11 +296,10 @@ capacity bound in a Big-M style model, compiled through the dedicated fast path.
    :language: console
 
 
-Example 18: Running Watermark
+Example 18: Running Maximum
 -----------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Show the ``running_max()`` helper, which packages the efficient cumulative-fold
 pattern for prefix maxima and avoids the common quadratic prefix-max modelling
@@ -316,7 +310,7 @@ Efficiency
 
 The naive way to compute every prefix maximum recomputes larger and larger
 prefixes independently. ``running_max()`` builds the sequence cumulatively,
-which is the best construction pattern for ladder max aggregation.
+which is the best pattern for ladder max aggregation.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -356,8 +350,7 @@ The watermark vector is the running prefix maximum of the input timeline.
 Example 19: ``all_different``
 ------------------------------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Use this when you care about modelling scalability and want to choose the right
 ``all_different`` backend for your domain size and vector length.
@@ -384,7 +377,7 @@ Both backends encode the same logical constraint.
    \end{aligned}
 
 ``pairwise`` uses scalar inequalities directly. ``bipartite`` channels to
-exact-value indicators and adds per-value at-most-one constraints.
+value indicators and adds per-value AMO constraints.
 
 Code
 ^^^^
@@ -406,8 +399,7 @@ kind of structural tradeoff this example is meant to compare.
 Example 20: Interval Scheduling
 ----------------------------------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Use this as a template for small scheduling models where you want readable
 interval constraints.
@@ -421,7 +413,7 @@ New primitives
 Model
 ^^^^^
 
-This model combines interval-level disjunctive scheduling with a classic
+This model combines interval-level disjunctive scheduling with a 
 makespan objective:
 
 .. math::
@@ -473,8 +465,7 @@ Solution
 Example 21: Decode Collections
 ------------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Use this when the model contains vectors, matrices, dictionaries, or enum
 collections and you want to inspect the decoded result in ordinary Python
@@ -504,8 +495,7 @@ The result object decodes each collection into the matching Python container.
 Example 22: Indexed Lookup
 --------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Use this when one decision chooses a value from a table. Common cases are
 machine processing times, worker costs, or plan limits.
@@ -537,7 +527,7 @@ vectors and you want the model to follow that structure directly.
 
 .. warning::
 
-   Indexed lookup is a good fit for small tables and menu-style choices, but it
+   Indexed lookup is a good fit for small tables and menu choices, but it
    does not scale well. Use it when the lookup itself is the natural model. For
    large tables or many repeated lookups, prefer a formulation with more direct
    structure if one is available.
@@ -562,14 +552,10 @@ from the duration table.
 Example 23: Optional Assignment
 -------------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Use this when an item may be assigned to a resource, but leaving it unassigned
 is also allowed with a penalty.
-
-Why this is useful
-^^^^^^^^^^^^^^^^^^
 
 Many real problems are not "assign everything no matter what". This pattern is
 better for overload planning, staff shortages, fallback scheduling, and
@@ -601,7 +587,7 @@ Leaving a task unassigned pays a penalty.
       + \sum_{t,w} c_{t,w}[a_t = w]
    \end{aligned}
 
-This is often easier to read than a full Boolean assignment matrix, especially
+This is easier to read than a Boolean assignment matrix, especially
 when each item can go to at most one place.
 
 Code
@@ -624,14 +610,8 @@ as ``None``.
 Example 24: Facility Location
 -----------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
-
 Use this when opening a site has a fixed cost, and each client must be attached
 to one open site.
-
-Why this is useful
-^^^^^^^^^^^^^^^^^^
 
 This is a classic optimization pattern because it combines three common ideas:
 open-or-close decisions, assignment decisions, and fixed costs.
@@ -708,8 +688,7 @@ Solution
 Example 25: Portfolio Solve
 ---------------------------
 
-When to use this
-^^^^^^^^^^^^^^^^
+
 
 Use this when the model is already written and you want a better default solve
 strategy without manually choosing a single backend.
@@ -721,16 +700,9 @@ Solver performance can vary a lot from one model family to another. A
 portfolio lets you keep the same model and try several solvers behind the same
 interface.
 
-
-Model
-^^^^^
-
-The optimization model itself does not change. The point of the example is to
-keep the same constraints and objective, but switch the solve strategy to a
+The point of the example is to keep the same constraints and objective,
+but switch the solve strategy to a
 complete preset portfolio.
-
-This is a good pattern when you want to keep the modeling layer stable while
-still tuning for performance.
 
 
 Code
@@ -762,7 +734,201 @@ wrapper.
    :language: console
 
 
+Example 29: Floating Point Objective
+------------------------------------
+
+Use this when constraints are discrete but objective terms are fractional
+(expected ROI, probabilities, prices, rates).
+
+You keep objective terms in natural units instead of manual 100/1000 scaling.
+
+New primitives
+^^^^^^^^^^^^^^
+
+* :meth:`hermax.model.Model.set_objective_precision`
+* floating-point objective weights via ``model.obj[w] += ...``
+
+Model
+^^^^^
+
+Capital budgeting variant: choose projects under a developer-month capacity and
+maximize expected ROI (millions USD). Since Hermax minimizes, the model
+minimizes missed ROI:
+
+.. math::
+
+   \begin{aligned}
+   \min \quad & \sum_{p} roi_p \cdot [\neg fund_p] \\
+   \text{s.t.}\quad & \sum_{p} months_p \cdot [fund_p] \le 18
+   \end{aligned}
+
+Problem
+^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/float_objective_budgeting_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (float-objective budgeting problem). See the HTML docs for the diagram.*
+
+Code
+^^^^
+
+.. literalinclude:: ../examples/model/29_float_objective_budgeting.py
+   :language: python
+   :caption: examples/model/29_float_objective_budgeting.py
+
+.. note::
+
+   Floating objective weights require explicit precision setup, for example
+   ``set_objective_precision(decimals=2)``.
+
+Output
+^^^^^^
+
+The output reports missed ROI (optimization cost) and selected ROI in the same
+units.
+
+.. literalinclude:: _generated/example_outputs/29_float_objective_budgeting.txt
+   :language: console
+
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/float_objective_budgeting_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (float-objective budgeting solution). See the HTML docs for the diagram.*
+
+
+Example 30: Incremental Queries
+-------------------------------
+
+Use this when you solve once, add a new constraint from updated conditions, and
+solve again.
+
+You can iterate on one live model with three incremental operations:
+hard updates, temporary assumptions, and objective updates.
+
+Model
+^^^^^
+
+A small assignment model is solved in multiple passes:
+
+1. Baseline solve
+2. Hard update: forbid ``T2 -> M1``
+3. What-if query with assumptions: force ``T1 -> M2`` temporarily
+4. Objective replacement (automatic objective diffing)
+
+Code
+^^^^
+
+.. literalinclude:: ../examples/model/30_incremental_rescheduling.py
+   :language: python
+   :caption: examples/model/30_incremental_rescheduling.py
+
+Output
+^^^^^^
+
+The transcript shows that assumptions do not persist, while hard/objective
+updates do.
+
+.. literalinclude:: _generated/example_outputs/30_incremental_rescheduling.txt
+   :language: console
+
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/incremental_queries_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (incremental-query timeline). See the HTML docs for the diagram.*
+
+
+Example 31: Hierarchical Objectives
+-----------------------------------
+
+
+Use this when one objective strictly dominates another.
+
+Lexicographic optimization avoids weighting hacks and enforces
+priority order.
+
+Model
+^^^^^
+
+Assignment scenario with two objective tiers:
+
+* Tier 0: minimize unassigned VIP clients
+* Tier 1: minimize travel cost
+
+The model uses:
+
+.. code-block:: python
+
+   m.tier_obj.set_lexicographic(unassigned_vips, travel)
+
+Problem
+^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/hierarchical_objectives_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (hierarchical-objective problem). See the HTML docs for the diagram.*
+
+Code
+^^^^
+
+.. literalinclude:: ../examples/model/31_hierarchical_objectives.py
+   :language: python
+   :caption: examples/model/31_hierarchical_objectives.py
+
+Output
+^^^^^^
+
+The result reports per-tier costs through ``SolveResult.tier_costs``.
+
+.. literalinclude:: _generated/example_outputs/31_hierarchical_objectives.txt
+   :language: console
+
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/hierarchical_objectives_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (hierarchical-objective solution). See the HTML docs for the diagram.*
+
+.. note::
+
+   This example uses ``solve(lex_strategy="incremental")`` (the default for
+   tiered objectives), which optimizes tier by tier and hardens each optimum
+   before moving to the next tier.
+
+   ``lex_strategy="stratified"`` is also available and solves a single
+   stratified objective. It might be faster on some instances (or not, YMMV).
+
+
 Next
 ----
 
-For classic NP-hard optimization examples, continue in :doc:`np_problems`.
+For NP-hard optimization examples, continue in :doc:`np_problems`.

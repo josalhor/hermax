@@ -300,15 +300,14 @@ and also **NumPy indexing**:
 * ``m[r0:r1, c0:c1]`` -> typed submatrix view
 * ``m[r0:r1, c0:c1].flatten()`` -> typed vector
 
-Example (Sudoku subgrid)
-------------------------
+Example (Sudoku subgrid):
 
 .. code-block:: python
 
    grid = model.int_matrix("cell", 9, 9, lb=1, ub=10)
    model &= grid[0:3, 0:3].flatten().all_different()
 
-This is the intended NumPy-style syntax for rectangular subsets.
+This is the intended NumPy syntax for rectangular subsets.
 
 Keyed Dictionaries
 ------------------
@@ -335,7 +334,7 @@ This pattern is used in ``examples/wifi_model.py``. Combined with
 Decode Support
 --------------
 
-Model solution auto-decodes containers directly:
+Model solution auto-decodes containers:
 
 * vector -> Python list
 * matrix / matrix view -> nested list

@@ -1,5 +1,8 @@
 sphinx>=8,<9
 pydata-sphinx-theme>=0.16,<1
 myst-parser>=4,<5
+sphinx-copybutton>=0.5,<1
+sphinx-sitemap>=2.6,<3
+sphinxext-opengraph>=0.9,<1
 python-sat>=1.8.dev13
 sphinx-autobuild

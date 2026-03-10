@@ -16,6 +16,9 @@ class UWrMaxSAT(UWrMaxSATSolver):
 
     UWrMaxSAT is known for its efficiency in handling various MaxSAT instances, 
     combining modern SAT solving techniques with effective MaxSAT algorithms.
+
+    Note:
+        Hermax package builds compile UWrMaxSAT with SCIP integration disabled.
     """
     pass
 
@@ -27,6 +30,9 @@ class UWrMaxSATCompetition(UWrMaxSATCompSolver):
 
     It is particularly optimized for competition-style benchmarks and 
     provides robust performance across a wide range of MaxSAT problems.
+
+    Note:
+        Hermax package builds compile UWrMaxSATCompetition with SCIP integration disabled.
     """
     pass
 

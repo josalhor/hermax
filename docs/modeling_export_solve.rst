@@ -104,8 +104,7 @@ Result fields:
   per-tier raw models for incremental lex solve;
   ``None`` for stratified solve
 * ``SolveResult.cost``:
-  final-tier cost for incremental lex solve;
-  flattened total cost for stratified solve
+  final-tier cost for incremental lex solve
 
 Example:
 
@@ -130,7 +129,7 @@ the model uses **targeted relaxation**:
 * one weighted soft penalty literal
 * plus the compiled clause network conditional as hard constraints
 
-This preserves flat penalty per logical constraint.
+This preserves penalty per logical constraint.
 
 Integer objective terms
 ------------------------------
@@ -183,7 +182,7 @@ Returns :class:`hermax.model.SolveResult` with:
 * ``raw_model``
 * ``assignment`` (decoded view)
 
-Incremental Defaults and Backend Locking
+Incremental Defaults
 ----------------------------------------
 
 ``Model.solve()`` defaults to incremental behavior:
@@ -227,7 +226,7 @@ Examples:
    b = m.bool("b")
    r = m.solve(assumptions=[a.id, ~b, 1 * a, -1 * b])
 
-Soft Handles and Weight Updates
+Weight Updates
 -------------------------------
 
 ``Model.add_soft(...)`` returns a :class:`hermax.model.SoftRef`:
@@ -284,7 +283,7 @@ Float coefficients are not allowed in PB/Card constraints.
 Hermax solver integration
 -------------------------
 
-``Model.solve()`` can use Hermax MaxSAT backends directly via the IPAMIR-style
+``Model.solve()`` can use Hermax MaxSAT backends directly via the IPAMIR
 solver interface defined in :mod:`hermax.core.ipamir_solver_interface`.
 
 Supported forms:

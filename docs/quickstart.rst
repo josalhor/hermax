@@ -20,7 +20,7 @@ Next
 
 If you want to continue with runnable material, the next pages to look at are:
 
-* :doc:`examples` for solver-oriented examples.
+* :doc:`examples` for solver examples.
 * :doc:`model_examples` for modelling examples built around complete problems.
 * :doc:`model_examples_tricks` for modelling patterns and optimization tricks.
 

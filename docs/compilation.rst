@@ -15,7 +15,7 @@ The recommended approach is:
 2. Build wheels with ``cibuildwheel``.
 3. Install and test the produced wheel locally.
 
-When in doubt, prefer this wheel-first workflow over ad-hoc local builds.
+When in doubt, prefer this method over local builds.
 
 See ``pyproject.toml`` and ``setup.py`` for up-to-date build
 requirements
@@ -24,7 +24,7 @@ Installing
 ----------------------
 
 
-The most reliable developer workflow is building wheels and testing that exact
+The most reliable method is building wheels and testing that exact
 artifact:
 
 .. code-block:: bash
@@ -45,8 +45,6 @@ Optional OptiLog Formula Support
 
 Hermax can optionally accept OptiLog ``WCNF`` formulas by converting them to
 PySAT ``WCNF`` internally.
-
-For source-based workflows, install OptiLog directly:
 
 .. code-block:: bash
 

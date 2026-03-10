@@ -13,10 +13,8 @@ chosen_duration = m.int("chosen_duration", 0, 10)
 # Pick the duration attached to the chosen machine.
 m &= (durations[machine] == chosen_duration)
 
-# Exclude machine 0 to make the choice non-trivial.
 m &= (machine != 0)
 
-# Minimize the selected duration.
 m.obj[1] += chosen_duration
 
 r = m.solve()

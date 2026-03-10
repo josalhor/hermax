@@ -4,7 +4,7 @@ Testing
 Hermax ships with three complementary testing layers:
 
 1. A centralized compliance matrix runner for solver regression tracking.
-2. A grammar-aware fuzzing + delta-debugging workflow for bug discovery.
+2. A grammar-aware fuzzing + delta-debugging for bug discovery.
 3. A randomized runner over real benchmark instances.
 
 Test Entrypoints
@@ -64,7 +64,7 @@ solver x test entry to be either ``PASS`` or ``SKIP``.
 Fuzzing And Delta Debugging
 ---------------------------
 
-Hermax's fuzzing and reduction workflow follows modern MaxSAT fuzzing and
+Hermax's fuzzing and reduction follows modern MaxSAT fuzzing and
 delta-debugging practice [1]_.
 
 Run the fuzzing entrypoint:

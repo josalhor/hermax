@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 360" role="img" aria-label="Hierarchical objectives solution">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --stroke: rgba(74, 64, 54, 0.22);
+      --panel: rgba(244, 239, 232, 0.82);
+      --vip: rgba(184, 38, 93, 0.16);
+      --vip-stroke: #b8265d;
+      --chosen: #146356;
+      --chosen-soft: rgba(20, 99, 86, 0.18);
+      --accent-bg: rgba(20, 99, 86, 0.12);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --stroke: rgba(255, 255, 255, 0.16);
+        --panel: rgba(36, 35, 33, 0.88);
+        --vip: rgba(255, 111, 161, 0.16);
+        --vip-stroke: #ff6fa1;
+        --chosen: #4fd2b5;
+        --chosen-soft: rgba(79, 210, 181, 0.20);
+        --accent-bg: rgba(79, 210, 181, 0.16);
+      }
+    }
+
+    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; }
+    .title { font-size: 15px; font-weight: 700; fill: var(--ink); }
+    .subtitle { font-size: 13px; fill: var(--muted); }
+    .node { fill: var(--panel); stroke: var(--stroke); stroke-width: 1.4; rx: 14; }
+    .vip { fill: var(--vip); stroke: var(--vip-stroke); stroke-width: 1.8; }
+    .name { font-size: 14px; font-weight: 700; fill: var(--ink); }
+    .meta { font-size: 12px; fill: var(--muted); }
+    .sel { font-size: 12px; font-weight: 700; fill: var(--chosen); }
+    .choice { fill: var(--chosen-soft); stroke: var(--chosen); stroke-width: 1.7; rx: 12; }
+    .edge { stroke: var(--chosen); stroke-width: 3.0; fill: none; }
+    .box { fill: var(--accent-bg); stroke: var(--chosen); stroke-width: 1.5; rx: 14; }
+    .box-title { font-size: 14px; font-weight: 700; fill: var(--chosen); }
+    .box-text { font-size: 13px; fill: var(--ink); }
+  </style>
+
+  <text class="title" x="34" y="28">Lexicographic Optimum</text>
+  <text class="subtitle" x="210" y="28">serve all VIP clients first, then minimize travel among those feasible assignments</text>
+
+  <path class="edge" d="M254,89 C390,89 510,98 640,104" />
+  <path class="edge" d="M254,164 C390,164 510,188 640,199" />
+
+  <rect class="node vip choice" x="34" y="60" width="220" height="58" />
+  <text class="name" x="50" y="84">VIP_1</text>
+  <text class="meta" x="50" y="104">assigned to Alice</text>
+  <text class="sel" x="170" y="84">selected</text>
+
+  <rect class="node vip choice" x="34" y="135" width="220" height="58" />
+  <text class="name" x="50" y="159">VIP_2</text>
+  <text class="meta" x="50" y="179">assigned to Bob</text>
+  <text class="sel" x="170" y="159">selected</text>
+
+  <rect class="node" x="34" y="210" width="220" height="58" />
+  <text class="name" x="50" y="234">Standard_1</text>
+  <text class="meta" x="50" y="254">left unassigned</text>
+
+  <rect class="node choice" x="640" y="75" width="246" height="58" />
+  <text class="name" x="656" y="99">Alice</text>
+  <text class="meta" x="656" y="119">receives VIP_1</text>
+
+  <rect class="node choice" x="640" y="170" width="246" height="58" />
+  <text class="name" x="656" y="194">Bob</text>
+  <text class="meta" x="656" y="214">receives VIP_2</text>
+
+  <rect class="box" x="34" y="287" width="272" height="54" />
+  <text class="box-title" x="50" y="311">Tier 0 cost</text>
+  <text class="box-text" x="150" y="311">unassigned VIPs = 0</text>
+
+  <rect class="box" x="324" y="287" width="272" height="54" />
+  <text class="box-title" x="340" y="311">Tier 1 cost</text>
+  <text class="box-text" x="430" y="311">travel = 60</text>
+
+  <rect class="box" x="614" y="287" width="272" height="54" />
+  <text class="box-title" x="630" y="311">Assignments</text>
+  <text class="box-text" x="724" y="311">VIP_1→Alice, VIP_2→Bob</text>
+</svg>

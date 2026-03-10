@@ -44,7 +44,7 @@ Backend mapping:
 ..   same backend as CASHWMaxSAT with SCIP disabled (adapter mode).
 
 * :class:`hermax.non_incremental.CGSS`:
-  ``hermax.core.cgss_py.CGSSSolver`` (vendored RC2WCE/CGSS-style wrapper [7]_).
+  ``hermax.core.cgss_py.CGSSSolver`` (vendored RC2WCE/CGSS wrapper [7]_).
 * :class:`hermax.non_incremental.CGSSPMRES`:
   ``hermax.core.cgss_py.CGSSPMRESSolver`` (vendored PMRES variant [7]_).
 * :class:`hermax.non_incremental.OpenWBOOLL`:
@@ -53,6 +53,10 @@ Backend mapping:
   ``hermax.core.openwbo_py.PartMSU3Solver`` (Open-WBO PartMSU3 backend).
 * :class:`hermax.non_incremental.OpenWBO`:
   ``hermax.core.openwbo_py.AutoOpenWBOSolver`` (Open-WBO auto routing: OLL/PartMSU3/MSU3).
+
+.. warning::
+   In Hermax package builds, ``UWrMaxSATCompetition`` and  ``CASHWMaxSAT`` is compiled with SCIP
+   disabled.
 
 .. warning::
    ``hermax.non_incremental.EvalMaxSAT`` is currently unstable on macOS

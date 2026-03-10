@@ -12,8 +12,7 @@ Conventions
 Example 01: Toy Soft Clauses
 ----------------------------
 
-Purpose
-^^^^^^^
+
 
 Introduce the basic MaxSAT workflow with hard clauses and weighted soft unit
 clauses.
@@ -66,8 +65,7 @@ This output shows one optimal assignment and the resulting weighted MaxSAT cost.
 Example 02: Knapsack
 ----------------------------------------------------
 
-Purpose
-^^^^^^^
+
 
 Show a weighted pseudo-Boolean capacity constraint and a MaxSAT objective that
 maximizes profit by minimizing penalties for not selecting items.
@@ -146,8 +144,7 @@ Solution
 Example 03: Minimum Set Cover
 -----------------------------
 
-Purpose
-^^^^^^^
+
 
 Model the classic minimum set cover problem using booleans, disjunctions, and
 weighted soft penalties on selected sets.
@@ -161,10 +158,10 @@ New primitives
 Model
 ^^^^^
 
-This is the standard weighted set-cover formulation. It is a good example of
-generated disjunctions over a dictionary of booleans and objective terms tied
+This is a weighted set-cover formulation. It is an example of disjunctions
+over a dictionary of booleans and an objective tied
 to selected decisions. Set cover is one of Karp's original NP-complete
-problems [1]_ and is also a standard reference problem in Garey and Johnson
+problems [1]_ and is also a common problem in Garey and Johnson
 [3]_.
 
 .. math::
@@ -225,23 +222,15 @@ Solution
 Example 04: Minimum Vertex Cover
 --------------------------------
 
-Purpose
-^^^^^^^
-
 Model weighted vertex cover on a small graph.
-
-New primitives
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-No new primitives are introduced in this example, but rather
-it is presented in a graph setting.
 
 Model
 ^^^^^
 
-Vertex cover is the graph analogue of set cover, but it is pedagogically useful
-because the hard constraints are visually obvious and local (one clause per
-edge). It is one of Karp's original NP-complete problems [1]_ and one of the
-canonical graph problems discussed in Garey and Johnson [3]_.
+Vertex cover is the graph analogue of set cover.
+One clause per edge.
+It is one of Karp's original NP-complete problems [1]_ and one of the
+common graph problems in Garey and Johnson [3]_.
 
 .. math::
 
@@ -299,8 +288,7 @@ Solution
 Example 05: Job Assignment
 ----------------------------------------------
 
-Purpose
-^^^^^^^
+
 
 Assign one worker to each task, enforce worker capacity, 
 and minimize assignment cost.
@@ -379,8 +367,7 @@ Solution
 Example 06: Enum Subset Disjunction
 -------------------------------------------------------
 
-Purpose
-^^^^^^^
+
 
 Demonstrate the fast categorical subset helper
 :meth:`hermax.model.EnumVar.is_in`.
@@ -393,7 +380,7 @@ New primitives
 Model
 ^^^^^
 
-This model isolates the categorical subset helper with a small optimization
+The model isolates the categorical subset helper with a small optimization
 target. This pattern appears frequently in scheduling models.
 
 .. math::
@@ -426,8 +413,7 @@ The chosen shift is guaranteed to belong to the allowed subset.
 Example 07: Allowed Configurations
 -----------------------------------------------------------
 
-Purpose
-^^^^^^^
+
 
 Model an extensional table constraint over a temporary
 typed vector view.
@@ -478,10 +464,9 @@ The selected configuration is one of the allowed table rows.
 Example 08: Element Constraint (``@``)
 ---------------------------------------------------------
 
-Purpose
-^^^^^^^
 
-Show the CP-style element constraint using lazy array indexing:
+
+Show the CP element constraint using lazy array indexing:
 ``array @ int_var``.
 
 New primitives
@@ -509,6 +494,18 @@ descriptor avoids introducing a separate "selected-cost" integer variable.
 For constant right-hand sides, the implementation simplifies this further into
 domain filtering (forbidding impossible index values).
 
+Problem
+^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/element_constraint_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (element constraint problem). See the HTML docs for the diagram.*
+
 Code
 ^^^^
 
@@ -525,12 +522,23 @@ the budget.
 .. literalinclude:: _generated/example_outputs/08_multiplexer_budget.txt
    :language: console
 
+Solution
+^^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/element_constraint_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (element constraint solution). See the HTML docs for the diagram.*
+
 
 Example 09: Sudoku (9x9)
 ------------------------------------------------------------------
 
-Purpose
-^^^^^^^
+
 
 Demonstrate matrix modelling, NumPy-like slicing, and ``all_different`` on rows,
 columns, and 3x3 subgrids.
@@ -546,8 +554,8 @@ New primitives
 Model
 ^^^^^
 
-Matrix-focused example. The instance uses one clue, so rows, columns, and 3x3
-boxes are easy to inspect with the same typed-vector operations.
+Matrix-focused example. The instance uses a fixed puzzle, so rows, columns, and
+3x3 boxes are easy to inspect with the same typed-vector operations.
 
 .. math::
 
@@ -559,7 +567,7 @@ boxes are easy to inspect with the same typed-vector operations.
       \mathrm{AllDifferent}(x_{1,c},\dots,x_{9,c}) \qquad \forall c \\
    \text{Block constraints:}\quad &
       \mathrm{AllDifferent}(\text{cells in each } 3\times3 \text{ block}) \\
-   \text{Example clue:}\quad & x_{5,5} = \texttt{"5"}
+   \text{Clues:}\quad & \text{9x9 puzzle instance}
    \end{aligned}
 
 .. warning::
@@ -569,6 +577,18 @@ boxes are easy to inspect with the same typed-vector operations.
    If sudoku had letters instead of digits, it would be played the same way,
    so the numeric nature of the symbols is not relevant to the combinatorial search.
    Using enums is more efficient when possible.
+
+Problem
+^^^^^^^
+
+.. only:: html
+
+   .. image:: _static/sudoku_problem.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (sudoku problem). See the HTML docs for the diagram.*
 
 Code
 ^^^^
@@ -580,20 +600,28 @@ Code
 Output
 ^^^^^^^^^^^^^^^^^^^^
 
-The instance is underconstrained; the output shows one valid Sudoku completion
-consistent with the single clue.
+The output shows the deterministic completion of the fixed puzzle instance.
 
 .. literalinclude:: _generated/example_outputs/09_sudoku9_single_clue.txt
    :language: console
 
+Solution
+^^^^^^^^
 
-Example 10: Interval Scheduling (No-Overlap)
+.. only:: html
+
+   .. image:: _static/sudoku_solution.svg
+      :class: cvrp-problem-view
+
+.. only:: latex
+
+   *Visualization omitted from PDF build (sudoku solution). See the HTML docs for the diagram.*
+
+
+Example 10: No Overlap Scheduling
 --------------------------------------------
 
-Purpose
-^^^^^^^
-
-Show scheduling-style constraints with object-oriented interval methods.
+Show scheduling constraints with object interval methods.
 
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -605,7 +633,7 @@ New primitives
 Model
 ^^^^^
 
-This model uses a scheduling-oriented API layer built on top of ladder
+This model uses a scheduling oriented API layer built on top of ladder
 integers. ``IntervalVar`` keeps the model readable while compiling to plain
 SAT/MaxSAT constraints.
 
@@ -645,8 +673,7 @@ The printed intervals confirm the no-overlap and precedence constraints.
 Example 11: Int Variables in the Objective
 -------------------------------------------------------
 
-Purpose
-^^^^^^^
+
 
 Demonstrate ``obj[w] += int_var`` (ladder-bit objective lowering) combined with
 hard PB constraints.
@@ -659,7 +686,7 @@ New primitives
 Model
 ^^^^^
 
-This model shows typed finite-domain variables directly in the MaxSAT objective
+This model shows typed finite-domain variables in the MaxSAT objective
 without introducing a separate arithmetic backend API.
 
 .. math::
@@ -686,20 +713,21 @@ Code
 Output
 ^^^^^^^^^^^^^^^^^^^^
 
-This output shows a solution minimizing an objective that directly includes
+This output shows a solution minimizing an objective that includes
 integer variables and a boolean penalty.
 
 .. literalinclude:: _generated/example_outputs/11_int_objective.txt
    :language: console
 
+.. _example-wifi:
 
 Example 12: WiFi Channel Assignment
 -------------------------------------------------------
 
-Purpose
-^^^^^^^
+
 
 Show a compact domain model using nullable enum states for router channels, hard interference constraints, and soft penalties.
+Inspired on [5]_ and [6]_, this is a simplified version of the WiFi channel assignment.
 
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -710,8 +738,8 @@ New primitives
 Model
 ^^^^^
 
-This is a compact real-world-style model that combines nullable enums, graph
-constraints, and soft penalties. It is a good integrated example after the
+This model combines nullable enums, graph
+constraints, and soft penalties. It is a good example after the
 smaller, isolated primitives explored earlier on this page.
 
 .. math::
@@ -726,7 +754,7 @@ smaller, isolated primitives explored earlier on this page.
       \text{offline penalties} + \text{per-frequency usage penalties}
    \end{aligned}
 
-The model uses nullable enums so "offline" is represented directly as the
+The model uses nullable enums so "offline" is represented as the
 absence of a selected frequency (decoded as ``None``), rather than as an extra
 binary-variable layer.
 
@@ -769,6 +797,12 @@ Solution
 
    *Visualization omitted from PDF build (wifi solution). See the HTML docs for the diagram.*
 
+Next
+----
+
+Advanced modelling examples continue in :doc:`model_examples_tricks`.
+
+
 
 References
 ----------
@@ -781,9 +815,11 @@ References
    A Guide to the Theory of NP-Completeness*. W. H. Freeman, 1979.
 .. [4] Harold W. Kuhn. *The Hungarian method for the assignment problem*.
    *Naval Research Logistics Quarterly*, 2(1-2):83--97, 1955.
-
-
-Next
-----
-
-Advanced modelling examples continue in :doc:`model_examples_tricks`.
+.. [5] H. Birkan Yilmaz, Bon-Hong Koo, Sung-Ho Park, Hwi-Sung Park,
+   Jae-Hyun Ham, Chan-Byoung Chae.
+   *Frequency assignment problem with net filter discrimination constraints*.
+   arXiv preprint arXiv:1605.04379, 2016.
+.. [6] David Orden, José Manuel Giménez-Guzmán, Ivan Marsa-Maestre,
+   Enrique de la Hoz.
+   *Spectrum graph coloring and applications to Wi-Fi channel assignment*.
+   *Symmetry*, 10(3):65, 2018.

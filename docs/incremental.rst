@@ -16,7 +16,7 @@ Module Description
 ------------------
 
 This module exposes Hermax classes backed by solvers that are used through an
-incremental/IPAMIR-style workflow, i.e., repeated solve calls while preserving
+incremental/IPAMIR workflow, i.e., repeated solve calls while preserving
 internal state and/or interface state [1]_.
 
 The classes map to the following backends:
@@ -31,23 +31,21 @@ The classes map to the following backends:
   ``hermax.core.evalmaxsat_incr_py.EvalMaxSATIncrSolver`` (incremental EvalMaxSAT backend [3]_).
 
 .. warning::
+   In Hermax package builds, both ``UWrMaxSAT`` and ``UWrMaxSATCompetition``
+   are compiled with SCIP integration disabled.
+
+.. warning::
    EvalMaxSAT backends are currently unstable on macOS (both ``arm64`` and
    ``x86_64``) and may crash in some weighted-core workflows.
    Prefer other backends on macOS until this is fixed.
 
-Incremental MaxSAT Landscape
-----------------------------
+Incremental MaxSAT
+------------------
 
 Incremental MaxSAT behavior differs substantially across solver families [1]_:
 
-* UWrMaxSAT is a SAT/PB-oriented line with strong MaxSAT performance and
-  support for iterative optimization workflows [2]_.
-* EvalMaxSAT uses an engineering strategy centered on robust state management
-  in evaluation settings [3]_.
-
-These differences are directly relevant to Hermax users: methods such as
-``set_soft`` and assumption-based ``solve`` can have solver-specific internal
-costs, even when the public API is uniform.
+* UWrMaxSAT is a trutly incremental MaxSAT solver based on PB optimization [2]_.
+* EvalMaxSAT uses an copy and re-solve strategy [3]_.
 
 API Details
 -----------

@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 360" role="img" aria-label="Hierarchical objectives problem">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --stroke: rgba(74, 64, 54, 0.22);
+      --panel: rgba(244, 239, 232, 0.82);
+      --vip: rgba(184, 38, 93, 0.16);
+      --vip-stroke: #b8265d;
+      --accent: #146356;
+      --accent-bg: rgba(20, 99, 86, 0.12);
+      --link: rgba(74, 64, 54, 0.32);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --stroke: rgba(255, 255, 255, 0.16);
+        --panel: rgba(36, 35, 33, 0.88);
+        --vip: rgba(255, 111, 161, 0.16);
+        --vip-stroke: #ff6fa1;
+        --accent: #4fd2b5;
+        --accent-bg: rgba(79, 210, 181, 0.16);
+        --link: rgba(235, 225, 210, 0.30);
+      }
+    }
+
+    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; }
+    .title { font-size: 15px; font-weight: 700; fill: var(--ink); }
+    .subtitle { font-size: 13px; fill: var(--muted); }
+    .node { fill: var(--panel); stroke: var(--stroke); stroke-width: 1.4; rx: 14; }
+    .vip { fill: var(--vip); stroke: var(--vip-stroke); stroke-width: 1.8; }
+    .name { font-size: 14px; font-weight: 700; fill: var(--ink); }
+    .meta { font-size: 12px; fill: var(--muted); }
+    .link { stroke: var(--link); stroke-width: 1.4; }
+    .box { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.5; rx: 14; }
+    .box-title { font-size: 14px; font-weight: 700; fill: var(--accent); }
+    .box-text { font-size: 13px; fill: var(--ink); }
+  </style>
+
+  <text class="title" x="34" y="28">Hierarchical Assignment Objective</text>
+  <text class="subtitle" x="282" y="28">Tier 0: serve VIP clients first · Tier 1: then minimize travel cost</text>
+
+  <line class="link" x1="252" y1="89" x2="640" y2="104" />
+  <line class="link" x1="252" y1="89" x2="640" y2="199" />
+  <line class="link" x1="252" y1="164" x2="640" y2="104" />
+  <line class="link" x1="252" y1="164" x2="640" y2="199" />
+  <line class="link" x1="252" y1="239" x2="640" y2="104" />
+  <line class="link" x1="252" y1="239" x2="640" y2="199" />
+
+  <rect class="node vip" x="34" y="60" width="220" height="58" />
+  <text class="name" x="50" y="84">VIP_1</text>
+  <text class="meta" x="50" y="104">must be prioritized</text>
+
+  <rect class="node vip" x="34" y="135" width="220" height="58" />
+  <text class="name" x="50" y="159">VIP_2</text>
+  <text class="meta" x="50" y="179">must be prioritized</text>
+
+  <rect class="node" x="34" y="210" width="220" height="58" />
+  <text class="name" x="50" y="234">Standard_1</text>
+  <text class="meta" x="50" y="254">optional if capacity is full</text>
+
+  <rect class="node" x="640" y="75" width="246" height="58" />
+  <text class="name" x="656" y="99">Alice</text>
+  <text class="meta" x="656" y="119">travel cost per client: 50</text>
+
+  <rect class="node" x="640" y="170" width="246" height="58" />
+  <text class="name" x="656" y="194">Bob</text>
+  <text class="meta" x="656" y="214">travel cost per client: 10</text>
+
+  <rect class="box" x="34" y="281" width="852" height="66" />
+  <text class="box-title" x="50" y="305">Constraints and tiers</text>
+  <text class="box-text" x="220" y="305">Each driver serves at most one client.</text>
+  <text class="box-text" x="220" y="327">Tier 0: minimize unassigned VIPs. Tier 1: minimize travel cost.</text>
+</svg>

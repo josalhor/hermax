@@ -12,7 +12,7 @@ For an introduction of the modelling examples
 * :doc:`model_examples`
 
 For a gallery focused on optimization modelling tricks
-(piecewise costs, binning, ladder constraints, affine fast paths,
+(piecewise costs, binning, ladder constraints, fast paths,
 interval makespan, and ``all_different`` backends), see:
 
 * :doc:`model_examples_tricks`
@@ -34,12 +34,12 @@ constraints:
   the cost is paid when the **clause is violated**. For a unit clause
   ``[x]``, that means paying when ``x=False``.
 
-Quickstart
+Incremental MaxSAT
 ----------------------
 
 Below is the smallest Hermax workflow with Incremental MaxSAT: add hard
 constraints, assign soft penalties, update a soft weight (last write wins), and
-solve under assumptions. This is the baseline mental model for the IPAMIR-style
+solve under assumptions. This is the mental model for the IPAMIR
 API used across the library, using UWrMaxSAT [1]_.
 
 Related API: :class:`hermax.incremental.UWrMaxSAT`.
@@ -52,26 +52,6 @@ Output
 ^^^^^^^^^^^^^^^^^^^^
 
 .. literalinclude:: _generated/example_outputs/quickstart_uwrmaxsat.txt
-   :language: console
-
-Incremental Assumptions
------------------------
-
-This pattern fits applications with many "what if?" queries over the same
-model. The formula stays loaded in the solver and only the assumptions change,
-which is the main reason to pick a natively incremental backend such as
-UWrMaxSAT [1]_.
-
-Related API: :class:`hermax.incremental.UWrMaxSAT`, :doc:`incremental`.
-
-.. literalinclude:: ../examples/incremental_assumptions.py
-   :language: python
-   :caption: examples/incremental_assumptions.py
-
-Output
-^^^^^^^^^^^^^^^^^^^^
-
-.. literalinclude:: _generated/example_outputs/incremental_assumptions.txt
    :language: console
 
 RC2
@@ -99,8 +79,8 @@ Load from WCNF Formula
 ----------------------
 
 Use this constructor path when your formula is already built elsewhere 
-and you want to hand the whole WCNF to a solver directly instead of 
-replaying clause additions manually. This is especially useful when the formula
+and you want to hand the whole WCNF to a solver instead of 
+replaying clause additions manually. This is useful when the formula
 already comes from a PySAT-based workflow [3]_.
 
 Related API: :class:`hermax.incremental.EvalMaxSAT`.
@@ -165,8 +145,7 @@ constructors auto-discover backends from Hermax namespaces and build:
 * A complete-only portfolio, or
 * A mixed performance portfolio
 
-This is the fastest way to get a robust default portfolio in an
-application script.
+This is the fastest way to get a performance boost.
 
 Related API: :class:`hermax.portfolio.CompletePortfolioSolver`,
 :class:`hermax.portfolio.PerformancePortfolioSolver`, :doc:`portfolio`.
@@ -186,8 +165,8 @@ Output
 CVRP
 ----
 
-This is a flat capacitated vehicle routing example with depot-to-customer
-routes, capacity tracking, and MTZ-style load constraints [5]_.
+This is a capacitated vehicle routing (CVRP) example with depot-to-customer
+routes, capacity tracking, and MTZ load constraints [5]_.
 
 Related API: :class:`hermax.model.Model`.
 
@@ -201,7 +180,7 @@ Problem
 
 .. only:: latex
 
-   *Visualization omitted from PDF build (cvrp flat problem). See the HTML docs for the diagram.*
+   *Visualization omitted from PDF build (cvrp problem). See the HTML docs for the diagram.*
 
 .. literalinclude:: ../examples/cvrp_flat.py
    :language: python
@@ -223,30 +202,7 @@ Interactive view
 
 .. only:: latex
 
-   *Visualization omitted from PDF build (cvrp flat solution). See the HTML docs for the diagram.*
-
-.. _example-wifi:
-
-WiFi Example
-----------------------------
-
-Compact domain example (channel assignment / interference avoidance) using
-one-hot choices, pairwise conflict constraints, and weighted preferences with
-UWrMaxSATCompetition [1]_. Astute readers will recognize this as a close
-relative of NP-hard graph coloring, with several Wi-Fi and frequency-assignment
-variants studied in the literature [6]_ [7]_.
-
-Related API: :class:`hermax.incremental.UWrMaxSATCompetition`.
-
-.. literalinclude:: ../examples/wifi_minimal.py
-   :language: python
-   :caption: examples/wifi_minimal.py
-
-Output
-^^^^^^^^^^^^^^^^^^^^
-
-.. literalinclude:: _generated/example_outputs/wifi_minimal.txt
-   :language: console
+   *Visualization omitted from PDF build (cvrp solution). See the HTML docs for the diagram.*
 
 References
 ----------
@@ -262,11 +218,3 @@ References
 .. [5] Clair E. Miller, Albert W. Tucker, Richard A. Zemlin.
    *Integer programming formulation of traveling salesman problems*.
    *Journal of the ACM*, 7(4):326--329, 1960.
-.. [6] H. Birkan Yilmaz, Bon-Hong Koo, Sung-Ho Park, Hwi-Sung Park,
-   Jae-Hyun Ham, Chan-Byoung Chae.
-   *Frequency assignment problem with net filter discrimination constraints*.
-   arXiv preprint arXiv:1605.04379, 2016.
-.. [7] David Orden, José Manuel Giménez-Guzmán, Ivan Marsa-Maestre,
-   Enrique de la Hoz.
-   *Spectrum graph coloring and applications to Wi-Fi channel assignment*.
-   *Symmetry*, 10(3):65, 2018.

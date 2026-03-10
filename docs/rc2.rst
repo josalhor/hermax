@@ -14,7 +14,7 @@ List of Classes
 Module Description
 ------------------
 
-Hermax provides one public RC2-facing API:
+Hermax provides one public RC2 API:
 
 * :class:`hermax.non_incremental.RC2`:
   non-incremental/re-encoding wrapper [1]_ [2]_.

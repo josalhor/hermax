@@ -15,14 +15,13 @@ Module Description
 
 ``PortfolioSolver`` is a fake-incremental wrapper:
 
-* it caches the formula in Python,
-* records an IPAMIR-level operation log,
-* replays that log into fresh worker processes on each ``solve()``,
-* validates returned models/costs (enabled by default), and
-* selects a final result according to a configurable policy.
+* it caches the formula in Python
+* records an IPAMIR-level operation log
+* replays that log into fresh worker processes on each ``solve()``
+* validates returned models/costs (enabled by default)
+* selects a final result according to a configurable policy
 
-Users pass Python classes directly (no string registry required in the public
-API), for example:
+Users pass Python classes for example:
 
 .. code-block:: python
 
@@ -59,12 +58,12 @@ structure:
 This discovery is structural and deterministic (no separate static registry is
 required). Presets:
 
-* use namespace ``__all__`` exports as the membership contract,
-* keep only classes implementing :class:`hermax.core.ipamir_solver_interface.IPAMIRSolver`,
-* skip abstract classes,
+* use namespace ``__all__`` exports as the membership contract
+* keep only classes implementing :class:`hermax.core.ipamir_solver_interface.IPAMIRSolver`
+* skip abstract classes
 * de-duplicate aliases by the *effective worker class* used inside the
   subprocess (important for incomplete wrappers), and
-* sort deterministically by effective worker class path.
+* sort deterministically by effective worker class path
 
 Example (preset subclass):
 
@@ -108,7 +107,7 @@ Key options
 * ``validate_model`` (default ``True``):
   reject results whose model violates hard clauses.
 * ``recompute_cost_from_model`` (default ``True``):
-  compute the portfolio-facing cost from the returned model using canonical
+  compute the portfolio cost from the returned model using 
   Hermax/IPAMIR.
 * ``invalid_result_policy`` (default ``"warn_drop"``):
   what to do with invalid solver outputs (warn/drop/raise/ignore).
@@ -202,8 +201,8 @@ results.
 
 ``IncompletePortfolioSolver`` is different by design:
 
-* it may return valid feasible solutions without proving optimality,
-* it does not guarantee trusted ``UNSAT`` classification,
+* it may return valid feasible solutions without proving optimality
+* it does not guarantee trusted ``UNSAT`` classification
 * it is therefore expected to use ``PASS/SKIP`` policies for exact-optimum and
   exact-UNSAT conformance tests.
 
@@ -254,11 +253,11 @@ Notes
   nested subprocesses.
 * Preset discovery is automatic and based on public namespace exports; if the
   exported solver set changes, the preset membership changes accordingly.
-* For subprocess architecture details, see :doc:`incomplete_subprocess`.
+* For subprocess architecture details, see :doc:`incomplete_subprocess`
 
 References
 ----------
 
-* Lin Xu, Frank Hutter, Holger H. Hoos, Kevin Leyton-Brown. *SATzilla: Portfolio-based Algorithm Selection for SAT*. JAIR 2008.
-* Lin Xu, Frank Hutter, Jonathan Shen, Holger H. Hoos, Kevin Leyton-Brown. *Hydra-MIP and Hydra: Automated Algorithm Configuration and Selection*. AAAI 2010.
-* Andreas Niskanen, Jeremias Berg, Matti Järvisalo. *Incremental Maximum Satisfiability*. SAT 2022.
+* Lin Xu, Frank Hutter, Holger H. Hoos, Kevin Leyton-Brown. *SATzilla: Portfolio-based Algorithm Selection for SAT*. JAIR 2008
+* Lin Xu, Frank Hutter, Jonathan Shen, Holger H. Hoos, Kevin Leyton-Brown. *Hydra-MIP and Hydra: Automated Algorithm Configuration and Selection*. AAAI 2010
+* Andreas Niskanen, Jeremias Berg, Matti Järvisalo. *Incremental Maximum Satisfiability*. SAT 2022

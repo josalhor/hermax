@@ -8,6 +8,26 @@
 Hermax: MaxSAT Optimization for Python
 =============================================
 
+.. image:: https://img.shields.io/pypi/v/hermax.svg
+   :target: https://pypi.org/project/hermax/
+   :alt: PyPI version
+
+.. image:: https://img.shields.io/pypi/wheel/hermax.svg
+   :target: https://pypi.org/project/hermax/
+   :alt: PyPI wheel
+
+.. image:: https://img.shields.io/pypi/pyversions/hermax.svg
+   :target: https://pypi.org/project/hermax/
+   :alt: Python versions
+
+.. image:: https://img.shields.io/badge/License-Apache%202.0-blue.svg
+   :target: https://github.com/josalhor/hermax/blob/main/LICENSE
+   :alt: License Apache-2.0
+
+.. image:: https://readthedocs.org/projects/hermax/badge/?version=latest
+   :target: https://hermax.readthedocs.io/en/latest/?badge=latest
+   :alt: Documentation Status
+
 **Hermax** is a pormanteau of **Hermes** and **MaxSAT**. 
 
 In Greek mythology, Hermes is the messenger between the worlds of gods and mortals. 
@@ -28,21 +48,19 @@ relaxations. In those cases, a MILP such as PuLP, SCIP, or Gurobi is
 often the more natural first choice.
 
 If your problem is highly combinatorial but can benefit from a broader
-black-box CP approach, CP-SAT may also be a good alternative.
+black-box CP approach, CP-SAT or MiniZinc may also be a good alternative.
 
 Hermax is especially relevant for:
 
-* engineers building repeated optimization workflows around hard clauses, soft
-  literals, assumptions, and iterative solve loops,
-* users who already work with clauses, WCNF, or incremental solver-style APIs,
-  and
-* researchers comparing MaxSAT backends behind a common Python interface.
+* engineers building reliable (mostly boolean) optimization problems
+* users who already work with clauses, WCNF, or incremental solver APIs
+* researchers comparing MaxSAT backends behind a common Python interface
 
 Start Here
 ----------
 
 * :doc:`quickstart` if you want the fastest path to a working Hermax model and a direct solver example.
-* :doc:`examples` if you want solver-oriented examples such as UWrMaxSAT, RC2, graph colouring, scheduling, and CVRP.
+* :doc:`examples` if you want solver examples such as UWrMaxSAT, RC2, graph colouring, scheduling, and CVRP.
 * :doc:`modeling` if you want the modelling compiler, runnable examples, and advanced modelling tricks.
 
 Useful Next Steps

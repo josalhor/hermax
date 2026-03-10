@@ -11,15 +11,12 @@ assign = m.enum_dict("assign", tasks, choices=workers, nullable=True)
 for worker, cap in {"alice": 1, "bob": 1}.items():
     m &= sum(assign[t] == worker for t in tasks) <= cap
 
-# Bob cannot take the ops task.
 m &= ~(assign["ops"] == "bob")
 
-# Pay a penalty when a task is left unassigned.
 unassigned_penalty = {"api": 8, "ui": 6, "ops": 2}
 for task in tasks:
     m.obj[unassigned_penalty[task]] += assign[task].is_in(workers)
 
-# Assignment costs for the feasible worker choices.
 for task, worker, cost in [
     ("api", "alice", 1),
     ("api", "bob", 2),

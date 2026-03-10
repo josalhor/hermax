@@ -52,6 +52,60 @@ def _ensure_same_model(*objs) -> "Model":
     return model
 
 
+def sum_expr(iterable, start=0):
+    """Return a linear-time sum over Hermax expression items.
+
+    This is a drop-in replacement for :func:`sum` in Hermax expression code:
+    it supports empty iterables the same way as Python ``sum``, and avoids the
+    repeated O(n^2) pattern. It's just a faster drop-in.
+
+    Args:
+        iterable: Items to accumulate.
+        start: Initial value (default ``0``), matching Python ``sum``.
+
+    Returns:
+        A plain numeric value when no model-bound items are present; otherwise
+        a :class:`PBExpr` bound to the inferred model.
+    """
+
+    def _item_model(item):
+        if isinstance(item, Term):
+            return item.literal._model
+        return getattr(item, "_model", None)
+
+    # Keep Python's numeric sum behavior until we encounter a model-bound item.
+    model = _item_model(start)
+    if model is None:
+        numeric_total = start
+        expr: PBExpr | None = None
+    else:
+        numeric_total = 0
+        expr = PBExpr.from_item(start)
+        # `start` may be model-bound but represented as a neutral PBExpr.
+        if expr._model is None:
+            expr = PBExpr(model, [], expr.constant)
+
+    for item in iterable:
+        item_model = _item_model(item)
+        if expr is None and item_model is None:
+            numeric_total = numeric_total + item
+            continue
+
+        if expr is None:
+            model = item_model
+            if model is None:
+                raise TypeError(f"Unsupported item for sum_expr(): {type(item)!r}")
+            expr = PBExpr(model, [], 0)
+            if numeric_total != 0:
+                expr.add(numeric_total, inplace=True)
+
+        expr.add(item, inplace=True)
+
+    if expr is None:
+        return numeric_total
+    return expr
+
+
 class ClauseGroup:
     """Immutable collection of CNF clauses."""
 
@@ -774,10 +828,16 @@ class PBExpr:
         """
         if not inplace:
             raise TypeError("PBExpr.add() requires keyword argument inplace=True to mutate.")
-        out = self._merge(PBExpr.from_item(other), +1)
-        self._model = out._model
-        self.terms = out.terms
-        self.constant = out.constant
+        other_expr = PBExpr.from_item(other)
+        model = _ensure_same_model(self, other_expr)
+        if self._model is None:
+            self._model = model
+        if other_expr.terms:
+            self.terms = self._collapse_terms([*self.terms, *other_expr.terms])
+        self.constant = self.constant + other_expr.constant
+        if other_expr.int_terms:
+            self.int_terms.extend((int(c), v) for c, v in other_expr.int_terms if int(c) != 0)
+            self.int_terms = [(int(c), v) for c, v in self.int_terms if int(c) != 0]
         return self
 
     def sub(self, other, *, inplace: bool = False) -> "PBExpr":
@@ -789,10 +849,17 @@ class PBExpr:
         """
         if not inplace:
             raise TypeError("PBExpr.sub() requires keyword argument inplace=True to mutate.")
-        out = self._merge(PBExpr.from_item(other), -1)
-        self._model = out._model
-        self.terms = out.terms
-        self.constant = out.constant
+        other_expr = PBExpr.from_item(other)
+        model = _ensure_same_model(self, other_expr)
+        if self._model is None:
+            self._model = model
+        if other_expr.terms:
+            neg_terms = [Term(-t.coefficient, t.literal) for t in other_expr.terms]
+            self.terms = self._collapse_terms([*self.terms, *neg_terms])
+        self.constant = self.constant - other_expr.constant
+        if other_expr.int_terms:
+            self.int_terms.extend((-int(c), v) for c, v in other_expr.int_terms if int(c) != 0)
+            self.int_terms = [(int(c), v) for c, v in self.int_terms if int(c) != 0]
         return self
 
     def _finalize_compare(self, op: str, rhs):
@@ -2398,11 +2465,11 @@ class BoolVector(_BaseVector):
 
     def at_most_one(self):
         """Return a cardinality constraint enforcing at most one true literal."""
-        return sum(self._items) <= 1
+        return sum_expr(self._items) <= 1
 
     def exactly_one(self):
         """Return a cardinality constraint enforcing exactly one true literal."""
-        return sum(self._items) == 1
+        return sum_expr(self._items) == 1
 
     def at_least_one(self):
         """Return a single clause enforcing at least one true literal."""

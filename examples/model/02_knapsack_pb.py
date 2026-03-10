@@ -9,10 +9,10 @@ take = m.bool_vector("take", len(items))
 
 capacity = 8
 
-m &= sum(w * take[i] for i, (w, _) in enumerate(items)) <= capacity  # weighted PB capacity
+m &= sum(w * take[i] for i, (w, _) in enumerate(items)) <= capacity
 
 for i, (_, profit) in enumerate(items):
-    m.obj[profit] += take[i]  # [take[i]] is violated when item is not taken -> minimizing cost maximizes profit
+    m.obj[profit] += take[i]
 
 r = m.solve()
 

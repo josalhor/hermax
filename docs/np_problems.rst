@@ -4,17 +4,15 @@ NP-Hard Problems
 This page collects examples and patterns for classic NP-hard optimization
 problems.
 
-For a first pass, several basic examples are already covered in the existing
+Several basic examples are already covered in the existing
 galleries:
 
 * :ref:`example-knapsack` for 0/1 knapsack
 * :ref:`example-set-cover` for minimum set cover
 * :ref:`example-vertex-cover` for minimum vertex cover
-* :ref:`example-wifi` for graph-coloring-style channel assignment
-* :ref:`example-cvrp` for routing with MTZ-style load constraints
+* :ref:`example-wifi` for graph-coloring channel assignment
+* :ref:`example-cvrp` for routing with MTZ load constraints
 
-These are good starting points because they stay close to the original problem
-statement and avoid too much modelling machinery.
 
 Example 01: Job Shop Scheduling
 -------------------------------
@@ -74,6 +72,16 @@ Output
 The printed schedule shows the operation order inside each job and the final
 makespan.
 
+.. image:: _static/jssp_solution.svg
+   :alt: Job Shop scheduling solution chart
+   :align: center
+   :class: only-light
+
+.. image:: _static/jssp_solution.svg
+   :alt: Job Shop scheduling solution chart
+   :align: center
+   :class: only-dark
+
 .. literalinclude:: _generated/example_outputs/26_job_shop_scheduling.txt
    :language: console
 
@@ -115,7 +123,7 @@ objective is to minimize the number of bins used.
       \min \sum_b u_b
    \end{aligned}
 
-Bin packing is a canonical NP-hard problem [1]_, and it is also a common
+Bin packing is an NP-hard problem [1]_, and it is also a common
 benchmark for approximation algorithms [2]_.
 
 .. note::

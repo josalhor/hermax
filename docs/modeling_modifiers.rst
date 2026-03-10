@@ -1,7 +1,7 @@
 Conditionals and Implications
 =======================================
 
-The modelling layer supports two important modifier-style operations:
+The modelling layer supports two important modifier operations:
 
 * ``.only_if(literal)``
 * ``.implies(target)``

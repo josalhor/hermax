@@ -3,7 +3,7 @@ Installation
 
 .. quickstart-installation-body-start
 
-From PyPI:
+From `PyPI <https://pypi.org/project/hermax/>`_:
 
 .. code-block:: bash
 

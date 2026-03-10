@@ -26,6 +26,9 @@ class UWrMaxSATCompetition(UWrMaxSATCompReentrant):
     """
     UWrMaxSAT (Competition version): A reentrant wrapper for the 
     competition version 1.4.
+
+    Note:
+        Hermax package builds compile this backend with SCIP integration disabled.
     """
     pass
 
@@ -39,6 +42,9 @@ class EvalMaxSAT(EvalMaxSATLatestReentrant):
 class CASHWMaxSAT(CASHWMaxSATSolver):
     """
     CASHWMaxSAT: An award-winning hybrid MaxSAT solver
+
+    Note:
+        The wrapper defaults to ``disable_scip=True``.
     """
     pass
 

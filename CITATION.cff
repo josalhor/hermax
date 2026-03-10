@@ -61,22 +61,6 @@ references:
         given-names: "Florent"
     title: "EvalMaxSAT"
     year: 2023
-  - type: article
-    authors:
-      - family-names: "Bacchus"
-        given-names: "Fahiem"
-    title: "MaxHS in the 2020 MaxSAT Evaluation"
-    year: 2020
-  - type: conference-paper
-    authors:
-      - family-names: "Niskanen"
-        given-names: "Andreas"
-      - family-names: "Berg"
-        given-names: "Jeremias"
-      - family-names: "Jarvisalo"
-        given-names: "Matti"
-    title: "Enabling Incrementality in the Implicit Hitting Set Approach to MaxSAT Under Changing Weights"
-    year: 2021
   - type: conference-paper
     authors:
       - family-names: "Pan"

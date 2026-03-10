@@ -15,17 +15,17 @@ List of Classes and Helpers
 Module Description
 ------------------
 
-This module defines the canonical Python-level contract implemented by Hermax
+This module defines the Python contract implemented by Hermax
 solvers through :class:`hermax.core.ipamir_solver_interface.IPAMIRSolver`.
 The contract is an adaptation of the incremental MaxSAT interface proposed by
 IPAMIR [1]_ and rooted in the assumption-based incremental SAT model [2]_ [3]_.
 
 At a high level, the interface separates:
 
-* hard constraints via ``add_clause``,
-* optimization terms via ``set_soft`` / ``add_soft_unit`` / ``add_soft_relaxed``,
-* per-call assumptions via ``solve(assumptions=...)``,
-* result/status introspection via ``get_status``, ``get_cost``, and ``get_model``.
+* hard constraints via ``add_clause``
+* optimization terms via ``set_soft`` / ``add_soft_unit`` / ``add_soft_relaxed``
+* per-call assumptions via ``solve(assumptions=...)``
+* result/status introspection via ``get_status``, ``get_cost``, and ``get_model``
 
 This explicit split is important for incremental MaxSAT, where assumptions and
 weight updates can vary between calls while preserving part of the solver state
@@ -34,12 +34,12 @@ and learned information [1]_ [4]_ [5]_.
 Status
 ----------------
 
-:class:`hermax.core.ipamir_solver_interface.SolveStatus` follows IPAMIR-style
+:class:`hermax.core.ipamir_solver_interface.SolveStatus` follows IPAMIR
 status codes and distinguishes three categories:
 
-* feasible but not necessarily optimal (``INTERRUPTED_SAT``),
-* final (``UNSAT`` and ``OPTIMUM``),
-* abnormal/intermediate states (``INTERRUPTED``, ``ERROR``, ``UNKNOWN``).
+* feasible but not necessarily optimal (``INTERRUPTED_SAT``)
+* final (``UNSAT`` and ``OPTIMUM``)
+* abnormal/intermediate states (``INTERRUPTED``, ``ERROR``, ``UNKNOWN``)
 
 Use :func:`hermax.core.ipamir_solver_interface.is_feasible` and
 :func:`hermax.core.ipamir_solver_interface.is_final` to write backend-agnostic

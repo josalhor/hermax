@@ -21,11 +21,11 @@ assign = m.enum_dict("assign", tasks, choices=workers, nullable=False)
 
 for w in workers:
     chosen_by_worker = [(assign[t] == w) for t in tasks]
-    m &= m.vector(chosen_by_worker, name=f"worker_{w}_tasks").at_most_one()  # each worker gets at most one task
+    m &= m.vector(chosen_by_worker, name=f"worker_{w}_tasks").at_most_one()
 
 for t in tasks:
     for w in workers:
-        m.obj[cost[(t, w)]] += ~(assign[t] == w)  # pay assignment cost if task t is assigned to worker w
+        m.obj[cost[(t, w)]] += ~(assign[t] == w)
 
 r = m.solve()
 

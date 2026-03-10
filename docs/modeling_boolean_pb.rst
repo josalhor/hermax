@@ -107,8 +107,8 @@ PB as a Soft Constraint
 ``model.obj[w] += pb_constraint`` is supported and uses targeted relaxation
 internally:
 
-* one weighted soft penalty literal,
-* plus the compiled PB network conditional as hard clauses.
+* one weighted soft penalty literal
+* plus the compiled PB network conditional as hard clauses
 
 Encoder Dispatch
 ----------------
@@ -127,9 +127,9 @@ Before falling back to generic PB/Card encoders, the compiler recognizes several
 
 * offset precedence/equality: ``x + c <= y``, ``x - c == y``
 * scaled relations: ``a*x <= y``, ``a*x + c == y``
-* general bivariate affine forms: ``a*x + b*y OP c`` for ``OP`` in
+* bivariate forms: ``a*x + b*y OP c`` for ``OP`` in
   ``<=, <, >=, >, ==``
-* canonical trivariate sums: ``x + y <= z`` and ``x + y < z``
+* some trivariate sums: ``x + y <= z`` and ``x + y < z``
 * exact bool-sum channeling to IntVar:
   ``x + c1 OP (b1 + ... + bn) + c2`` for
   ``OP in {==, <=, >=, <, >}`` (unit-weight boolean sums)

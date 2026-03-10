@@ -2,8 +2,8 @@ Bindings Reference
 ==================
 
 Documents the pybind11-level APIs exposed by Hermax C/C++ extensions. Method
-names and signatures below are the exact Python-facing names exported by the
-corresponding ``PYBIND11_MODULE`` definitions.
+names and signatures below are the exact Python names exported by the
+``PYBIND11_MODULE`` definitions.
 
 pybind11
 --------------
@@ -68,6 +68,9 @@ Binding source: ``urmaxsat-py/python/urmaxsat_bindings.cpp``
 
       Return backend signature string.
 
+.. warning::
+   Hermax package builds compile with SCIP integration disabled.
+
 UWrMaxSAT
 ---------------------------
 
@@ -78,6 +81,10 @@ Binding source: ``urmaxsat-comp-py/python/urmaxsat_comp_bindings.cpp``
    Same API as :py:class:`urmaxsat_py.UWrMaxSAT`:
    ``newVar``, ``addClause``, ``assume``, ``solve``, ``getCost``,
    ``getValue``, ``set_terminate``, ``signature``.
+
+.. warning::
+   Hermax package builds compile with SCIP
+   integration disabled.
 
 CASHWMaxSAT
 -----------
@@ -97,6 +104,9 @@ Binding source: ``cashwmaxsat-py/python/cashwmaxsat_bindings.cpp``
    .. py:method:: setNoScip() -> None
 
       Disable SCIP integration in CASHWMaxSAT backend.
+
+   .. note::
+      Hermax compiles with SCIP disabled.
 
    .. py:method:: assume(assumptions: list[int]) -> None
 

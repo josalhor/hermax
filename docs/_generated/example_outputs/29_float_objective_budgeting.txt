@@ -1,0 +1,6 @@
+$ python examples/model/29_float_objective_budgeting.py
+status: optimum
+total_dev_months: 15
+missed_roi_usd_millions: 3.35
+selected_roi_usd_millions: 6.2
+funded_projects: ['Beta', 'Delta']

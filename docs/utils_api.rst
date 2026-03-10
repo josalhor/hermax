@@ -11,8 +11,8 @@ Sorting Networks
 
 The exported API provides two representations:
 
-* a flat comparator list (:class:`hermax.utils.SortingNetwork`)
-* a dependency-safe layered representation (:class:`hermax.utils.SortingNetworkLayers`)
+* a comparator list (:class:`hermax.utils.SortingNetwork`)
+* a layered representation (:class:`hermax.utils.SortingNetworkLayers`)
 
 Both are generated for a requested width ``n`` and support arbitrary ``n >= 1``
 by building the next power-of-two Batcher network and pruning comparators that

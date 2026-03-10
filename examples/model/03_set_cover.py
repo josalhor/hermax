@@ -16,10 +16,10 @@ pick = m.bool_dict("pick", list(sets.keys()))
 
 for u in universe:
     cover_u = [pick[s] for s in sets if u in sets[s]]
-    m &= m.vector(cover_u, name=f"cover_{u}").at_least_one()  # some selected set must cover u
+    m &= m.vector(cover_u, name=f"cover_{u}").at_least_one()
 
 for s in sets:
-    m.obj[set_cost[s]] += ~pick[s]  # [~pick[s]] is violated when pick[s] is true -> pay cost if selected
+    m.obj[set_cost[s]] += ~pick[s]
 
 r = m.solve()
 

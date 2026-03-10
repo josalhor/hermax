@@ -1,13 +1,13 @@
 Incomplete Non-Incremental Solvers
 ==================================
 
-Documents the public solvers exposed in
+Documents the solvers in
 ``hermax.non_incremental.incomplete``.
 
 These solvers are:
 
-* non-IPAMIR-native (they do not provide native incremental state reuse),
-* generally incomplete (they may return a feasible solution without proving optimality).
+* non-IPAMIR-native (they do not provide native incremental state reuse)
+* incomplete (they may return a non optimal solution)
 
 For this reason, callers should expect :class:`hermax.core.ipamir_solver_interface.SolveStatus`
 values such as ``INTERRUPTED_SAT`` for valid but non-proven solutions.
@@ -81,11 +81,10 @@ API Details
 Notes
 -----
 
-* ``set_terminate()`` is generally not supported by these subprocess wrappers.
 * Assumptions are emulated by adding temporary hard unit clauses to the
   one-shot solve snapshot.
-* Hermax recomputes IPAMIR-facing cost from the returned model in several
-  wrappers to guard against backend objective/reporting mismatches.
+* Hermax recomputes costs from the returned model in several
+  wrappers to protect against solver bugs.
 
 References
 ----------
