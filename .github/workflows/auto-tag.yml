@@ -3,48 +3,40 @@ name: Auto Tag from setup.py
 on:
   push:
     branches:
-      - main # Only run this when code is pushed or merged to main
+      - main
 
 jobs:
   create-tag:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required so the bot can push the tag
+      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetches all history so we can see existing tags
+          fetch-depth: 0
 
-      - name: Extract version using Regex
+      - name: Extract version
         id: get_version
         run: |
-          # Looks for version="X.Y.Z" or version='X.Y.Z' and extracts just the X.Y.Z part
           VERSION=$(grep -oP "(?<=version=['\"])[^'\"]*" setup.py)
-          
           if [ -z "$VERSION" ]; then
-            echo "Error: Could not find version string in setup.py"
+            echo "Error: Could not find version in setup.py"
             exit 1
           fi
-          
-          echo "Extracted version: $VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      - name: Check if tag already exists
-        id: check_tag
-        run: |
-          if git rev-parse "v${{ env.VERSION }}" >/dev/null 2>&1; then
-            echo "Tag v${{ env.VERSION }} already exists. Skipping."
-            echo "EXISTS=true" >> $GITHUB_ENV
-          else
-            echo "EXISTS=false" >> $GITHUB_ENV
-          fi
-
-      - name: Create and Push Tag
-        if: env.EXISTS == 'false'
+      - name: Force Create and Push Tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ env.VERSION }}"
-          git push origin "v${{ env.VERSION }}"
+          
+          TAG_NAME="v${{ env.VERSION }}"
+          
+          # Create (or recreate) the tag locally on the current commit
+          git tag -f "$TAG_NAME"
+          
+          # Force push the tag to the remote repository
+          # This 'moves' the tag from an old commit to the current one
+          git push origin "$TAG_NAME" --force
