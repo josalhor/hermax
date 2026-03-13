@@ -34,9 +34,10 @@ def test_debug_level_two_shows_normalized_pb_and_encoder_path():
     a = m.bool("a")
     b = m.bool("b")
     m &= (a + b <= 1)
+    m._commit_pb()
     out = buf.getvalue()
     assert "pb_normalize" in out
-    assert "encode path=card" in out
+    assert ("encode path=card" in out) or ("encode path=structured_card_auto" in out)
 
 
 def test_debug_level_two_shows_cache_hit_on_repeat_pb_compare():
@@ -47,6 +48,7 @@ def test_debug_level_two_shows_cache_hit_on_repeat_pb_compare():
     b = m.bool("b")
     m &= (2 * a + 3 * b <= 3)
     m &= (2 * a + 3 * b <= 3)
+    m._commit_pb()
     out = buf.getvalue()
     assert "pb_cache miss" in out
     assert "pb_cache hit" in out
@@ -62,4 +64,3 @@ def test_debug_level_three_includes_clause_dumps():
     out = buf.getvalue()
     assert "hard[0]=" in out
     assert "soft+[0]" in out
-

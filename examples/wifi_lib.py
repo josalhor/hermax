@@ -13,19 +13,27 @@ HAS_VISUALIZATION = (
 
 
 def generate_random_network(num_routers: int, edge_prob: float):
+    return generate_random_network_with_rng(num_routers, edge_prob, rng=random.Random(0))
+
+
+def generate_random_network_with_rng(num_routers: int, edge_prob: float, *, rng):
     routers = set(range(1, num_routers + 1))
     edges = set()
-    for u, v in itertools.combinations(routers, 2):
-        if random.random() < edge_prob:
+    for u, v in itertools.combinations(sorted(routers), 2):
+        if rng.random() < edge_prob:
             edges.add((u, v))
     return routers, edges
 
 
 def generate_congestion_weights(routers: set, freqs: set, min_w: int, max_w: int):
+    return generate_congestion_weights_with_rng(routers, freqs, min_w, max_w, rng=random.Random(0))
+
+
+def generate_congestion_weights_with_rng(routers: set, freqs: set, min_w: int, max_w: int, *, rng):
     weights = {}
-    for r in routers:
-        for f in freqs:
-            weights[(r, f)] = random.randint(min_w, max_w)
+    for r in sorted(routers):
+        for f in sorted(freqs):
+            weights[(r, f)] = rng.randint(min_w, max_w)
     return weights
 
 
@@ -33,8 +41,8 @@ def build_var_map(routers, freqs, allow_offline=False):
     states = freqs | ({0} if allow_offline else set())
     vpool = IDPool(start_from=1)
     var_map = {}
-    for r in routers:
-        for f in states:
+    for r in sorted(routers):
+        for f in sorted(states):
             var_map[(r, f)] = vpool.id(f"router{r}@freq{f}")
     return var_map
 
@@ -46,17 +54,17 @@ def build_solver_from_scratch(routers, edges, freqs, weights, w_offline, var_map
     def x(r, f):
         return var_map[(r, f)]
 
-    for r in routers:
-        solver.add_clause([x(r, f) for f in states])
-        for f1, f2 in itertools.combinations(states, 2):
+    for r in sorted(routers):
+        solver.add_clause([x(r, f) for f in sorted(states)])
+        for f1, f2 in itertools.combinations(sorted(states), 2):
             solver.add_clause([-x(r, f1), -x(r, f2)])
 
-    for u, v in edges:
-        for f in freqs:
+    for u, v in sorted(edges):
+        for f in sorted(freqs):
             solver.add_clause([-x(u, f), -x(v, f)])
 
-    for r in routers:
-        for f in freqs:
+    for r in sorted(routers):
+        for f in sorted(freqs):
             solver.set_soft(-x(r, f), weight=weights[(r, f)])
         if allow_offline:
             solver.set_soft(-x(r, 0), weight=w_offline)
@@ -69,8 +77,8 @@ def extract_assignment(model, routers, freqs, var_map, allow_offline=False):
         return {}
     states = freqs | ({0} if allow_offline else set())
     assignment = {}
-    for r in routers:
-        for f in states:
+    for r in sorted(routers):
+        for f in sorted(states):
             if var_map[(r, f)] in model or (
                 var_map[(r, f)] - 1 < len(model) and model[var_map[(r, f)] - 1] > 0
             ):

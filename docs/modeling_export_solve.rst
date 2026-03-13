@@ -195,10 +195,11 @@ Incremental Defaults
    m &= ~a        # routed incrementally
    m.solve()
 
-Once a backend is bound, hard-clause updates are routed immediately.
+Once a backend is bound, model updates are reflected on the bound backend when
+they are materialized for solving.
 Soft-clause behavior depends on bound mode:
 
-* bound MaxSAT backend: soft additions/updates are routed immediately
+* bound MaxSAT backend: soft additions/updates are applied on the MaxSAT side
 * bound SAT backend: soft additions are cached in the model and applied when
   solving upgrades/rebinds to MaxSAT
 

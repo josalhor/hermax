@@ -3,6 +3,7 @@ import types
 import pytest
 
 import hermax.model as hm
+import hermax.internal.structuredpb as structuredpb_mod
 from hermax.model import Model
 
 
@@ -77,10 +78,34 @@ def _patch_pb_methods(monkeypatch, calls):
     monkeypatch.setattr(hm.PBEnc, "equals", staticmethod(equals))
 
 
+def _patch_structured_auto(monkeypatch, calls):
+    real_auto_leq = structuredpb_mod.StructuredPBEnc.auto_leq
+
+    def wrapped_auto_leq(*args, **kwargs):
+        calls.append(
+            (
+                "structured.auto_leq",
+                list(kwargs["lits"]),
+                list(kwargs["weights"]),
+                int(kwargs["bound"]),
+                [list(group) for group in kwargs.get("amo_groups", [])],
+                [list(group) for group in kwargs.get("eo_groups", [])],
+            )
+        )
+        return real_auto_leq(*args, **kwargs)
+
+    monkeypatch.setattr(
+        structuredpb_mod.StructuredPBEnc,
+        "auto_leq",
+        classmethod(lambda cls, *a, **kw: wrapped_auto_leq(*a, **kw)),
+    )
+
+
 def test_unit_coefficients_use_cardinality_atmost(monkeypatch):
     calls = []
     _patch_card_methods(monkeypatch, calls)
     _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
 
     m = Model()
     a = m.bool("a")
@@ -92,10 +117,11 @@ def test_unit_coefficients_use_cardinality_atmost(monkeypatch):
 
     assert r[a] is True
     assert r[b] is False
-    assert [c[0] for c in calls] == ["card.atmost"]
-    kind, lits, bound, _top = calls[0]
-    assert kind == "card.atmost"
+    assert [c[0] for c in calls] == ["structured.auto_leq", "card.atmost"]
+    kind, lits, weights, bound, _amo_groups, _eo_groups = calls[0]
+    assert kind == "structured.auto_leq"
     assert sorted(abs(x) for x in lits) == sorted([a.id, b.id])
+    assert weights == [1, 1]
     assert bound == 1
 
 
@@ -126,6 +152,7 @@ def test_unit_coefficients_use_cardinality_equals(monkeypatch):
     calls = []
     _patch_card_methods(monkeypatch, calls)
     _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
 
     m = Model()
     a = m.bool("a")
@@ -138,10 +165,8 @@ def test_unit_coefficients_use_cardinality_equals(monkeypatch):
     assert r[a] is True
     assert r[b] is False
     kinds = [c[0] for c in calls]
-    assert kinds[0] == "card.equals"
-    assert "card.atleast" in kinds
-    assert "card.atmost" in kinds
-    assert all(not k.startswith("pb.") for k in kinds)
+    assert kinds == ["card.equals", "card.atleast", "card.atmost"]
+    assert calls[0][1] == [a.id, b.id]
     assert calls[0][2] == 1
 
 
@@ -168,6 +193,7 @@ def test_strict_operators_map_to_adjusted_cardinality_bounds(monkeypatch):
     calls = []
     _patch_card_methods(monkeypatch, calls)
     _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
 
     m = Model()
     a = m.bool("a")
@@ -183,15 +209,16 @@ def test_strict_operators_map_to_adjusted_cardinality_bounds(monkeypatch):
 
     assert r[c] is True and r[d] is True
     kinds = [c0 for c0, *_ in calls]
-    assert kinds == ["card.atmost", "card.atleast"]
-    assert calls[0][2] == 1
-    assert calls[1][2] == 2
+    assert kinds == ["structured.auto_leq", "card.atmost", "card.atleast"]
+    assert calls[0][3] == 1
+    assert calls[2][2] == 2
 
 
 def test_negative_coefficients_normalize_by_flipping_literal_and_shifting_bound(monkeypatch):
     calls = []
     _patch_card_methods(monkeypatch, calls)
     _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
 
     m = Model()
     a = m.bool("a")
@@ -217,6 +244,7 @@ def test_expr_vs_expr_with_unit_coeffs_still_uses_cardinality_dispatch(monkeypat
     calls = []
     _patch_card_methods(monkeypatch, calls)
     _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
 
     m = Model()
     a = m.bool("a")
@@ -257,6 +285,7 @@ def test_gcd_reduction_unlocks_cardinality_for_uniform_weighted_leq(monkeypatch)
     calls = []
     _patch_card_methods(monkeypatch, calls)
     _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
 
     m = Model()
     a = m.bool("a")
@@ -267,8 +296,8 @@ def test_gcd_reduction_unlocks_cardinality_for_uniform_weighted_leq(monkeypatch)
     _solve_ok(m)
 
     kinds = [c0 for c0, *_ in calls]
-    assert kinds == ["card.atmost"]
-    _kind, _lits, bound, _top = calls[0]
+    assert kinds == ["structured.auto_leq", "card.atmost"]
+    _kind, _lits, _weights, bound, _amo_groups, _eo_groups = calls[0]
     assert bound == 1
 
 
@@ -337,13 +366,19 @@ def test_encoder_generated_aux_ids_are_imported_into_model_registry(monkeypatch)
     class _FakeCNF:
         def __init__(self, clauses):
             self.clauses = clauses
+            self.nv = max((abs(x) for cl in clauses for x in cl), default=0)
 
-    def fake_atmost(*, lits, bound, top_id, **kwargs):
-        calls.append(("card.atmost", list(lits), int(bound), int(top_id)))
+    def fake_auto_leq(*args, **kwargs):
+        calls.append(("structured.auto_leq", list(kwargs["lits"]), list(kwargs["weights"]), int(kwargs["bound"])))
         # Force introduction of a fresh auxiliary var id (top_id + 1).
+        top_id = int(kwargs["top_id"])
         return _FakeCNF([[top_id + 1]])
 
-    monkeypatch.setattr(hm.CardEnc, "atmost", staticmethod(fake_atmost))
+    monkeypatch.setattr(
+        structuredpb_mod.StructuredPBEnc,
+        "auto_leq",
+        classmethod(lambda cls, *a, **kw: fake_auto_leq(*a, **kw)),
+    )
 
     # PB path should not be touched.
     def fail_pb(*args, **kwargs):  # pragma: no cover - sanity guard
@@ -361,9 +396,319 @@ def test_encoder_generated_aux_ids_are_imported_into_model_registry(monkeypatch)
     m &= (a + b <= 1)
     x = m.bool("x")
 
-    # The fake encoder introduced top_before+1 as aux. User var should come after.
-    assert x.id >= top_before + 2
-    assert calls and calls[0][0] == "card.atmost"
+    # PB/Card compilation is deferred until commit/solve, so user allocation
+    # happens before encoder auxiliaries are introduced.
+    assert x.id == top_before + 1
+    assert calls == []
 
     # The fake clause [aux] should make the instance satisfiable.
     _solve_ok(m)
+    assert calls and calls[0][0] == "structured.auto_leq"
+
+
+def test_pb_is_deferred_until_commit(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+
+    m &= (2 * a + 3 * b <= 3)
+    assert calls == []
+
+    m._commit_pb()
+    assert [c[0] for c in calls] == ["pb.leq"]
+
+
+def test_commit_pb_is_idempotent(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+
+    m &= (a + b <= 1)
+    m._commit_pb()
+    m._commit_pb()
+
+    assert [c[0] for c in calls] == ["structured.auto_leq", "card.atmost"]
+
+
+def test_soft_pb_is_deferred_until_commit(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+
+    ref = m.add_soft(2 * a + 3 * b <= 3, weight=5)
+
+    assert len(ref.soft_ids) == 1
+    assert len(m._soft) == 1
+    assert calls == []
+
+    m._commit_pb()
+
+    assert [c[0] for c in calls] == ["pb.leq"]
+
+
+def test_auto_pb_commit_triggers_immediate_hard_compile(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    m.set_auto_pb_commit(True)
+    a = m.bool("a")
+    b = m.bool("b")
+
+    m &= (a + b <= 1)
+
+    assert [c[0] for c in calls] == ["structured.auto_leq", "card.atmost"]
+
+
+def test_auto_pb_commit_triggers_immediate_soft_compile(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+
+    m = Model()
+    m.set_auto_pb_commit(True)
+    a = m.bool("a")
+    b = m.bool("b")
+
+    m.add_soft(2 * a + 3 * b <= 3, weight=5)
+
+    assert [c[0] for c in calls] == ["pb.leq"]
+
+
+def test_commit_pb_prioritizes_cardinality_before_structured_pb(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    c = m.bool("c")
+    d = m.bool("d")
+
+    m &= (a + b <= 1)         # AMO candidate
+    m &= (b + c == 1)         # EO candidate
+    m &= (2 * a + 3 * b + 5 * d <= 6)  # weighted PB should see both groups
+
+    assert calls == []
+    m._commit_pb()
+
+    kinds = [c0 for c0, *_ in calls]
+    assert kinds[:3] == ["structured.auto_leq", "card.atmost", "card.equals"]
+    weighted_call = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    _kind, lits, weights, bound, amo_groups, eo_groups = weighted_call
+    assert sorted(abs(x) for x in lits) == sorted([a.id, b.id, d.id])
+    assert sorted(weights) == [2, 3, 5]
+    assert bound == 6
+    assert amo_groups == [[a.id, b.id]]
+    assert eo_groups == []
+
+
+def test_commit_pb_routes_zero_amo_branch_to_plain_pblib(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+
+    def bomb_auto_leq(*args, **kwargs):  # pragma: no cover - sanity guard
+        raise AssertionError("StructuredPB auto router should not be used for zero-AMO branch")
+
+    monkeypatch.setattr(structuredpb_mod.StructuredPBEnc, "auto_leq", classmethod(lambda cls, *a, **kw: bomb_auto_leq(*a, **kw)))
+
+    m = Model()
+    lits = [m.bool(f"x{i}") for i in range(5)]
+
+    m &= (2 * lits[0] + 3 * lits[1] + 4 * lits[2] + 5 * lits[3] + 6 * lits[4] <= 7)
+    m._commit_pb()
+
+    assert [c0 for c0, *_ in calls] == ["pb.leq"]
+
+
+def test_commit_pb_uses_structured_auto_for_nontrivial_amo_branch(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    lits = [m.bool(f"x{i}") for i in range(12)]
+
+    # Create overlap candidates, but not enough to trivially reconstruct a single partition.
+    m &= (lits[0] + lits[1] + lits[2] <= 1)
+    m &= (lits[1] + lits[2] + lits[3] <= 1)
+    m &= (lits[4] + lits[5] == 1)
+    m &= (lits[6] + lits[7] + lits[8] <= 1)
+    m &= (lits[7] + lits[8] + lits[9] <= 1)
+    m &= (
+        5 * lits[0]
+        + 7 * lits[1]
+        + 4 * lits[2]
+        + 8 * lits[3]
+        + 3 * lits[4]
+        + 9 * lits[5]
+        + 6 * lits[6]
+        + 10 * lits[7]
+        + 7 * lits[8]
+        + 11 * lits[9]
+        + 8 * lits[10]
+        + 12 * lits[11]
+        <= 35
+    )
+
+    m._commit_pb()
+
+    kinds = [c0 for c0, *_ in calls]
+    assert "structured.auto_leq" in kinds
+    assert not any(k == "pb.leq" for k in kinds)
+    structured_call = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    _kind, _lits, _weights, _bound, amo_groups, eo_groups = structured_call
+    assert amo_groups == [
+        [lits[0].id, lits[1].id, lits[2].id],
+        [lits[1].id, lits[2].id, lits[3].id],
+        [lits[6].id, lits[7].id, lits[8].id],
+        [lits[7].id, lits[8].id, lits[9].id],
+    ]
+    assert eo_groups == [[lits[4].id, lits[5].id]]
+
+
+def test_commit_pb_prioritizes_cardinality_harvesting_even_if_pb_was_added_first(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    c = m.bool("c")
+    d = m.bool("d")
+    e = m.bool("e")
+    f = m.bool("f")
+    g = m.bool("g")
+    h = m.bool("h")
+    i = m.bool("i")
+    j = m.bool("j")
+    k = m.bool("k")
+    l = m.bool("l")
+
+    m &= (5 * a + 7 * b + 4 * c + 8 * d + 3 * e + 9 * f + 6 * g + 10 * h + 7 * i + 11 * j + 8 * k + 12 * l <= 35)
+    m &= (a + b + c <= 1)
+    m &= (b + c + d <= 1)
+    m &= (e + f == 1)
+    m &= (g + h + i <= 1)
+    m &= (h + i + j <= 1)
+
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    _kind, _lits, _weights, _bound, amo_groups, eo_groups = structured
+    assert amo_groups == [
+        [a.id, b.id, c.id],
+        [b.id, c.id, d.id],
+        [g.id, h.id, i.id],
+        [h.id, i.id, j.id],
+    ]
+    assert eo_groups == [[e.id, f.id]]
+
+
+def test_commit_pb_demotes_partial_eo_overlap_to_amo(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    lits = [m.bool(f"x{i}") for i in range(12)]
+    m &= (lits[0] + lits[1] + lits[2] == 1)
+    m &= (
+        5 * lits[0]
+        + 7 * lits[1]
+        + 4 * lits[3]
+        + 8 * lits[4]
+        + 3 * lits[5]
+        + 9 * lits[6]
+        + 6 * lits[7]
+        + 10 * lits[8]
+        + 7 * lits[9]
+        + 11 * lits[10]
+        + 8 * lits[11]
+        <= 35
+    )
+
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    _kind, _lits, _weights, _bound, amo_groups, eo_groups = structured
+    assert [lits[0].id, lits[1].id] in amo_groups
+    assert [lits[0].id, lits[1].id, lits[2].id] not in eo_groups
+
+
+def test_commit_pb_uses_nonnullable_enum_domains_as_eo_candidates(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    enums = [m.enum(f"c{i}", choices=["r", "g", "b"], nullable=False) for i in range(4)]
+    lits = []
+    weights = []
+    for i, enum in enumerate(enums):
+        lits.extend([enum._choice_lits["r"], enum._choice_lits["g"], enum._choice_lits["b"]])
+        weights.extend([10 + i, 20 + i, 30 + i])
+
+    m &= (sum(w * lit for w, lit in zip(weights, lits)) <= 70)
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    _kind, _lits, _weights, _bound, amo_groups, eo_groups = structured
+    assert amo_groups == []
+    assert eo_groups == [
+        [enums[0]._choice_lits["r"].id, enums[0]._choice_lits["g"].id, enums[0]._choice_lits["b"].id],
+        [enums[1]._choice_lits["r"].id, enums[1]._choice_lits["g"].id, enums[1]._choice_lits["b"].id],
+        [enums[2]._choice_lits["r"].id, enums[2]._choice_lits["g"].id, enums[2]._choice_lits["b"].id],
+        [enums[3]._choice_lits["r"].id, enums[3]._choice_lits["g"].id, enums[3]._choice_lits["b"].id],
+    ]
+
+
+def test_commit_pb_uses_nullable_enum_domains_as_amo_candidates(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    enums = [m.enum(f"c{i}", choices=["r", "g", "b"], nullable=True) for i in range(4)]
+    lits = []
+    weights = []
+    for i, enum in enumerate(enums):
+        lits.extend([enum._choice_lits["r"], enum._choice_lits["g"], enum._choice_lits["b"]])
+        weights.extend([10 + i, 20 + i, 30 + i])
+
+    m &= (sum(w * lit for w, lit in zip(weights, lits)) <= 70)
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    _kind, _lits, _weights, _bound, amo_groups, eo_groups = structured
+    assert amo_groups == [
+        [enums[0]._choice_lits["r"].id, enums[0]._choice_lits["g"].id, enums[0]._choice_lits["b"].id],
+        [enums[1]._choice_lits["r"].id, enums[1]._choice_lits["g"].id, enums[1]._choice_lits["b"].id],
+        [enums[2]._choice_lits["r"].id, enums[2]._choice_lits["g"].id, enums[2]._choice_lits["b"].id],
+        [enums[3]._choice_lits["r"].id, enums[3]._choice_lits["g"].id, enums[3]._choice_lits["b"].id],
+    ]
+    assert eo_groups == []

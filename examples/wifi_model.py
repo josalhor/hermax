@@ -5,8 +5,8 @@ import time
 from hermax.model import Clause, Model
 from wifi_lib import (
     HAS_VISUALIZATION,
-    generate_congestion_weights,
-    generate_random_network,
+    generate_congestion_weights_with_rng,
+    generate_random_network_with_rng,
     visualize_network,
 )
 
@@ -108,9 +108,9 @@ def main():
         print("Warning: --image requested but networkx or matplotlib is missing. Skipping images.")
 
     random.seed(args.seed)
-    routers, edges = generate_random_network(args.nodes, args.edge_prob)
+    routers, edges = generate_random_network_with_rng(args.nodes, args.edge_prob, rng=random)
     freqs = set(range(1, args.freqs + 1))
-    weights = generate_congestion_weights(routers, freqs, 5, 30)
+    weights = generate_congestion_weights_with_rng(routers, freqs, 5, 30, rng=random)
     w_offline = 9999
 
     total_build_s = 0.0

@@ -625,7 +625,25 @@ if %errorlevel%==0 (
         if fixed != data:
             with open(path, "wb") as f:
                 f.write(fixed)
-    
+
+    def _prepare_shell_scripts(self, *paths):
+        """Normalize and mark shell-entry files executable when present."""
+        for path in paths:
+            if not path or not os.path.exists(path):
+                continue
+            if os.path.isdir(path):
+                for entry in os.listdir(path):
+                    full = os.path.join(path, entry)
+                    if not os.path.isfile(full):
+                        continue
+                    self._normalize_script_line_endings(full)
+                    st = os.stat(full).st_mode
+                    os.chmod(full, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                continue
+            self._normalize_script_line_endings(path)
+            st = os.stat(path).st_mode
+            os.chmod(path, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
     def _make(self, make_args, *, cwd, env):
         """
         Cross-platform 'make' wrapper that delegates to _bash().
@@ -854,9 +872,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
             self._make(["clean"], cwd=cadical_dir, env=env)
         
         cfg = os.path.join(cadical_dir, "configure")
-        self._normalize_script_line_endings(cfg)
-        st = os.stat(cfg).st_mode
-        os.chmod(cfg, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        self._prepare_shell_scripts(cfg, os.path.join(cadical_dir, "scripts"))
 
         print('configure')
         self._bash(["sh", "./configure"], cwd=cadical_dir, env=env)
@@ -1066,7 +1082,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         uwr_dir = os.path.join(source_root, "uwrmaxsat")
         if os.path.exists(os.path.join(cadical_dir, "Makefile")):
             self._make(["clean"], cwd=cadical_dir, env=env)
-        self._normalize_script_line_endings(os.path.join(cadical_dir, "configure"))
+        self._prepare_shell_scripts(os.path.join(cadical_dir, "configure"), os.path.join(cadical_dir, "scripts"))
         self._bash(["sh", "./configure"], cwd=cadical_dir, env=env)
 
         self._make(["cadical", "-j"], cwd=cadical_dir, env=env)
@@ -1102,6 +1118,18 @@ PBLIB_BINDINGS_DIR = os.path.join("pblib", "src")
 PBLIB_SRCS = sorted(glob.glob(os.path.join(PBLIB_ROOT_DIR, "*.cpp")))
 PBLIB_SRCS.extend(sorted(glob.glob(os.path.join(PBLIB_ENC_DIR, "*.cpp"))))
 PBLIB_BINDING_SRCS = [os.path.join(PBLIB_BINDINGS_DIR, "pblib_capi.cpp"), *PBLIB_SRCS]
+STRUCTUREDPB_DIR = "structuredpb"
+STRUCTUREDPB_INCLUDE_DIR = os.path.join(STRUCTUREDPB_DIR, "include")
+STRUCTUREDPB_SRC_DIR = os.path.join(STRUCTUREDPB_DIR, "src")
+STRUCTUREDPB_BINDING_SRCS = [
+    os.path.join(STRUCTUREDPB_SRC_DIR, "structuredpb_capi.cpp"),
+    os.path.join(STRUCTUREDPB_SRC_DIR, "mdd.cpp"),
+    os.path.join(STRUCTUREDPB_SRC_DIR, "gswc.cpp"),
+    os.path.join(STRUCTUREDPB_SRC_DIR, "ggpw.cpp"),
+    os.path.join(STRUCTUREDPB_SRC_DIR, "gmto.cpp"),
+    os.path.join(STRUCTUREDPB_SRC_DIR, "rggt.cpp"),
+    os.path.join(STRUCTUREDPB_SRC_DIR, "registry.cpp"),
+]
 
 
 def _parse_csv_env(name: str) -> set[str]:
@@ -1143,7 +1171,7 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
 
 setup(
     name="hermax",
-    version="1.0.0",
+    version="1.1.0",
     author="Josep Maria Salvia Hornos",
     author_email="josh.salvia@gmail.com",
     description="A Python library of incremental MaxSAT solvers",
@@ -1204,6 +1232,26 @@ setup(
                 ([ "/O2", "/std:c++17"] if platform.system() == "Windows"
                  else ["-O3", "-Wall", "-std=c++17", "-DNDEBUG"])
                 + [f"-DHERMAX_PBLIB_ENABLE_PYINT_CACHE={1 if os.environ.get('HERMAX_PBLIB_PYINT_CACHE', '1') == '1' else 0}"]
+            ),
+            language="c++",
+        ),
+        Extension(
+            "hermax.internal._structuredpb",
+            STRUCTUREDPB_BINDING_SRCS,
+            include_dirs=[
+                STRUCTUREDPB_INCLUDE_DIR,
+                STRUCTUREDPB_SRC_DIR,
+                *[
+                    p
+                    for p in [
+                        sysconfig.get_paths().get("include"),
+                        sysconfig.get_paths().get("platinclude"),
+                    ]
+                    if p
+                ],
+            ],
+            extra_compile_args=(
+                (["/O2", "/std:c++17"] if platform.system() == "Windows" else ["-O3", "-Wall", "-std=c++17", "-DNDEBUG"])
             ),
             language="c++",
         ),

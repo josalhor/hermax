@@ -20,6 +20,26 @@ def test_enum_declaration_properties_and_choice_literals():
     assert all(isinstance(l, Literal) for l in color._choice_lits.values())
 
 
+def test_enum_domain_constraints_are_deferred_lazily():
+    m = Model()
+    color = m.enum("color", choices=["red", "green", "blue"], nullable=False)
+    maybe = m.enum("maybe", choices=["red", "green"], nullable=True)
+
+    assert len(m._hard) == 0
+    assert len(m._pending_pb_constraints) == 3
+
+    color_ids = {lit.id for lit in color._choice_lits.values()}
+    maybe_ids = {lit.id for lit in maybe._choice_lits.values()}
+    seen = {
+        (c._op, frozenset(t.literal.id for t in c._lhs.terms), int(c._rhs.constant))
+        for c in m._pending_pb_constraints
+    }
+
+    assert ("<=", frozenset(color_ids), 1) in seen
+    assert ("==", frozenset(color_ids), 1) in seen
+    assert ("<=", frozenset(maybe_ids), 1) in seen
+
+
 def test_enum_nonnullable_has_exactly_one_semantics_end_to_end():
     m = Model()
     color = m.enum("color", choices=["red", "green", "blue"], nullable=False)
@@ -198,19 +218,10 @@ def test_nullable_enum_domain_constraints_allow_zero_or_one_but_not_two():
     assert r2.status == "unsat"
 
 
-def test_enum_export_shape_matches_pairwise_amo_plus_alo_for_nonnullable():
+def test_enum_export_preserves_exactly_one_semantics_for_nonnullable():
     m = Model()
     color = m.enum("color", choices=["r", "g", "b"], nullable=False)
-    r = color._choice_lits["r"]
-    g = color._choice_lits["g"]
-    b = color._choice_lits["b"]
 
     cnf = m.to_cnf()
-    got = {tuple(cl) for cl in cnf.clauses}
-    expected = {
-        (-r.id, -g.id),
-        (-r.id, -b.id),
-        (-g.id, -b.id),
-        (r.id, g.id, b.id),
-    }
-    assert got == expected
+    r = _solve_ok(m)
+    assert r[color] in {"r", "g", "b"}

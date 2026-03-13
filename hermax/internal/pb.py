@@ -34,7 +34,8 @@
     applications. Thus, several *encodings* of pseudo-Boolean constraints into
     CNF formulas are known [2]_. The list of pseudo-Boolean encodings
     supported by this module include BDD [3]_ [4]_, sequential weight counters
-    [5]_, sorting networks [3]_, adder networks [3]_, and binary merge [6]_.
+    [5]_, sorting networks [3]_, adder networks [3]_, binary merge [6]_, and
+    a manually surfaced LPW/watchdog mode.
     Access to all cardinality encodings can be made through the main class of
     this module, which is :class:`.PBEnc`.
 
@@ -103,6 +104,7 @@ class EncType(object):
             adder      = 4
             binmerge   = 5
             native     = 6
+            lpw        = 7
 
         The desired encoding can be selected either directly by its integer
         identifier, e.g. ``2``, or by its alphabetical name, e.g.
@@ -123,6 +125,7 @@ class EncType(object):
     adder      = 4
     binmerge   = 5
     native     = 6
+    lpw        = 7
 
     if pblib_present:
         _to_pbenc = {
@@ -131,7 +134,8 @@ class EncType(object):
                 seqcounter: pblib.PB_SWC,
                 sortnetwrk: pblib.PB_SORTINGNETWORKS,
                 adder:      pblib.PB_ADDER,
-                binmerge:   pblib.PB_BINARY_MERGE
+                binmerge:   pblib.PB_BINARY_MERGE,
+                lpw:        pblib.PB_LPW
             }
 
         _to_pbcmp = {
@@ -254,7 +258,7 @@ class PBEnc(object):
             :rtype: :class:`pysat.formula.CNFPlus`
         """
 
-        if encoding < 0 or encoding > 6:
+        if encoding < 0 or encoding > 7:
             raise(NoSuchEncodingError(encoding))
 
         # checking if the bound is meaningless for any encoding

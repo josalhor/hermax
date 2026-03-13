@@ -6,8 +6,8 @@ from wifi_lib import (
     build_solver_from_scratch,
     build_var_map,
     extract_assignment,
-    generate_congestion_weights,
-    generate_random_network,
+    generate_congestion_weights_with_rng,
+    generate_random_network_with_rng,
     visualize_network,
 )
 
@@ -34,9 +34,9 @@ def main():
         print("Warning: --image requested but networkx or matplotlib is missing. Skipping images.")
 
     random.seed(args.seed)
-    routers, edges = generate_random_network(args.nodes, args.edge_prob)
+    routers, edges = generate_random_network_with_rng(args.nodes, args.edge_prob, rng=random)
     freqs = set(range(1, args.freqs + 1))
-    weights = generate_congestion_weights(routers, freqs, 5, 30)
+    weights = generate_congestion_weights_with_rng(routers, freqs, 5, 30, rng=random)
     w_offline = 9999
     states = freqs | ({0} if args.allow_offline else set())
 

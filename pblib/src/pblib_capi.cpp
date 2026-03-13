@@ -180,7 +180,14 @@ static PyObject* py_encode_pb(PyObject*, PyObject* args, PyObject* kwargs) {
         }
 
         PBConfig config = std::make_shared<PBConfigClass>();
-        config->pb_encoder = static_cast<PB_ENCODER::PB2CNF_PB_Encoder>(pb_encoder);
+        if (pb_encoder == 7) {
+            // Surface the hidden watchdog+GAC binary-merge path as a manual LPW mode.
+            config->pb_encoder = PB_ENCODER::PB2CNF_PB_Encoder::BINARY_MERGE;
+            config->use_watch_dog_encoding_in_binary_merger = true;
+            config->use_gac_binary_merge = true;
+        } else {
+            config->pb_encoder = static_cast<PB_ENCODER::PB2CNF_PB_Encoder>(pb_encoder);
+        }
 
         VectorClauseDatabase result(config);
         AuxVarManager varmgr(top_id + 1);
@@ -276,6 +283,7 @@ PyMODINIT_FUNC PyInit__pblib(void) {
     if (PyModule_AddIntConstant(m, "PB_SORTINGNETWORKS", (int)PB_ENCODER::PB2CNF_PB_Encoder::SORTINGNETWORKS) < 0) return nullptr;
     if (PyModule_AddIntConstant(m, "PB_ADDER", (int)PB_ENCODER::PB2CNF_PB_Encoder::ADDER) < 0) return nullptr;
     if (PyModule_AddIntConstant(m, "PB_BINARY_MERGE", (int)PB_ENCODER::PB2CNF_PB_Encoder::BINARY_MERGE) < 0) return nullptr;
+    if (PyModule_AddIntConstant(m, "PB_LPW", 7) < 0) return nullptr;
 
     if (PyModule_AddIntConstant(m, "LEQ", (int)PBLib::Comparator::LEQ) < 0) return nullptr;
     if (PyModule_AddIntConstant(m, "GEQ", (int)PBLib::Comparator::GEQ) < 0) return nullptr;

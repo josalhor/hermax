@@ -75,6 +75,11 @@ def main() -> int:
         action="store_true",
         help="Only capture examples/model/*.py (skip top-level examples used in docs/examples.rst).",
     )
+    parser.add_argument(
+        "--include-cvrp-flat",
+        action="store_true",
+        help="Also capture examples/cvrp_flat.py (skipped by default to avoid churn in rendered assets).",
+    )
     args = parser.parse_args()
 
     repo_root = args.repo_root.resolve()
@@ -97,10 +102,13 @@ def main() -> int:
             "examples/optilog_formula_compat.py",
             "examples/portfolio_mixed.py",
             "examples/portfolio_presets.py",
-            "examples/cvrp_flat.py",
             "examples/wifi_minimal.py",
         ]:
             p = repo_root / rel
+            if p.exists():
+                top_level_paths.append(p)
+        if args.include_cvrp_flat:
+            p = repo_root / "examples/cvrp_flat.py"
             if p.exists():
                 top_level_paths.append(p)
 

@@ -185,7 +185,7 @@ def test_bool_vector_instantiation_allocates_ids_but_emits_no_clauses():
     assert w.soft == []
 
 
-def test_enum_instantiation_emits_exactly_one_domain_clauses_in_expected_shape():
+def test_enum_instantiation_exports_exactly_one_domain_semantics():
     m = Model()
     color = m.enum("color", choices=["r", "g", "b"], nullable=False)
 
@@ -195,33 +195,27 @@ def test_enum_instantiation_emits_exactly_one_domain_clauses_in_expected_shape()
     assert [r.id, g.id, b.id] == [1, 2, 3]
 
     cnf = m.to_cnf()
-    hard = {tuple(cl) for cl in cnf.clauses}
-
-    # Pairwise AMO + one ALO = EO over 3 values.
-    expected = {
-        (-r.id, -g.id),
-        (-r.id, -b.id),
-        (-g.id, -b.id),
-        (r.id, g.id, b.id),
-    }
-    assert hard == expected
+    sat, raw = _solve_cnf(cnf)
+    assert sat is True
+    dec = m.decode_model(raw)
+    assert dec[color] in {"r", "g", "b"}
 
 
-def test_nullable_enum_instantiation_emits_only_amo_without_alo():
+def test_nullable_enum_instantiation_exports_amo_without_forcing_choice():
     m = Model()
     color = m.enum("color", choices=["r", "g", "b"], nullable=True)
     r = color._choice_lits["r"]
     g = color._choice_lits["g"]
     b = color._choice_lits["b"]
 
+    m &= ~r
+    m &= ~g
+    m &= ~b
     cnf = m.to_cnf()
-    hard = {tuple(cl) for cl in cnf.clauses}
-    expected = {
-        (-r.id, -g.id),
-        (-r.id, -b.id),
-        (-g.id, -b.id),
-    }
-    assert hard == expected
+    sat, raw = _solve_cnf(cnf)
+    assert sat is True
+    dec = m.decode_model(raw)
+    assert dec[color] is None
 
 
 def test_int_instantiation_emits_ladder_domain_clauses_in_expected_shape():

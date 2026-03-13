@@ -92,11 +92,8 @@ PB comparisons produce a lazy descriptor:
 
    pb = (2 * a + b <= 2)
 
-It compiles to CNF when:
-
-* added to the model as a hard constraint (``model &= pb``)
-* added as a soft constraint (``model.obj[w] += pb``)
-* explicitly materialized (``pb.clauses()``)
+When added to a model, the constraint is compiled by the model compiler before
+export/solve as needed.
 
 ``pb.clauses()`` returns a :class:`hermax.model.ClauseGroup` and caches the
 compiled result.
@@ -108,15 +105,35 @@ PB as a Soft Constraint
 internally:
 
 * one weighted soft penalty literal
-* plus the compiled PB network conditional as hard clauses
+* plus the corresponding hard PB network
 
 Encoder Dispatch
 ----------------
 
 The model dispatches PB comparators automatically:
 
-* all coefficients are the same -> cardinality encoding via ``pysat.card.CardEnc``
-* otherwise -> weighted PB encoding via ``pysat.pb.PBEnc``
+* integer fast paths are recognized first when applicable
+* otherwise the compiler chooses among cardinality, weighted PB, and
+  structured-PB encodings depending on the available constraint shape and
+  recovered structure
+
+Structured PB(AMO)
+------------------
+
+When the compiler can recover useful ``AMO`` / ``EO`` structure around a PB (or cardinality constraint!), it
+can route that PB through the structured PB layer instead of flattening it as a
+plain PB.
+
+This path is documented separately in :doc:`modeling_structuredpb`.
+
+In short:
+
+* a first routing stage decides whether the PB should stay in ordinary
+  ``pblib`` or move to the structured portfolio
+* if structured PB is chosen, a second routing stage picks one of the grouped
+  encoders such as ``mdd``, ``rggt``, or ``ggpw``
+* if the available ``AMO`` / ``EO`` candidates overlap, Hermax resolves them
+  into one disjoint partition before encoding
 
 Fast Paths for PB Constraints
 --------------------------------------------

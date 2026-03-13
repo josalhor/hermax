@@ -33,12 +33,8 @@ Eager vs. lazy evaluation
 The API is immediate, but not everything is compiled at the same time:
 
 * Boolean operators produce clauses/groups immediately.
-* PB comparisons produce a **lazy** :class:`hermax.model.PBConstraint`.
-* The PB constraint compiles to CNF only when:
-
-  * Added to the model (``model &= ...``),
-  * Added as a soft constraint (``model.obj[w] += ...``), or
-  * Explicitly requested via ``pb_constraint.clauses()``.
+* PB comparisons produce a **lazy** :class:`hermax.model.PBConstraint` which is compiled when it must be
+  materialized, for example during export/solve.
 
 This keeps the design expressive while preserving enough PB metadata for safe
 operations like ``PB.implies(literal)``.

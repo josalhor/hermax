@@ -1,0 +1,50 @@
+name: Auto Tag from setup.py
+
+on:
+  push:
+    branches:
+      - main # Only run this when code is pushed or merged to main
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required so the bot can push the tag
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches all history so we can see existing tags
+
+      - name: Extract version using Regex
+        id: get_version
+        run: |
+          # Looks for version="X.Y.Z" or version='X.Y.Z' and extracts just the X.Y.Z part
+          VERSION=$(grep -oP "(?<=version=['\"])[^'\"]*" setup.py)
+          
+          if [ -z "$VERSION" ]; then
+            echo "Error: Could not find version string in setup.py"
+            exit 1
+          fi
+          
+          echo "Extracted version: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          if git rev-parse "v${{ env.VERSION }}" >/dev/null 2>&1; then
+            echo "Tag v${{ env.VERSION }} already exists. Skipping."
+            echo "EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Create and Push Tag
+        if: env.EXISTS == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ env.VERSION }}"
+          git push origin "v${{ env.VERSION }}"

@@ -8,9 +8,11 @@ from .model_check import (
     model_satisfies_hard_clauses,
     normalize_soft_units_last_wins,
 )
+from .structuredpb import StructuredPBEnc
 
 __all__ = [
     "ModelCheckResult",
+    "StructuredPBEnc",
     "check_model",
     "clause_satisfied",
     "maxsat_cost_of_model",

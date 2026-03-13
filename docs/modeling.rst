@@ -29,6 +29,7 @@ Core Concepts
    modeling_overview
    modeling_internal_overview
    modeling_boolean_pb
+   modeling_structuredpb
    modeling_modifiers
    modeling_typed
    modeling_collections

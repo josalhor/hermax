@@ -9,6 +9,7 @@ from typing import Iterable, Mapping, Optional, Sequence
 from pysat.formula import CNF, WCNF
 from hermax.internal.card import CardEnc
 from hermax.internal.pb import PBEnc
+from hermax.internal.structuredpb import StructuredPBEnc
 from hermax.utils import batcher_odd_even_unary_add_network
 from pysat.solvers import Solver as PySATSolver
 from hermax.non_incremental import RC2 as HermaxRC2
@@ -1394,13 +1395,13 @@ class EnumVar:
 
     def _add_domain_constraints(self) -> None:
         lits = [self._choice_lits[c] for c in self.choices]
-        # AMO (pairwise) is always required for categorical choices.
-        for i in range(len(lits)):
-            for j in range(i + 1, len(lits)):
-                self._model._hard.append(Clause(self._model, [~lits[i], ~lits[j]]))
-        # Non-nullable enums are exactly-one, so add ALO.
-        if not self.nullable and lits:
-            self._model._hard.append(Clause(self._model, lits))
+        if not lits:
+            return
+        # Route enum domains through the same deferred unit-cardinality path used
+        # elsewhere so they can be harvested as AMO/EO structure later.
+        self._model &= (sum_expr(lits) <= 1)
+        if not self.nullable:
+            self._model &= (sum_expr(lits) == 1)
 
     def is_in(self, choices: Sequence[str]) -> Clause:
         """Return a CNF clause asserting the enum is one of ``choices``.
@@ -3369,6 +3370,8 @@ class _IncrementalCoordinator:
         elif self.mode == "maxsat" and b == "sat":
             raise ValueError("Cannot change incremental backend from MaxSAT to SAT.")
 
+        m._commit_pb()
+
         if self.mode == "sat":
             assert self.sat_solver is not None
             sat = self.sat_solver.solve(assumptions=assumptions_dimacs)
@@ -4711,6 +4714,10 @@ class Model:
         "_obj_proxy",
         "_tier_obj_proxy",
         "_pb_clause_cache",
+        "_known_amo_groups",
+        "_known_eo_groups",
+        "_pending_pb_constraints",
+        "_auto_commit_pb",
         "_allow_negative_objective_offsets",
         "_soft_dedup_enabled",
         "_soft_gcd_opt_enabled",
@@ -4754,6 +4761,10 @@ class Model:
         self._obj_proxy = _ObjectiveProxy(self)
         self._tier_obj_proxy = _TierObjectiveProxy(self)
         self._pb_clause_cache: dict[tuple, ClauseGroup] = {}
+        self._known_amo_groups: set[tuple[int, ...]] = set()
+        self._known_eo_groups: set[tuple[int, ...]] = set()
+        self._pending_pb_constraints: list[PBConstraint] = []
+        self._auto_commit_pb = False
         self._allow_negative_objective_offsets = bool(self.ALLOW_NEGATIVE_OBJECTIVE_OFFSETS)
         self._soft_dedup_enabled = bool(self.SOFT_DEDUP_ENABLED)
         self._soft_gcd_opt_enabled = bool(self.SOFT_GCD_OPTIMIZATION_ENABLED)
@@ -4809,6 +4820,16 @@ class Model:
     def set_soft_gcd_optimization(self, enabled: bool) -> None:
         """Enable or disable one-shot MaxSAT soft-weight GCD scaling."""
         self._soft_gcd_opt_enabled = bool(enabled)
+
+    def set_auto_pb_commit(self, enabled: bool) -> None:
+        """Enable or disable immediate materialization of deferred PB/Card clauses.
+
+        By default, pure Boolean PB/Card fallback encodings are deferred until
+        :meth:`_commit_pb`, export, or solve. Enabling this toggle restores eager
+        commit behavior for those deferred constraints while leaving the
+        defer-capable architecture in place.
+        """
+        self._auto_commit_pb = bool(enabled)
 
     def set_objective_precision(self, *, decimals: int) -> None:
         """Enable/adjust decimal precision for objective-side soft weights.
@@ -5477,6 +5498,25 @@ class Model:
     def __iand__(self, constraint):
         hard0 = len(self._hard)
         soft0 = len(self._soft)
+        if isinstance(constraint, PBConstraint):
+            compiled = self._prepare_pb_constraint(constraint)
+            if isinstance(compiled, PBConstraint):
+                self._defer_pb_constraint(compiled)
+                if self._debug_level >= self.DEBUG_DELTA:
+                    self._debug(self.DEBUG_DELTA, "defer_hard_pb count=1")
+                if self._auto_commit_pb:
+                    self._commit_pb()
+                return self
+            group = compiled
+            self._ensure_deferred_defs_in_group(group)
+            self._hard.extend(group.clauses)
+            if self._debug_level >= self.DEBUG_DELTA:
+                self._debug(self.DEBUG_DELTA, f"add_hard count={len(group.clauses)}")
+                if self._debug_level >= self.DEBUG_VERBOSE:
+                    for i, c in enumerate(group.clauses):
+                        self._debug(self.DEBUG_VERBOSE, f"  hard[{i}]={self._clause_to_dimacs_list(c)}")
+            self._inc_state.route_deltas(hard0, soft0)
+            return self
         group = self._as_clausegroup(constraint)
         self._ensure_deferred_defs_in_group(group)
         self._hard.extend(group.clauses)
@@ -5621,8 +5661,16 @@ class Model:
         # Targeted relaxation for multi-clause structures (including PBConstraint):
         # add one weighted penalty literal and gate the internal network hard.
         if isinstance(constraint, PBConstraint):
-            _ensure_same_model(self, constraint)
-            _add_soft_group_targeted(constraint.clauses())
+            prepared = self._prepare_pb_constraint(constraint)
+            if isinstance(prepared, ClauseGroup):
+                _add_soft_group_targeted(prepared)
+                return group_id, _done()
+            r = self.bool()  # hidden relaxation literal (anonymous)
+            sid = _append_or_merge_soft(weight, Clause(self, [~r]), group_id, raw_weight)
+            sids.append(sid)
+            self._defer_pb_constraint(prepared.only_if(~r))
+            if self._auto_commit_pb:
+                self._commit_pb(route=False)
             return group_id, _done()
 
         if isinstance(constraint, ClauseGroup):
@@ -5705,6 +5753,295 @@ class Model:
         self._pb_clause_cache[key] = group
         return group
 
+    def _defer_pb_constraint(self, constraint: PBConstraint) -> None:
+        """Register a PB/Card constraint for later clause materialization."""
+        _ensure_same_model(self, constraint)
+        self._pending_pb_constraints.append(constraint)
+
+    def _register_amo_group(self, lits: Sequence[int], *, exactly_one: bool = False) -> None:
+        group = tuple(sorted({int(lit) for lit in lits}))
+        if len(group) <= 1:
+            return
+        if bool(exactly_one):
+            self._known_amo_groups.discard(group)
+            self._known_eo_groups.add(group)
+        else:
+            if group in self._known_eo_groups:
+                return
+            self._known_amo_groups.add(group)
+
+    def _analyze_deferred_pb_constraint(self, constraint: PBConstraint) -> dict[str, object]:
+        lhs_r = constraint._lhs._realize_int_terms(self)
+        rhs_r = constraint._rhs._realize_int_terms(self)
+        pairs, const = _EncoderDispatch._normalize_pb(lhs_r, rhs_r)
+        cmp_op, bound = _EncoderDispatch._bound_from_zero_compare(constraint._op, const)
+        lits = [lit for _, lit in pairs]
+        weights = [int(w) for w, _ in pairs]
+        g = reduce(math.gcd, weights) if weights else 1
+        if g > 1:
+            weights = [w // g for w in weights]
+            if cmp_op == "<=":
+                bound = int(bound) // g
+            elif cmp_op == ">=":
+                bound = -((-int(bound)) // g)
+            elif cmp_op == "==":
+                bound = int(bound) // g
+        return {
+            "constraint": constraint,
+            "lits": lits,
+            "weights": weights,
+            "cmp_op": cmp_op,
+            "bound": int(bound),
+            "all_unit": bool(weights) and all(w == 1 for w in weights),
+            "all_positive": all(lit.polarity for lit in lits),
+        }
+
+    def _prepare_pb_constraint(self, constraint: PBConstraint) -> ClauseGroup | PBConstraint:
+        """Compile eager PB fast paths now, but classify PB/Card fallback for deferral."""
+        _ensure_same_model(self, constraint)
+        # Any comparator that still originates from IntVar / lazy-int arithmetic
+        # should keep the historical eager behavior. Those constraints may lower
+        # through specialized fast paths or through the generic PB encoder, but
+        # callers and existing tests expect their side effects immediately.
+        if constraint._lhs.int_terms or constraint._rhs.int_terms:
+            group = constraint.clauses()
+            return group
+        lhs_r = constraint._lhs._realize_int_terms(self)
+        rhs_r = constraint._rhs._realize_int_terms(self)
+        self._validate_integral_pbexpr(lhs_r)
+        self._validate_integral_pbexpr(rhs_r)
+
+        eager_fast = (
+            _EncoderDispatch._try_unary_adder_eq_fastpath(self, lhs_r, constraint._op, rhs_r)
+            or _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath(self, lhs_r, constraint._op, rhs_r)
+            or _EncoderDispatch._try_boolsum_bigm_fastpath(self, lhs_r, constraint._op, rhs_r)
+            or _EncoderDispatch._try_mixed_int_boolsum_bigm_fastpath(self, lhs_r, constraint._op, rhs_r)
+            or _EncoderDispatch._try_univariate_int_fastpath(self, lhs_r, constraint._op, rhs_r)
+            or _EncoderDispatch._try_univariate_with_bool_fastpath(self, lhs_r, constraint._op, rhs_r)
+            or _EncoderDispatch._try_trivariate_int_fastpath(self, lhs_r, constraint._op, rhs_r)
+            or _EncoderDispatch._try_bivariate_int_fastpath(self, lhs_r, constraint._op, rhs_r)
+        )
+        if eager_fast is not None:
+            group = eager_fast
+            for cond in constraint._conditions:
+                group = group.only_if(cond)
+            return group
+
+        def _uses_int_ladder(expr: PBExpr) -> bool:
+            return any(t.literal.id in self._intvar_threshold_owner_by_litid for t in expr.terms)
+
+        # IntVar-derived arithmetic is lowered through ladder literals before it
+        # reaches this point, so checking ``int_terms`` alone is not sufficient.
+        # Keep anything that still touches IntVar ladder structure eager. Only
+        # pure-Boolean PB/Card fallback constraints are deferred.
+        if lhs_r.int_terms or rhs_r.int_terms or _uses_int_ladder(lhs_r) or _uses_int_ladder(rhs_r):
+            group = self._compile_pb_compare(lhs_r, constraint._op, rhs_r)
+            for cond in constraint._conditions:
+                group = group.only_if(cond)
+            return group
+
+        pairs, const = _EncoderDispatch._normalize_pb(lhs_r, rhs_r)
+        cmp_op, bound = _EncoderDispatch._bound_from_zero_compare(constraint._op, const)
+        if self._debug_level >= self.DEBUG_COMPILE:
+            terms = ", ".join(f"{int(w)}*{int(self._lit_to_dimacs(l))}" for w, l in pairs)
+            self._debug(
+                self.DEBUG_COMPILE,
+                f"pb_normalize raw_op={constraint._op} -> op={cmp_op} bound={int(bound)} terms=[{terms}]",
+            )
+
+        # Constant-only and trivial short-circuits are kept eager so their
+        # immediate side effects and debug traces remain visible.
+        if not pairs:
+            group = self._compile_pb_compare(lhs_r, constraint._op, rhs_r)
+            for cond in constraint._conditions:
+                group = group.only_if(cond)
+            return group
+
+        weights = [w for w, _ in pairs]
+        g = reduce(math.gcd, weights) if weights else 1
+        adj_bound = int(bound)
+        adj_weights = list(weights)
+        if g > 1:
+            adj_weights = [w // g for w in adj_weights]
+            if cmp_op == "<=":
+                adj_bound = adj_bound // g
+            elif cmp_op == ">=":
+                adj_bound = -((-adj_bound) // g)
+            elif cmp_op == "==":
+                if adj_bound % g != 0:
+                    group = self._compile_pb_compare(lhs_r, constraint._op, rhs_r)
+                    for cond in constraint._conditions:
+                        group = group.only_if(cond)
+                    return group
+                adj_bound = adj_bound // g
+        total_weight = sum(adj_weights)
+        trivial = (
+            (cmp_op == "<=" and (adj_bound < 0 or adj_bound >= total_weight))
+            or (cmp_op == ">=" and (adj_bound <= 0 or adj_bound > total_weight))
+            or (cmp_op == "==" and (adj_bound < 0 or adj_bound > total_weight))
+        )
+        if trivial:
+            group = self._compile_pb_compare(lhs_r, constraint._op, rhs_r)
+            for cond in constraint._conditions:
+                group = group.only_if(cond)
+            return group
+
+        return PBConstraint(self, lhs_r, constraint._op, rhs_r, list(constraint._conditions))
+
+    def _commit_pb(self, *, route: bool = True) -> None:
+        """Materialize all deferred PB/Card constraints into hard clauses.
+
+        Idempotent: once pending constraints are flushed, repeated calls are
+        no-ops until new PB/Card constraints are added to the model.
+        """
+        if not self._pending_pb_constraints:
+            return
+        hard0 = len(self._hard)
+        soft0 = len(self._soft)
+        pending, self._pending_pb_constraints = self._pending_pb_constraints, []
+        analyzed = [(idx, self._analyze_deferred_pb_constraint(constraint)) for idx, constraint in enumerate(pending)]
+
+        amo_candidates: list[list[int]] = [list(group) for group in sorted(self._known_amo_groups)]
+        eo_candidates: list[list[int]] = [list(group) for group in sorted(self._known_eo_groups)]
+
+        def _cache_key(item: dict[str, object]) -> tuple:
+            key_pairs = tuple(
+                sorted(
+                    (int(self._lit_to_dimacs(lit)), int(weight))
+                    for lit, weight in zip(item["lits"], item["weights"])
+                )
+            )
+            return (str(item["cmp_op"]), int(item["bound"]), key_pairs)
+
+        def _cached_group_for(item: dict[str, object], build):
+            key = _cache_key(item)
+            cached = self._pb_clause_cache.get(key)
+            if cached is not None:
+                if self._debug_level >= self.DEBUG_COMPILE:
+                    self._debug(self.DEBUG_COMPILE, "pb_cache hit")
+                return cached
+            if self._debug_level >= self.DEBUG_COMPILE:
+                self._debug(self.DEBUG_COMPILE, "pb_cache miss")
+            group = build()
+            self._pb_clause_cache[key] = group
+            return group
+
+        def _candidate_sort_key(entry: tuple[int, dict[str, object]]) -> tuple[int, int]:
+            # Cardinalities first, then preserve original order among peers.
+            idx, item = entry
+            return (0 if bool(item["all_unit"]) else 1, idx)
+
+        for _idx, item in sorted(analyzed, key=_candidate_sort_key):
+            constraint = item["constraint"]
+            lits = [lit for lit in item["lits"]]
+            cmp_op = str(item["cmp_op"])
+            bound = int(item["bound"])
+            weights = [int(w) for w in item["weights"]]
+            all_unit = bool(item["all_unit"])
+            all_positive = bool(item["all_positive"])
+
+            if all_unit:
+                raw_group = [lit.id for lit in lits] if all_positive else []
+                if all_positive and cmp_op == "<=":
+                    pb_lit_ids = [lit.id for lit in lits]
+                    pb_lit_set = set(pb_lit_ids)
+                    pb_amo_groups: list[list[int]] = []
+                    pb_eo_groups: list[list[int]] = []
+                    for group in amo_candidates:
+                        overlap = [lit for lit in group if lit in pb_lit_set]
+                        if len(overlap) > 1:
+                            pb_amo_groups.append(overlap)
+                    for group in eo_candidates:
+                        overlap = [lit for lit in group if lit in pb_lit_set]
+                        if len(overlap) == len(group) and len(overlap) > 1:
+                            pb_eo_groups.append(overlap)
+                        elif len(overlap) > 1:
+                            pb_amo_groups.append(overlap)
+                    if self._debug_level >= self.DEBUG_COMPILE:
+                        self._debug(
+                            self.DEBUG_COMPILE,
+                            f"encode path=structured_card_auto op={cmp_op} bound={bound} n={len(pb_lit_ids)}",
+                        )
+                    group = _cached_group_for(
+                        item,
+                        lambda: self._cnfplus_to_clausegroup(
+                            StructuredPBEnc.auto_leq(
+                                lits=pb_lit_ids,
+                                weights=[1] * len(pb_lit_ids),
+                                bound=bound,
+                                amo_groups=pb_amo_groups,
+                                eo_groups=pb_eo_groups,
+                                top_id=self._top_id(),
+                            )
+                        ),
+                    )
+                else:
+                    group = constraint.clauses()
+
+                for cond in constraint._conditions:
+                    group = group.only_if(cond)
+                self._ensure_deferred_defs_in_group(group)
+                self._hard.extend(group.clauses)
+                if all_positive and cmp_op == "<=" and bound == 1:
+                    self._register_amo_group(raw_group, exactly_one=False)
+                    amo_candidates.append(raw_group)
+                elif all_positive and cmp_op == "==" and bound == 1:
+                    self._register_amo_group(raw_group, exactly_one=True)
+                    amo_candidates = [group for group in amo_candidates if group != raw_group]
+                    eo_candidates.append(raw_group)
+                continue
+
+            if cmp_op == "<=" and all_positive:
+                pb_lit_ids = [lit.id for lit in lits]
+                pb_lit_set = set(pb_lit_ids)
+                pb_amo_groups: list[list[int]] = []
+                pb_eo_groups: list[list[int]] = []
+                for group in amo_candidates:
+                    overlap = [lit for lit in group if lit in pb_lit_set]
+                    if len(overlap) > 1:
+                        pb_amo_groups.append(overlap)
+                for group in eo_candidates:
+                    overlap = [lit for lit in group if lit in pb_lit_set]
+                    if len(overlap) == len(group) and len(overlap) > 1:
+                        pb_eo_groups.append(overlap)
+                    elif len(overlap) > 1:
+                        pb_amo_groups.append(overlap)
+                if pb_amo_groups or pb_eo_groups:
+                    if self._debug_level >= self.DEBUG_COMPILE:
+                        self._debug(
+                            self.DEBUG_COMPILE,
+                            f"encode path=structured_pb_auto op={cmp_op} bound={bound} n={len(pb_lit_ids)}",
+                        )
+                    group = _cached_group_for(
+                        item,
+                        lambda: self._cnfplus_to_clausegroup(
+                            StructuredPBEnc.auto_leq(
+                                lits=pb_lit_ids,
+                                weights=weights,
+                                bound=bound,
+                                amo_groups=pb_amo_groups,
+                                eo_groups=pb_eo_groups,
+                                top_id=self._top_id(),
+                            )
+                        ),
+                    )
+                    for cond in constraint._conditions:
+                        group = group.only_if(cond)
+                    self._ensure_deferred_defs_in_group(group)
+                    self._hard.extend(group.clauses)
+                    continue
+
+            group = constraint.clauses()
+            self._ensure_deferred_defs_in_group(group)
+            self._hard.extend(group.clauses)
+        if self._debug_level >= self.DEBUG_DELTA:
+            self._debug(
+                self.DEBUG_DELTA,
+                f"commit_pb count={len(pending)} hard_delta={len(self._hard) - hard0}",
+            )
+        if route:
+            self._inc_state.route_deltas(hard0, soft0)
+
     def to_cnf(self) -> CNF:
         """Export the current hard constraints to a PySAT :class:`~pysat.formula.CNF`.
 
@@ -5713,6 +6050,7 @@ class Model:
         """
         if self._soft:
             raise ValueError("Model contains soft clauses; use to_wcnf() instead.")
+        self._commit_pb()
         self._ensure_deferred_defs_in_group(ClauseGroup(self, self._hard))
         cnf = CNF()
         for clause in self._hard:
@@ -5721,6 +6059,7 @@ class Model:
 
     def to_wcnf(self) -> WCNF:
         """Export hard and soft constraints to a PySAT :class:`~pysat.formula.WCNF`."""
+        self._commit_pb()
         self._ensure_deferred_defs_in_group(ClauseGroup(self, self._hard))
         self._ensure_deferred_defs_in_group(ClauseGroup(self, [c for _, c in self._soft]))
         wcnf = WCNF()
@@ -5743,6 +6082,7 @@ class Model:
 
     def _to_wcnf_for_solver(self) -> tuple[WCNF, int]:
         """Build solver WCNF plus soft-weight scaling factor for one-shot solve."""
+        self._commit_pb()
         self._ensure_deferred_defs_in_group(ClauseGroup(self, self._hard))
         self._ensure_deferred_defs_in_group(ClauseGroup(self, [c for _, c in self._soft]))
         g = int(self._soft_weight_gcd())
@@ -6039,6 +6379,7 @@ class Model:
             raise ValueError("lex_strategy must be one of: incremental, stratified")
 
         if self._tier_obj_proxy.is_active():
+            self._commit_pb()
             if ls is None:
                 ls = "incremental"
             if ls == "incremental":
