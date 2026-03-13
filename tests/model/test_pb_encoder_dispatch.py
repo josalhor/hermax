@@ -165,9 +165,11 @@ def test_unit_coefficients_use_cardinality_equals(monkeypatch):
     assert r[a] is True
     assert r[b] is False
     kinds = [c[0] for c in calls]
-    assert kinds == ["card.equals", "card.atleast", "card.atmost"]
-    assert calls[0][1] == [a.id, b.id]
-    assert calls[0][2] == 1
+    assert kinds == ["structured.auto_leq", "card.atmost", "structured.auto_leq", "card.atmost"]
+    assert sorted(calls[0][1]) == sorted([a.id, b.id])
+    assert calls[0][3] == 1
+    assert sorted(calls[2][1]) == sorted([-a.id, -b.id])
+    assert calls[2][3] == 1
 
 
 def test_weighted_coefficients_use_pb_equals(monkeypatch):
@@ -209,9 +211,10 @@ def test_strict_operators_map_to_adjusted_cardinality_bounds(monkeypatch):
 
     assert r[c] is True and r[d] is True
     kinds = [c0 for c0, *_ in calls]
-    assert kinds == ["structured.auto_leq", "card.atmost", "card.atleast"]
+    assert kinds == ["structured.auto_leq", "card.atmost", "structured.auto_leq", "card.atmost"]
     assert calls[0][3] == 1
-    assert calls[2][2] == 2
+    assert sorted(calls[2][1]) == sorted([-c.id, -d.id])
+    assert calls[2][3] == 0
 
 
 def test_negative_coefficients_normalize_by_flipping_literal_and_shifting_bound(monkeypatch):
@@ -305,6 +308,7 @@ def test_gcd_reduction_uses_ceil_for_geq_bounds(monkeypatch):
     calls = []
     _patch_card_methods(monkeypatch, calls)
     _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
 
     m = Model()
     a = m.bool("a")
@@ -316,9 +320,10 @@ def test_gcd_reduction_uses_ceil_for_geq_bounds(monkeypatch):
     assert r[a] is True and r[b] is True
 
     kinds = [c0 for c0, *_ in calls]
-    assert kinds == ["card.atleast"]
-    _kind, _lits, bound, _top = calls[0]
-    assert bound == 2
+    assert kinds == ["structured.auto_leq", "card.atmost"]
+    _kind, lits, _weights, bound, _amo_groups, _eo_groups = calls[0]
+    assert sorted(lits) == sorted([-a.id, -b.id])
+    assert bound == 0
 
 
 def test_gcd_reduction_equality_nondivisible_bound_becomes_contradiction(monkeypatch):
@@ -510,7 +515,8 @@ def test_commit_pb_prioritizes_cardinality_before_structured_pb(monkeypatch):
     m._commit_pb()
 
     kinds = [c0 for c0, *_ in calls]
-    assert kinds[:3] == ["structured.auto_leq", "card.atmost", "card.equals"]
+    weighted_idx = next(i for i, entry in enumerate(calls) if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    assert weighted_idx >= 6
     weighted_call = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
     _kind, lits, weights, bound, amo_groups, eo_groups = weighted_call
     assert sorted(abs(x) for x in lits) == sorted([a.id, b.id, d.id])
@@ -756,6 +762,52 @@ def test_commit_pb_does_not_expand_large_int_exact_value_family(monkeypatch):
     m._commit_pb()
 
     assert [entry[0] for entry in calls] == ["pb.leq"]
+
+
+def test_enumvector_bipartite_all_different_registers_value_column_for_later_pb(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    ev = m.enum_vector("e", length=3, choices=["a", "b", "c"])
+    m &= ev.all_different(backend="bipartite")
+
+    a0 = ev[0] == "a"
+    a1 = ev[1] == "a"
+    a2 = ev[2] == "a"
+
+    m &= (2 * a0 + 3 * a1 + 5 * a2 <= 5)
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    expected_group = sorted([m._lit_to_dimacs(a0), m._lit_to_dimacs(a1), m._lit_to_dimacs(a2)])
+    observed_groups = [sorted(group) for group in structured[4]]
+    assert expected_group in observed_groups
+
+
+def test_intvector_bipartite_all_different_registers_value_column_for_later_pb(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    iv = m.int_vector("x", length=3, lb=0, ub=3)
+    m &= iv.all_different(backend="bipartite")
+
+    x0 = iv[0] == 0
+    x1 = iv[1] == 0
+    x2 = iv[2] == 0
+
+    m &= (2 * x0 + 3 * x1 + 5 * x2 <= 5)
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    expected_group = sorted([m._lit_to_dimacs(x0), m._lit_to_dimacs(x1), m._lit_to_dimacs(x2)])
+    observed_groups = [sorted(group) for group in structured[4]]
+    assert expected_group in observed_groups
 
 
 def test_commit_pb_registers_signed_unit_card_groups_for_later_structured_overlap(monkeypatch):

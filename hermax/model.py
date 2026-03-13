@@ -110,11 +110,28 @@ def sum_expr(iterable, start=0):
 class ClauseGroup:
     """Immutable collection of CNF clauses."""
 
-    __slots__ = ("_model", "clauses")
+    __slots__ = ("_model", "clauses", "_amo_groups", "_eo_groups")
 
-    def __init__(self, model: "Model", clauses: Sequence["Clause"] | None = None):
+    def __init__(
+        self,
+        model: "Model",
+        clauses: Sequence["Clause"] | None = None,
+        *,
+        amo_groups: Sequence[Sequence[int]] | None = None,
+        eo_groups: Sequence[Sequence[int]] | None = None,
+    ):
         self._model = model
         self.clauses = list(clauses or [])
+        self._amo_groups = [list(group) for group in (amo_groups or [])]
+        self._eo_groups = [list(group) for group in (eo_groups or [])]
+
+    def _combined_groups(self, other) -> tuple[list[list[int]], list[list[int]]]:
+        amo_groups = [*self._amo_groups]
+        eo_groups = [*self._eo_groups]
+        if isinstance(other, ClauseGroup):
+            amo_groups.extend(other._amo_groups)
+            eo_groups.extend(other._eo_groups)
+        return amo_groups, eo_groups
 
     def only_if(self, condition: "Literal") -> "ClauseGroup":
         """Return a new clause group gated by one literal."""
@@ -131,13 +148,24 @@ class ClauseGroup:
     def __and__(self, other):
         if isinstance(other, Literal):
             _ensure_same_model(self, other)
-            return ClauseGroup(self._model, [*self.clauses, Clause(self._model, [other])])
+            return ClauseGroup(
+                self._model,
+                [*self.clauses, Clause(self._model, [other])],
+                amo_groups=self._amo_groups,
+                eo_groups=self._eo_groups,
+            )
         if isinstance(other, Clause):
             _ensure_same_model(self, other)
-            return ClauseGroup(self._model, [*self.clauses, other])
+            return ClauseGroup(
+                self._model,
+                [*self.clauses, other],
+                amo_groups=self._amo_groups,
+                eo_groups=self._eo_groups,
+            )
         if isinstance(other, ClauseGroup):
             _ensure_same_model(self, other)
-            return ClauseGroup(self._model, [*self.clauses, *other.clauses])
+            amo_groups, eo_groups = self._combined_groups(other)
+            return ClauseGroup(self._model, [*self.clauses, *other.clauses], amo_groups=amo_groups, eo_groups=eo_groups)
         raise TypeError("AND only supports Literal, Clause, or ClauseGroup operands.")
 
     def __iand__(self, other):
@@ -167,6 +195,8 @@ class ClauseGroup:
         if isinstance(other, ClauseGroup):
             _ensure_same_model(self, other)
             self.clauses.extend(other.clauses)
+            self._amo_groups.extend(other._amo_groups)
+            self._eo_groups.extend(other._eo_groups)
             return self
         raise TypeError("ClauseGroup.extend() only supports Literal, Clause, or ClauseGroup operands.")
 
@@ -2536,16 +2566,19 @@ class EnumVector(_BaseVector):
         if any(ev.nullable for ev in self._items):
             return self._all_different_pairwise()
         clauses: list[Clause] = []
+        amo_groups: list[list[int]] = []
         if not self._items:
-            return ClauseGroup(self._model, clauses)
+            return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
         choices = tuple(self._items[0].choices)
         for ev in self._items[1:]:
             if tuple(ev.choices) != choices:
                 raise ValueError("EnumVector.all_different() requires matching enum choices.")
         for label in choices:
-            col = BoolVector(self._model, f"{self.name}.col_amo[{label}]", [ev._choice_lits[label] for ev in self._items])
+            col_lits = [ev._choice_lits[label] for ev in self._items]
+            col = BoolVector(self._model, f"{self.name}.col_amo[{label}]", col_lits)
             clauses.extend(self._model._as_clausegroup(col.at_most_one()).clauses)
-        return ClauseGroup(self._model, clauses)
+            amo_groups.append([self._model._lit_to_dimacs(lit) for lit in col_lits])
+        return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
     def all_different(self, backend: str = "auto") -> ClauseGroup:
         """Return an all-different constraint over all enum elements.
@@ -2694,7 +2727,7 @@ class IntVector(_BaseVector):
 
     def _all_different_bipartite(self) -> ClauseGroup:
         if not self._items:
-            return ClauseGroup(self._model, [])
+            return ClauseGroup(self._model, [], amo_groups=[])
         # Require a common domain for the current implementation.
         lb = self._items[0].lb
         ub = self._items[0].ub
@@ -2704,10 +2737,13 @@ class IntVector(_BaseVector):
         if (ub - lb) < len(self._items):
             raise ValueError("IntVector.bipartite all_different requires domain size >= vector length.")
         clauses: list[Clause] = []
+        amo_groups: list[list[int]] = []
         for v in range(lb, ub):
-            col = BoolVector(self._model, f"{self.name}.eq_col[{v}]", [x == v for x in self._items])
+            col_lits = [x == v for x in self._items]
+            col = BoolVector(self._model, f"{self.name}.eq_col[{v}]", col_lits)
             clauses.extend(self._model._as_clausegroup(col.at_most_one()).clauses)
-        return ClauseGroup(self._model, clauses)
+            amo_groups.append([self._model._lit_to_dimacs(lit) for lit in col_lits])
+        return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
     def all_different(self, backend: str = "auto") -> ClauseGroup:
         """Return an all-different constraint over all integer elements.
@@ -5133,6 +5169,12 @@ class Model:
             for lit in clause.literals:
                 self._ensure_literal_def_realized(lit)
 
+    def _register_clausegroup_structure(self, group: ClauseGroup) -> None:
+        for amo_group in group._amo_groups:
+            self._register_amo_group(amo_group, exactly_one=False)
+        for eo_group in group._eo_groups:
+            self._register_amo_group(eo_group, exactly_one=True)
+
     def bool(self, name: Optional[str] = None) -> Literal:
         """Create a Boolean variable and return its positive literal.
 
@@ -5513,6 +5555,7 @@ class Model:
                 return self
             group = compiled
             self._ensure_deferred_defs_in_group(group)
+            self._register_clausegroup_structure(group)
             self._hard.extend(group.clauses)
             if self._debug_level >= self.DEBUG_DELTA:
                 self._debug(self.DEBUG_DELTA, f"add_hard count={len(group.clauses)}")
@@ -5523,6 +5566,7 @@ class Model:
             return self
         group = self._as_clausegroup(constraint)
         self._ensure_deferred_defs_in_group(group)
+        self._register_clausegroup_structure(group)
         self._hard.extend(group.clauses)
         if self._debug_level >= self.DEBUG_DELTA:
             self._debug(self.DEBUG_DELTA, f"add_hard count={len(group.clauses)}")
@@ -5959,9 +6003,48 @@ class Model:
             return group
 
         def _candidate_sort_key(entry: tuple[int, dict[str, object]]) -> tuple[int, int]:
-            # Cardinalities first, then preserve original order among peers.
+            # First AMO/EO candidates, then other cardinalities, then weighted PB.
             idx, item = entry
-            return (0 if bool(item["all_unit"]) else 1, idx)
+            cmp_op = str(item["cmp_op"])
+            bound = int(item["bound"])
+            all_unit = bool(item["all_unit"])
+            is_amo_eo = all_unit and bound == 1 and cmp_op in {"<=", "=="}
+            if is_amo_eo:
+                priority = 0
+            elif all_unit:
+                priority = 1
+            else:
+                priority = 2
+            return (priority, idx)
+
+        def _structured_overlap_for(pb_lit_ids: list[int]) -> tuple[list[list[int]], list[list[int]]]:
+            pb_lit_set = set(pb_lit_ids)
+            pb_amo_groups: list[list[int]] = []
+            pb_eo_groups: list[list[int]] = []
+            for group in amo_candidates:
+                overlap = [lit for lit in group if lit in pb_lit_set]
+                if len(overlap) > 1:
+                    pb_amo_groups.append(overlap)
+            for group in eo_candidates:
+                overlap = [lit for lit in group if lit in pb_lit_set]
+                if len(overlap) == len(group) and len(overlap) > 1:
+                    pb_eo_groups.append(overlap)
+                elif len(overlap) > 1:
+                    pb_amo_groups.append(overlap)
+            return pb_amo_groups, pb_eo_groups
+
+        def _structured_unit_auto_group(pb_lit_ids: list[int], pb_bound: int) -> ClauseGroup:
+            pb_amo_groups, pb_eo_groups = _structured_overlap_for(pb_lit_ids)
+            return self._cnfplus_to_clausegroup(
+                StructuredPBEnc.auto_leq(
+                    lits=pb_lit_ids,
+                    weights=[1] * len(pb_lit_ids),
+                    bound=int(pb_bound),
+                    amo_groups=pb_amo_groups,
+                    eo_groups=pb_eo_groups,
+                    top_id=self._top_id(),
+                )
+            )
 
         for _idx, item in sorted(analyzed, key=_candidate_sort_key):
             constraint = item["constraint"]
@@ -5979,41 +6062,25 @@ class Model:
 
             if all_unit:
                 raw_group = [self._lit_to_dimacs(lit) for lit in lits]
-                if cmp_op == "<=":
-                    pb_lit_ids = [self._lit_to_dimacs(lit) for lit in lits]
-                    pb_lit_set = set(pb_lit_ids)
-                    pb_amo_groups: list[list[int]] = []
-                    pb_eo_groups: list[list[int]] = []
-                    for group in amo_candidates:
-                        overlap = [lit for lit in group if lit in pb_lit_set]
-                        if len(overlap) > 1:
-                            pb_amo_groups.append(overlap)
-                    for group in eo_candidates:
-                        overlap = [lit for lit in group if lit in pb_lit_set]
-                        if len(overlap) == len(group) and len(overlap) > 1:
-                            pb_eo_groups.append(overlap)
-                        elif len(overlap) > 1:
-                            pb_amo_groups.append(overlap)
-                    if self._debug_level >= self.DEBUG_COMPILE:
-                        self._debug(
-                            self.DEBUG_COMPILE,
-                            f"encode path=structured_card_auto op={cmp_op} bound={bound} n={len(pb_lit_ids)}",
-                        )
-                    group = _cached_group_for(
-                        item,
-                        lambda: self._cnfplus_to_clausegroup(
-                            StructuredPBEnc.auto_leq(
-                                lits=pb_lit_ids,
-                                weights=[1] * len(pb_lit_ids),
-                                bound=bound,
-                                amo_groups=pb_amo_groups,
-                                eo_groups=pb_eo_groups,
-                                top_id=self._top_id(),
-                            )
-                        ),
+                pb_lit_ids = [self._lit_to_dimacs(lit) for lit in lits]
+                if self._debug_level >= self.DEBUG_COMPILE:
+                    self._debug(
+                        self.DEBUG_COMPILE,
+                        f"encode path=structured_card_auto op={cmp_op} bound={bound} n={len(pb_lit_ids)}",
                     )
-                else:
-                    group = constraint.clauses()
+
+                def _build_unit_group():
+                    if cmp_op == "<=":
+                        return _structured_unit_auto_group(pb_lit_ids, bound)
+                    if cmp_op == ">=":
+                        return _structured_unit_auto_group([-lit for lit in pb_lit_ids], len(pb_lit_ids) - bound)
+                    if cmp_op == "==":
+                        upper = _structured_unit_auto_group(pb_lit_ids, bound)
+                        lower = _structured_unit_auto_group([-lit for lit in pb_lit_ids], len(pb_lit_ids) - bound)
+                        return upper & lower
+                    return constraint.clauses()
+
+                group = _cached_group_for(item, _build_unit_group)
 
                 for cond in constraint._conditions:
                     group = group.only_if(cond)
@@ -6030,19 +6097,7 @@ class Model:
 
             if cmp_op == "<=":
                 pb_lit_ids = [self._lit_to_dimacs(lit) for lit in lits]
-                pb_lit_set = set(pb_lit_ids)
-                pb_amo_groups: list[list[int]] = []
-                pb_eo_groups: list[list[int]] = []
-                for group in amo_candidates:
-                    overlap = [lit for lit in group if lit in pb_lit_set]
-                    if len(overlap) > 1:
-                        pb_amo_groups.append(overlap)
-                for group in eo_candidates:
-                    overlap = [lit for lit in group if lit in pb_lit_set]
-                    if len(overlap) == len(group) and len(overlap) > 1:
-                        pb_eo_groups.append(overlap)
-                    elif len(overlap) > 1:
-                        pb_amo_groups.append(overlap)
+                pb_amo_groups, pb_eo_groups = _structured_overlap_for(pb_lit_ids)
                 if pb_amo_groups or pb_eo_groups:
                     if self._debug_level >= self.DEBUG_COMPILE:
                         self._debug(
