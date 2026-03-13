@@ -1411,6 +1411,274 @@ class _TierObjectiveProxy:
         return out
 
 
+class IntSetVar:
+    """Finite set variable over integers, encoded as one membership literal per value."""
+
+    __slots__ = ("_model", "name", "universe", "_member_lits", "_contains_cache")
+
+    def __init__(self, model: "Model", name: str, universe: Sequence[int]):
+        self._model = model
+        self.name = name
+        seen: set[int] = set()
+        vals: list[int] = []
+        for v in universe:
+            if isinstance(v, bool) or not isinstance(v, int):
+                raise TypeError("IntSetVar universe values must be integers.")
+            iv = int(v)
+            if iv in seen:
+                continue
+            seen.add(iv)
+            vals.append(iv)
+        vals.sort()
+        self.universe = tuple(vals)
+        self._member_lits: dict[int, Literal] = {
+            v: model.bool(f"{name}::in[{v}]") for v in self.universe
+        }
+        self._contains_cache: dict[int, Literal] = {}
+
+    def _lit_for_value(self, value: int) -> Literal:
+        lit = self._member_lits.get(int(value))
+        if lit is not None:
+            return lit
+        return self._model._get_bool_constant_literal(False)
+
+    @staticmethod
+    def _coerce_constant_values(values) -> set[int]:
+        if not isinstance(values, (set, frozenset, list, tuple)):
+            raise TypeError("Set constants must be a set/list/tuple of integers.")
+        out: set[int] = set()
+        for v in values:
+            if isinstance(v, bool) or not isinstance(v, int):
+                raise TypeError("Set constants must contain integers only.")
+            out.add(int(v))
+        return out
+
+    def _xor_indicator(self, a: Literal, b: Literal) -> tuple[Literal, list[Clause]]:
+        m = self._model
+        true_lit = m._get_bool_constant_literal(True)
+        false_lit = m._get_bool_constant_literal(False)
+
+        if a is b:
+            return false_lit, []
+        if a is ~b:
+            return true_lit, []
+        if a is false_lit:
+            return b, []
+        if b is false_lit:
+            return a, []
+        if a is true_lit:
+            return ~b, []
+        if b is true_lit:
+            return ~a, []
+
+        d = m.bool()
+        clauses = [
+            Clause(m, [a, b, ~d]),       # both false -> d false
+            Clause(m, [~a, ~b, ~d]),     # both true -> d false
+            Clause(m, [~a, b, d]),       # a=false,b=true -> d true
+            Clause(m, [a, ~b, d]),       # a=true,b=false -> d true
+        ]
+        return d, clauses
+
+    def contains(self, value: int | "IntVar") -> Literal:
+        """Return membership indicator for ``value in self``."""
+        if isinstance(value, IntVar):
+            _ensure_same_model(self, value)
+            key = id(value)
+            cached = self._contains_cache.get(key)
+            if cached is not None:
+                return cached
+
+            allowed = [value == v for v in self.universe if value.lb <= v < value.ub]
+            if not allowed:
+                lit = self._model._get_bool_constant_literal(False)
+                self._contains_cache[key] = lit
+                return lit
+            if len(allowed) == 1:
+                lit = allowed[0]
+                self._contains_cache[key] = lit
+                return lit
+
+            b = self._model.bool()
+            clauses = [Clause(self._model, [~b, *allowed])]
+            clauses.extend(Clause(self._model, [~eq, b]) for eq in allowed)
+            self._model._register_literal_definition(b, ClauseGroup(self._model, clauses))
+            self._contains_cache[key] = b
+            return b
+
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError("contains() expects an integer or IntVar.")
+        return self._lit_for_value(int(value))
+
+    def cardinality(self) -> PBExpr:
+        """Return cardinality expression ``|self|``."""
+        return PBExpr(self._model, [Term(1, lit) for lit in self._member_lits.values()], 0)
+
+    def card(self, name: Optional[str] = None) -> "IntVar":
+        """Materialize an integer variable constrained to this set's cardinality."""
+        out_name = self._model._reserve_name(None) if name is None else name
+        out = self._model.int(out_name, lb=0, ub=len(self.universe) + 1)
+        self._model &= (self.cardinality() == out)
+        return out
+
+    def subset_of(self, other: "IntSetVar") -> ClauseGroup:
+        if not isinstance(other, IntSetVar):
+            raise TypeError("subset_of() expects IntSetVar.")
+        _ensure_same_model(self, other)
+        vals = sorted(set(self.universe) | set(other.universe))
+        clauses = [
+            Clause(self._model, [~self._lit_for_value(v), other._lit_for_value(v)])
+            for v in vals
+        ]
+        return ClauseGroup(self._model, clauses)
+
+    def superset_of(self, other: "IntSetVar") -> ClauseGroup:
+        if not isinstance(other, IntSetVar):
+            raise TypeError("superset_of() expects IntSetVar.")
+        _ensure_same_model(self, other)
+        return other.subset_of(self)
+
+    def _eq_group_set(self, other: "IntSetVar") -> ClauseGroup:
+        _ensure_same_model(self, other)
+        vals = sorted(set(self.universe) | set(other.universe))
+        clauses: list[Clause] = []
+        for v in vals:
+            a = self._lit_for_value(v)
+            b = other._lit_for_value(v)
+            clauses.extend(self._model._equiv_literals_group(a, b).clauses)
+        return ClauseGroup(self._model, clauses)
+
+    def _eq_group_constant(self, values) -> ClauseGroup:
+        const_vals = self._coerce_constant_values(values)
+        if any(v not in self._member_lits for v in const_vals):
+            return ClauseGroup(self._model, [Clause(self._model, [])])
+        clauses: list[Clause] = []
+        for v in self.universe:
+            lit = self._member_lits[v]
+            clauses.append(Clause(self._model, [lit if v in const_vals else ~lit]))
+        return ClauseGroup(self._model, clauses)
+
+    def _neq_group_set(self, other: "IntSetVar") -> ClauseGroup:
+        _ensure_same_model(self, other)
+        vals = sorted(set(self.universe) | set(other.universe))
+        true_lit = self._model._get_bool_constant_literal(True)
+        false_lit = self._model._get_bool_constant_literal(False)
+        diff_lits: list[Literal] = []
+        clauses: list[Clause] = []
+        for v in vals:
+            d, defs = self._xor_indicator(self._lit_for_value(v), other._lit_for_value(v))
+            clauses.extend(defs)
+            if d is true_lit:
+                return ClauseGroup(self._model, clauses)
+            if d is false_lit:
+                continue
+            diff_lits.append(d)
+        if not diff_lits:
+            clauses.append(Clause(self._model, []))
+        else:
+            clauses.append(Clause(self._model, diff_lits))
+        return ClauseGroup(self._model, clauses)
+
+    def _neq_group_constant(self, values) -> ClauseGroup:
+        const_vals = self._coerce_constant_values(values)
+        outside = [v for v in const_vals if v not in self._member_lits]
+        if outside:
+            return ClauseGroup(self._model, [])
+
+        true_lit = self._model._get_bool_constant_literal(True)
+        false_lit = self._model._get_bool_constant_literal(False)
+        diff_lits: list[Literal] = []
+        clauses: list[Clause] = []
+        for v in self.universe:
+            target = true_lit if v in const_vals else false_lit
+            d, defs = self._xor_indicator(self._member_lits[v], target)
+            clauses.extend(defs)
+            if d is true_lit:
+                return ClauseGroup(self._model, clauses)
+            if d is false_lit:
+                continue
+            diff_lits.append(d)
+        if not diff_lits:
+            clauses.append(Clause(self._model, []))
+        else:
+            clauses.append(Clause(self._model, diff_lits))
+        return ClauseGroup(self._model, clauses)
+
+    def _binary_set_op(self, other: "IntSetVar", op: str, name: Optional[str] = None) -> "IntSetVar":
+        if not isinstance(other, IntSetVar):
+            raise TypeError("set operation expects IntSetVar.")
+        _ensure_same_model(self, other)
+        vals = sorted(set(self.universe) | set(other.universe))
+        out_name = self._model._reserve_name(None) if name is None else name
+        self._model._reserve_container_name(out_name)
+        out = IntSetVar(self._model, out_name, vals)
+
+        clauses: list[Clause] = []
+        for v in vals:
+            a = self._lit_for_value(v)
+            b = other._lit_for_value(v)
+            r = out._member_lits[v]
+            if op == "union":
+                clauses.append(Clause(self._model, [~r, a, b]))
+                clauses.append(Clause(self._model, [~a, r]))
+                clauses.append(Clause(self._model, [~b, r]))
+            elif op == "intersection":
+                clauses.append(Clause(self._model, [~r, a]))
+                clauses.append(Clause(self._model, [~r, b]))
+                clauses.append(Clause(self._model, [~a, ~b, r]))
+            elif op == "difference":
+                clauses.append(Clause(self._model, [~r, a]))
+                clauses.append(Clause(self._model, [~r, ~b]))
+                clauses.append(Clause(self._model, [~a, b, r]))
+            elif op == "symdiff":
+                clauses.append(Clause(self._model, [a, b, ~r]))
+                clauses.append(Clause(self._model, [~a, ~b, ~r]))
+                clauses.append(Clause(self._model, [~a, b, r]))
+                clauses.append(Clause(self._model, [a, ~b, r]))
+            else:  # pragma: no cover - defensive
+                raise ValueError(f"Unknown set op {op!r}")
+        self._model._hard.extend(clauses)
+        return out
+
+    def union(self, other: "IntSetVar", *, name: Optional[str] = None) -> "IntSetVar":
+        return self._binary_set_op(other, "union", name=name)
+
+    def intersection(self, other: "IntSetVar", *, name: Optional[str] = None) -> "IntSetVar":
+        return self._binary_set_op(other, "intersection", name=name)
+
+    def difference(self, other: "IntSetVar", *, name: Optional[str] = None) -> "IntSetVar":
+        return self._binary_set_op(other, "difference", name=name)
+
+    def symmetric_difference(self, other: "IntSetVar", *, name: Optional[str] = None) -> "IntSetVar":
+        return self._binary_set_op(other, "symdiff", name=name)
+
+    def __or__(self, other):
+        return self.union(other)
+
+    def __and__(self, other):
+        return self.intersection(other)
+
+    def __sub__(self, other):
+        return self.difference(other)
+
+    def __xor__(self, other):
+        return self.symmetric_difference(other)
+
+    def __eq__(self, other):  # type: ignore[override]
+        if isinstance(other, IntSetVar):
+            return self._eq_group_set(other)
+        if isinstance(other, (set, frozenset, list, tuple)):
+            return self._eq_group_constant(other)
+        return False
+
+    def __ne__(self, other):  # type: ignore[override]
+        if isinstance(other, IntSetVar):
+            return self._neq_group_set(other)
+        if isinstance(other, (set, frozenset, list, tuple)):
+            return self._neq_group_constant(other)
+        return True
+
+
 class EnumVar:
     """Finite-domain categorical variable encoded as choice literals."""
     __slots__ = ("_model", "name", "choices", "nullable", "_choice_lits")
@@ -2599,6 +2867,15 @@ class EnumVector(_BaseVector):
         raise ValueError("Unknown all_different backend.")
 
 
+class IntSetVector(_BaseVector):
+    """Vector of :class:`IntSetVar` values."""
+
+    _item_type = IntSetVar
+
+    def _table_cell_constraint(self, item, value):
+        return item == value
+
+
 class IntVector(_BaseVector):
     """Vector of :class:`IntVar` values with common global helpers."""
     _item_type = IntVar
@@ -2851,6 +3128,12 @@ class IntDict(_BaseDict):
     _item_type = IntVar
 
 
+class IntSetDict(_BaseDict):
+    """Keyed mapping from user keys to :class:`IntSetVar` values."""
+
+    _item_type = IntSetVar
+
+
 class _BaseMatrixView:
     """Typed matrix view supporting NumPy-like slicing and flattening."""
     __slots__ = ("_model", "name", "_grid", "_rows", "_cols")
@@ -3047,6 +3330,8 @@ class AssignmentView:
                 if self.val(lit):
                     return choice
             return None
+        if isinstance(obj, IntSetVar):
+            return {v for v in obj.universe if self.val(obj._member_lits[v])}
         if isinstance(obj, _LazyIntExpr):
             obj = obj._realize()
         if isinstance(obj, IntVar):
@@ -3065,6 +3350,8 @@ class AssignmentView:
             return [self.val(x) for x in obj]
         if isinstance(obj, EnumVector):
             return [self.val(x) for x in obj]
+        if isinstance(obj, IntSetVector):
+            return [self.val(x) for x in obj]
         if isinstance(obj, IntMatrix):
             return [[self.val(x) for x in row] for row in obj._grid]
         if isinstance(obj, BoolMatrix):
@@ -3082,6 +3369,8 @@ class AssignmentView:
         if isinstance(obj, IntDict):
             return {k: self.val(v) for k, v in obj.items()}
         if isinstance(obj, EnumDict):
+            return {k: self.val(v) for k, v in obj.items()}
+        if isinstance(obj, IntSetDict):
             return {k: self.val(v) for k, v in obj.items()}
         if isinstance(obj, list):
             return [self.val(x) for x in obj]
@@ -5201,6 +5490,51 @@ class Model:
         self._reserve_container_name(name)
         return IntVar(self, name, lb=lb, ub=ub)
 
+    def int_set(
+        self,
+        name: str,
+        *,
+        lb: Optional[int] = None,
+        ub: Optional[int] = None,
+        values: Optional[Sequence[int]] = None,
+    ) -> IntSetVar:
+        """Create an integer set variable over a finite universe.
+
+        Exactly one domain specification must be provided:
+            * ``lb``/``ub`` inclusive range
+            * explicit ``values`` sequence
+        """
+        range_spec = lb is not None or ub is not None
+        values_spec = values is not None
+        if range_spec == values_spec:
+            raise ValueError("int_set() expects exactly one domain specification: (lb, ub) or values.")
+
+        if values_spec:
+            if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+                raise TypeError("int_set(values=...) expects a sequence of integers.")
+            universe: list[int] = []
+            seen: set[int] = set()
+            for v in values:
+                if isinstance(v, bool) or not isinstance(v, int):
+                    raise TypeError("int_set(values=...) expects integers.")
+                iv = int(v)
+                if iv in seen:
+                    continue
+                seen.add(iv)
+                universe.append(iv)
+            universe.sort()
+        else:
+            if isinstance(lb, bool) or not isinstance(lb, int):
+                raise TypeError("int_set(lb=..., ub=...) expects integer bounds.")
+            if isinstance(ub, bool) or not isinstance(ub, int):
+                raise TypeError("int_set(lb=..., ub=...) expects integer bounds.")
+            if int(lb) > int(ub):
+                raise ValueError("int_set() requires lb <= ub.")
+            universe = list(range(int(lb), int(ub) + 1))
+
+        self._reserve_container_name(name)
+        return IntSetVar(self, name, universe)
+
     def floor_div(self, x: IntVar | _LazyIntExpr, divisor: int, name: Optional[str] = None) -> IntVar:
         """Materialize a quotient integer ``x // divisor`` using ladder threshold ties."""
         if isinstance(x, _LazyIntExpr):
@@ -5397,6 +5731,26 @@ class Model:
         self._reserve_container_name(name)
         return EnumVector(self, name, [self.enum(f"{name}[{i}]", choices=choices, nullable=nullable) for i in range(length)])
 
+    def int_set_vector(
+        self,
+        name: str,
+        length: int,
+        *,
+        lb: Optional[int] = None,
+        ub: Optional[int] = None,
+        values: Optional[Sequence[int]] = None,
+    ) -> IntSetVector:
+        """Create a vector of integer set variables with shared universe specification."""
+        self._reserve_container_name(name)
+        return IntSetVector(
+            self,
+            name,
+            [
+                self.int_set(f"{name}[{i}]", lb=lb, ub=ub, values=values)
+                for i in range(length)
+            ],
+        )
+
     def bool_dict(self, name: str, keys: Sequence) -> BoolDict:
         """Create a keyed dictionary of Boolean literals."""
         self._reserve_container_name(name)
@@ -5414,6 +5768,26 @@ class Model:
             self,
             name,
             {k: self.enum(f"{name}[{k!r}]", choices=choices, nullable=nullable) for k in keys},
+        )
+
+    def int_set_dict(
+        self,
+        name: str,
+        keys: Sequence,
+        *,
+        lb: Optional[int] = None,
+        ub: Optional[int] = None,
+        values: Optional[Sequence[int]] = None,
+    ) -> IntSetDict:
+        """Create a keyed dictionary of integer set variables."""
+        self._reserve_container_name(name)
+        return IntSetDict(
+            self,
+            name,
+            {
+                k: self.int_set(f"{name}[{k!r}]", lb=lb, ub=ub, values=values)
+                for k in keys
+            },
         )
 
     def int_matrix(self, name: str, rows: int, cols: int, lb: int, ub: int) -> IntMatrix:
@@ -5462,7 +5836,9 @@ class Model:
             return IntVector(self, name, items_list)
         if all(isinstance(x, EnumVar) for x in items_list):
             return EnumVector(self, name, items_list)
-        raise TypeError("Model.vector() requires homogeneous items of type Literal, IntVar, or EnumVar.")
+        if all(isinstance(x, IntSetVar) for x in items_list):
+            return IntSetVector(self, name, items_list)
+        raise TypeError("Model.vector() requires homogeneous items of type Literal, IntVar, EnumVar, or IntSetVar.")
 
     def _as_clausegroup(self, constraint) -> ClauseGroup:
         if isinstance(constraint, bool):
