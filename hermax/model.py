@@ -2249,6 +2249,8 @@ class IntVar:
                     )
                     self._model._register_literal_definition(lit, eq_def)
                 self._eq_lits[value] = lit
+                if self._span() > 1:
+                    self._model._intvar_eq_owner_by_litid[self._model._lit_to_dimacs(lit)] = (self, int(value))
             return self._eq_lits[value]
         if isinstance(value, IntVar):
             _ensure_same_model(self, value)
@@ -4694,6 +4696,7 @@ class Model:
         "_registry",
         "_lits_by_id",
         "_intvar_threshold_owner_by_litid",
+        "_intvar_eq_owner_by_litid",
         "_container_names",
         "_anon_counter",
         "_hard",
@@ -4741,6 +4744,7 @@ class Model:
         self._registry: dict[str, Literal] = {}
         self._lits_by_id: dict[int, Literal] = {}
         self._intvar_threshold_owner_by_litid: dict[int, tuple["IntVar", int]] = {}
+        self._intvar_eq_owner_by_litid: dict[int, tuple["IntVar", int]] = {}
         self._container_names: set[str] = set()
         self._anon_counter = 0
         self._hard: list[Clause] = []
@@ -5770,6 +5774,28 @@ class Model:
                 return
             self._known_amo_groups.add(group)
 
+    def _register_small_int_eq_family_from_lits(self, lits: Sequence[Literal], *, max_span: int = 8) -> list[list[int]]:
+        present: dict[int, tuple[IntVar, set[int]]] = {}
+        for lit in lits:
+            owner = self._intvar_eq_owner_by_litid.get(int(self._lit_to_dimacs(lit)))
+            if owner is None:
+                continue
+            iv, value = owner
+            key = id(iv)
+            if key not in present:
+                present[key] = (iv, set())
+            present[key][1].add(int(value))
+
+        added_groups: list[list[int]] = []
+        for iv, seen_values in present.values():
+            span = int(iv._span())
+            if span <= 1 or span > int(max_span) or len(seen_values) < 2:
+                continue
+            group = [int(self._lit_to_dimacs(iv == value)) for value in range(int(iv.lb), int(iv.ub))]
+            self._register_amo_group(group, exactly_one=True)
+            added_groups.append(group)
+        return added_groups
+
     def _analyze_deferred_pb_constraint(self, constraint: PBConstraint) -> dict[str, object]:
         lhs_r = constraint._lhs._realize_int_terms(self)
         rhs_r = constraint._rhs._realize_int_terms(self)
@@ -5793,7 +5819,6 @@ class Model:
             "cmp_op": cmp_op,
             "bound": int(bound),
             "all_unit": bool(weights) and all(w == 1 for w in weights),
-            "all_positive": all(lit.polarity for lit in lits),
         }
 
     def _prepare_pb_constraint(self, constraint: PBConstraint) -> ClauseGroup | PBConstraint:
@@ -5828,7 +5853,14 @@ class Model:
             return group
 
         def _uses_int_ladder(expr: PBExpr) -> bool:
-            return any(t.literal.id in self._intvar_threshold_owner_by_litid for t in expr.terms)
+            for term in expr.terms:
+                lit = term.literal
+                dim = int(self._lit_to_dimacs(lit))
+                if dim in self._intvar_eq_owner_by_litid:
+                    continue
+                if lit.id in self._intvar_threshold_owner_by_litid:
+                    return True
+            return False
 
         # IntVar-derived arithmetic is lowered through ladder literals before it
         # reaches this point, so checking ``int_terms`` alone is not sufficient.
@@ -5938,12 +5970,17 @@ class Model:
             bound = int(item["bound"])
             weights = [int(w) for w in item["weights"]]
             all_unit = bool(item["all_unit"])
-            all_positive = bool(item["all_positive"])
+
+            for group in self._register_small_int_eq_family_from_lits(lits):
+                if group in eo_candidates:
+                    continue
+                amo_candidates = [existing for existing in amo_candidates if existing != group]
+                eo_candidates.append(group)
 
             if all_unit:
-                raw_group = [lit.id for lit in lits] if all_positive else []
-                if all_positive and cmp_op == "<=":
-                    pb_lit_ids = [lit.id for lit in lits]
+                raw_group = [self._lit_to_dimacs(lit) for lit in lits]
+                if cmp_op == "<=":
+                    pb_lit_ids = [self._lit_to_dimacs(lit) for lit in lits]
                     pb_lit_set = set(pb_lit_ids)
                     pb_amo_groups: list[list[int]] = []
                     pb_eo_groups: list[list[int]] = []
@@ -5982,17 +6019,17 @@ class Model:
                     group = group.only_if(cond)
                 self._ensure_deferred_defs_in_group(group)
                 self._hard.extend(group.clauses)
-                if all_positive and cmp_op == "<=" and bound == 1:
+                if cmp_op == "<=" and bound == 1:
                     self._register_amo_group(raw_group, exactly_one=False)
                     amo_candidates.append(raw_group)
-                elif all_positive and cmp_op == "==" and bound == 1:
+                elif cmp_op == "==" and bound == 1:
                     self._register_amo_group(raw_group, exactly_one=True)
                     amo_candidates = [group for group in amo_candidates if group != raw_group]
                     eo_candidates.append(raw_group)
                 continue
 
-            if cmp_op == "<=" and all_positive:
-                pb_lit_ids = [lit.id for lit in lits]
+            if cmp_op == "<=":
+                pb_lit_ids = [self._lit_to_dimacs(lit) for lit in lits]
                 pb_lit_set = set(pb_lit_ids)
                 pb_amo_groups: list[list[int]] = []
                 pb_eo_groups: list[list[int]] = []

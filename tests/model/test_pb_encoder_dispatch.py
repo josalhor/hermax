@@ -231,8 +231,8 @@ def test_negative_coefficients_normalize_by_flipping_literal_and_shifting_bound(
     assert r[a] is True
     assert r[b] is True
 
-    assert [c[0] for c in calls] == ["card.atmost"]
-    _kind, lits, bound, _top = calls[0]
+    assert [c[0] for c in calls] == ["structured.auto_leq", "card.atmost"]
+    _kind, lits, _weights, bound, _amo_groups, _eo_groups = calls[0]
     # Normalization should produce unit-cardinality over [a, ~b] with bound 1.
     assert bound == 1
     assert a.id in [abs(x) for x in lits]
@@ -257,7 +257,7 @@ def test_expr_vs_expr_with_unit_coeffs_still_uses_cardinality_dispatch(monkeypat
     r = _solve_ok(m)
     assert r[b] is True
     assert r[c] is True
-    assert [c0 for c0, *_ in calls] == ["card.atmost"]
+    assert [c0 for c0, *_ in calls] == ["structured.auto_leq", "card.atmost"]
 
 
 def test_expr_vs_expr_with_nonunit_coeffs_uses_pb_dispatch(monkeypatch):
@@ -712,3 +712,171 @@ def test_commit_pb_uses_nullable_enum_domains_as_amo_candidates(monkeypatch):
         [enums[3]._choice_lits["r"].id, enums[3]._choice_lits["g"].id, enums[3]._choice_lits["b"].id],
     ]
     assert eo_groups == []
+
+
+def test_commit_pb_uses_small_int_exact_value_family_as_eo_candidates(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    x = m.int("x", 0, 3)
+    a = m.bool("a")
+    eq0 = (x == 0)
+    eq1 = (x == 1)
+    eq2 = (x == 2)
+
+    assert eq0.polarity is False
+    assert eq0.id == x._threshold_lits[0].id
+    assert eq2.polarity is True
+
+    m &= (9 * eq0 + 7 * eq1 + 5 * eq2 + 4 * a <= 10)
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    _kind, _lits, _weights, _bound, amo_groups, eo_groups = structured
+    assert amo_groups == []
+    assert eo_groups == [[m._lit_to_dimacs(eq0), m._lit_to_dimacs(eq1), m._lit_to_dimacs(eq2)]]
+
+
+def test_commit_pb_does_not_expand_large_int_exact_value_family(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    x = m.int("x", 0, 20)
+    a = m.bool("a")
+    eq0 = (x == 0)
+    eq1 = (x == 1)
+
+    m &= (9 * eq0 + 7 * eq1 + 4 * a <= 10)
+    m._commit_pb()
+
+    assert [entry[0] for entry in calls] == ["pb.leq"]
+
+
+def test_commit_pb_registers_signed_unit_card_groups_for_later_structured_overlap(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    c = m.bool("c")
+
+    m &= (a + ~b <= 1)
+    m &= (7 * a + 5 * ~b + 4 * c <= 8)
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    _kind, lits, weights, bound, amo_groups, eo_groups = structured
+    assert sorted(lits) == sorted([a.id, -b.id, c.id])
+    assert sorted(weights) == [4, 5, 7]
+    assert bound == 8
+    assert amo_groups == [[a.id, -b.id]]
+    assert eo_groups == []
+
+
+def test_commit_pb_registers_signed_exactly_one_groups_for_later_structured_overlap(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    c = m.bool("c")
+
+    m &= (a + ~b == 1)
+    m &= (7 * a + 5 * ~b + 4 * c <= 8)
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    _kind, lits, weights, bound, amo_groups, eo_groups = structured
+    assert sorted(lits) == sorted([a.id, -b.id, c.id])
+    assert sorted(weights) == [4, 5, 7]
+    assert bound == 8
+    assert amo_groups == []
+    assert eo_groups == [[a.id, -b.id]]
+
+
+def test_signed_unit_card_groups_persist_across_solve_boundaries(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    c = m.bool("c")
+
+    m &= (a + ~b <= 1)
+    _solve_ok(m)
+    m &= (7 * a + 5 * ~b + 4 * c <= 8)
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    assert [sorted(group) for group in structured[4]] == [[-b.id, a.id]]
+    assert structured[5] == []
+
+
+def test_small_int_exact_value_family_persists_across_solve_boundaries(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    x = m.int("x", 0, 3)
+    a = m.bool("a")
+    eq0 = (x == 0)
+    eq1 = (x == 1)
+    eq2 = (x == 2)
+
+    m &= (9 * eq0 + 7 * eq1 + 5 * eq2 <= 10)
+    _solve_ok(m)
+    m &= (9 * eq0 + 7 * eq1 + 5 * eq2 + 4 * a <= 10)
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    assert structured[4] == []
+    assert structured[5] == [[m._lit_to_dimacs(eq0), m._lit_to_dimacs(eq1), m._lit_to_dimacs(eq2)]]
+
+
+def test_commit_pb_uses_small_int_exact_value_family_with_both_boundaries(monkeypatch):
+    calls = []
+    _patch_card_methods(monkeypatch, calls)
+    _patch_pb_methods(monkeypatch, calls)
+    _patch_structured_auto(monkeypatch, calls)
+
+    m = Model()
+    x = m.int("x", 0, 4)
+    a = m.bool("a")
+    eq0 = (x == 0)
+    eq1 = (x == 1)
+    eq2 = (x == 2)
+    eq3 = (x == 3)
+
+    assert eq0.polarity is False
+    assert eq0.id == x._threshold_lits[0].id
+    assert eq3.polarity is True
+    assert eq3.id == x._threshold_lits[-1].id
+
+    m &= (9 * eq0 + 7 * eq1 + 5 * eq2 + 3 * eq3 + 4 * a <= 10)
+    m._commit_pb()
+
+    structured = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
+    assert structured[4] == []
+    assert structured[5] == [[
+        m._lit_to_dimacs(eq0),
+        m._lit_to_dimacs(eq1),
+        m._lit_to_dimacs(eq2),
+        m._lit_to_dimacs(eq3),
+    ]]
