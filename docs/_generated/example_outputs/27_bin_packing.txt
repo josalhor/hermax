@@ -1,0 +1,5 @@
+$ python examples/model/27_bin_packing.py
+status: optimum
+bins_used: 2
+bin 0: items=[1, 4] load=10/10
+bin 1: items=[0, 2, 3, 5] load=10/10

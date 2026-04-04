@@ -1,0 +1,11 @@
+BUILD_DIR?=build
+MINISATP_RELSYM?=-g
+MINISATP_REL?=-std=c++11 -O3 -D NDEBUG -Wno-strict-aliasing -D GLUCOSE3
+MINISATP_DEB?=-std=c++11 -O0 -D DEBUG  -Wno-strict-aliasing -D GLUCOSE3
+MINISATP_PRF?=-std=c++11 -O3 -D NDEBUG -Wno-strict-aliasing -D GLUCOSE3
+MINISATP_FPIC?=-fpic
+MINISAT_INCLUDE?=-I../glucose-3.0/include -I../glucose-3.0/include/minisat
+MINISAT_LIB?=-L../glucose-3.0/lib -lminisat
+MCL_INCLUDE?=-I../maxpre/src
+MCL_LIB?=-L../maxpre/src/lib -lmaxpre
+prefix?=../glucose-3.0

@@ -1,0 +1,5 @@
+$ python examples/load_wcnf_formula.py
+feasible: True
+status: OPTIMUM
+cost: 1
+model: [1, -2, 3]

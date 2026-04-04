@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 300" role="img" aria-label="Floating objective budgeting problem">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --stroke: rgba(74, 64, 54, 0.22);
+      --panel: rgba(244, 239, 232, 0.82);
+      --accent: #146356;
+      --accent-bg: rgba(20, 99, 86, 0.12);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --stroke: rgba(255, 255, 255, 0.16);
+        --panel: rgba(36, 35, 33, 0.88);
+        --accent: #4fd2b5;
+        --accent-bg: rgba(79, 210, 181, 0.16);
+      }
+    }
+
+    text {
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    .title { font-size: 15px; font-weight: 700; fill: var(--ink); }
+    .subtitle { font-size: 13px; fill: var(--muted); }
+    .card { fill: var(--panel); stroke: var(--stroke); stroke-width: 1.4; rx: 16; }
+    .name { font-size: 18px; font-weight: 700; fill: var(--ink); }
+    .meta { font-size: 13px; fill: var(--muted); }
+    .rule { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.5; rx: 16; }
+    .rule-title { font-size: 14px; font-weight: 700; fill: var(--accent); }
+    .rule-text { font-size: 13px; fill: var(--ink); }
+  </style>
+
+  <text class="title" x="38" y="28">Capital Budgeting Instance</text>
+  <text class="subtitle" x="236" y="28">maximize ROI under integer developer-month capacity</text>
+
+  <rect class="card" x="38" y="52" width="185" height="132" />
+  <text class="name" x="56" y="86">Alpha</text>
+  <text class="meta" x="56" y="115">dev-months: 5</text>
+  <text class="meta" x="56" y="140">ROI (M USD): 1.25</text>
+
+  <rect class="card" x="240" y="52" width="185" height="132" />
+  <text class="name" x="258" y="86">Beta</text>
+  <text class="meta" x="258" y="115">dev-months: 8</text>
+  <text class="meta" x="258" y="140">ROI (M USD): 3.40</text>
+
+  <rect class="card" x="442" y="52" width="185" height="132" />
+  <text class="name" x="460" y="86">Gamma</text>
+  <text class="meta" x="460" y="115">dev-months: 6</text>
+  <text class="meta" x="460" y="140">ROI (M USD): 2.10</text>
+
+  <rect class="card" x="644" y="52" width="185" height="132" />
+  <text class="name" x="662" y="86">Delta</text>
+  <text class="meta" x="662" y="115">dev-months: 7</text>
+  <text class="meta" x="662" y="140">ROI (M USD): 2.80</text>
+
+  <rect class="rule" x="38" y="205" width="791" height="58" />
+  <text class="rule-title" x="56" y="229">Constraint</text>
+  <text class="rule-text" x="140" y="229">Total developer-months of funded projects must be at most 18.</text>
+  <text class="rule-title" x="56" y="250">Objective</text>
+  <text class="rule-text" x="140" y="250">Minimize missed ROI (equivalently maximize selected ROI).</text>
+</svg>

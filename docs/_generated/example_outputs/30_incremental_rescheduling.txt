@@ -1,0 +1,16 @@
+$ python examples/model/30_incremental_rescheduling.py
+--- Baseline Plan ---
+cost: 3
+assignments: {'T1': 'M1', 'T2': 'M1', 'T3': 'M1'}
+--- Adjusted Plan (T2 on M1 forbidden) ---
+cost: 5
+assignments: {'T1': 'M1', 'T2': 'M2', 'T3': 'M1'}
+--- What-if (assume T1 on M2) ---
+cost: 7
+assignments: {'T1': 'M2', 'T2': 'M2', 'T3': 'M1'}
+--- Back to model state (assumption removed) ---
+cost: 5
+assignments: {'T1': 'M1', 'T2': 'M2', 'T3': 'M1'}
+--- After objective update (T3 on M1 penalty raised) ---
+cost: 7
+assignments: {'T1': 'M1', 'T2': 'M2', 'T3': 'M2'}

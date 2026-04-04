@@ -1,0 +1,56 @@
+name: Build on Mac OS
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  MacOS:
+
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: build COMiniSatPS
+      run: |
+        cd ..
+        wget https://baldur.iti.kit.edu/sat-competition-2016/solvers/main/COMiniSatPSChandrasekharDRUP.zip
+        unzip COMiniSatPSChandrasekharDRUP.zip
+        mv 'COMiniSatPS Chandrasekhar DRUP/cominisatps' .
+        cd cominisatps
+        patch -p1 <../UWrMaxSat/cominisatps.patch
+    - name: make SAT solver library
+      run: |
+        cd ../cominisatps/simp
+        MROOT=.. make libr
+    - name: create SAT solver links
+      run: |
+        cd ../cominisatps
+        mkdir minisat
+        cd minisat
+        ln -s ../core ../simp ../mtl ../utils .
+    - name: build the MaxPre preprocessor
+      run: |
+        cd ..
+        git clone https://github.com/Laakeri/maxpre
+        cd maxpre
+        sed -i '' 's/-g/-D NDEBUG/' src/Makefile
+        make lib
+    - name: build UWrMaxSat
+      run: |
+        make config
+        USESCIP= make r
+    - name: test executable
+      run: |
+        build/release/bin/uwrmaxsat -of Examples/unsat.opb
+        build/release/bin/uwrmaxsat -of Examples/garden9x9.opb
+        build/release/bin/uwrmaxsat -bm Examples/satellite02ac.wcsp.wcnf
+        build/release/bin/uwrmaxsat -maxpre -bm Examples/satellite02ac.wcsp.wcnf
+    - name: build and test BIGWEIGHTS
+      run: |
+        USESCIP= make clean
+        sed -i '' 's/BIGWEIGHTS?=#/BIGWEIGHTS?=/' config.mk
+        USESCIP= make r
+        build/release/bin/uwrmaxsat -of Examples/stein27_bignum.opb

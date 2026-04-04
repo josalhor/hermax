@@ -1,0 +1,850 @@
+diff -urB cominisatps-SAT2016/core/Dimacs.h cominisatps/core/Dimacs.h
+--- cominisatps-SAT2016/core/Dimacs.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/core/Dimacs.h	2022-07-08 20:06:07.525169384 +0200
+@@ -26,7 +26,7 @@
+ #include "utils/ParseUtils.h"
+ #include "core/SolverTypes.h"
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ // DIMACS Parser:
+diff -urB cominisatps-SAT2016/core/Main.cc cominisatps/core/Main.cc
+--- cominisatps-SAT2016/core/Main.cc	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/core/Main.cc	2022-07-08 20:05:56.092705913 +0200
+@@ -31,7 +31,7 @@
+ #include "core/Dimacs.h"
+ #include "core/Solver.h"
+ 
+-using namespace Minisat;
++using namespace COMinisatPS;
+ 
+ //=================================================================================================
+ 
+diff -urB cominisatps-SAT2016/core/Solver.cc cominisatps/core/Solver.cc
+--- cominisatps-SAT2016/core/Solver.cc	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/core/Solver.cc	2022-07-11 16:06:06.221622627 +0200
+@@ -25,7 +25,7 @@
+ #include "mtl/Sort.h"
+ #include "core/Solver.h"
+ 
+-using namespace Minisat;
++using namespace COMinisatPS;
+ 
+ #ifdef BIN_DRUP
+ int Solver::buf_len = 0;
+@@ -117,6 +117,9 @@
+   , conflict_budget    (-1)
+   , propagation_budget (-1)
+   , asynch_interrupt   (false)
++  , termCallbackState  (nullptr)
++  , termCallback       (nullptr)
++
+ {}
+ 
+ 
+@@ -150,6 +153,7 @@
+     trail    .capacity(v+1);
+     setDecisionVar(v, dvar);
+ 
++    assump.push(false);
+     // Additional space needed for stamping.
+     // TODO: allocate exact memory.
+     seen      .push(0);
+@@ -550,16 +554,20 @@
+ |    Specialized analysis procedure to express the final conflict in terms of assumptions.
+ |    Calculates the (possibly empty) set of assumptions that led to the assignment of 'p', and
+ |    stores the result in 'out_conflict'.
++|
++|  void Solver::analyzeFinal(Lit p, vec<Lit>& out_conflict)
+ |________________________________________________________________________________________________@*/
+-void Solver::analyzeFinal(Lit p, vec<Lit>& out_conflict)
++void Solver::analyzeFinal(CRef confl, vec<Lit>& out_conflict)
+ {
+     out_conflict.clear();
+-    out_conflict.push(p);
+ 
+     if (decisionLevel() == 0)
+         return;
+ 
+-    seen[var(p)] = 1;
++    Clause& cl = ca[confl];
++    for (int j = 0; j < cl.size(); j++)
++        if (level(var(cl[j])) > 0)
++            seen[var(cl[j])] = 1;
+ 
+     for (int i = trail.size()-1; i >= trail_lim[0]; i--){
+         Var x = var(trail[i]);
+@@ -577,7 +585,9 @@
+         }
+     }
+ 
+-    seen[var(p)] = 0;
++    for (int j = cl.size() == 2 ? 0 : 1; j < cl.size(); j++)
++        if (level(var(cl[j])) > 0)
++            seen[var(cl[j])] = 0;
+ }
+ 
+ 
+@@ -650,12 +660,22 @@
+                 *j++ = w; continue; }
+ 
+             // Look for new watch:
++            int choosenPos = -1, maxAssumpLevel = assumptions.size() > 0 ? 1 : 0;
+             for (int k = 2; k < c.size(); k++)
+                 if (value(c[k]) != l_False){
+-                    c[1] = c[k]; c[k] = false_lit;
+-                    watches[~c[1]].push(w);
+-                    goto NextClause; }
+-
++                    choosenPos = k;
++                    if(decisionLevel()>maxAssumpLevel || value(c[k])==l_True || !assump[var(c[k])]) 
++                        break; }
++            if(choosenPos!=-1) {
++                c[1] = c[choosenPos]; c[choosenPos] = false_lit;
++                watches[~c[1]].push(w);
++                goto NextClause; }
++             /*   for (int k = 2; k < c.size(); k++)
++                    if (value(c[k]) != l_False){
++                        c[1] = c[k]; c[k] = false_lit;
++                        watches[~c[1]].push(w);
++                        goto NextClause; }
++*/
+             // Did not find watch -- clause is unit under assignment:
+             *j++ = w;
+             if (value(first) == l_False){
+@@ -789,7 +809,8 @@
+         ok = stampAll(true);
+ 
+     checkGarbage();
+-    rebuildOrderHeap();
++    if ((int)dec_vars - nAssigns() < (glucose_restart ? order_heap_glue_r : order_heap_no_r).size() / 2) // M. Piotrow 20.07.2017
++        rebuildOrderHeap();
+ 
+     simpDB_assigns = nAssigns();
+     simpDB_props   = clauses_literals + learnts_literals;   // (shouldn't depend on stats really, but it will do for now)
+@@ -933,6 +954,7 @@
+             conflicts++; nof_conflicts--;
+             if (conflicts == 100000 && learnts_core.size() < 100) core_lbd_cut = 5;
+             if (decisionLevel() == 0) return l_False;
++            if (decisionLevel() == 1) { analyzeFinal(confl, conflict); return l_False; }
+ 
+             learnt_clause.clear();
+             analyze(confl, learnt_clause, backtrack_level, lbd);
+@@ -998,7 +1020,7 @@
+                 restart = lbd_queue.full() && (lbd_queue.avg() * K > global_lbd_sum / conflicts_glue);
+                 cached = true;
+             }
+-            if (restart /*|| !withinBudget()*/){
++            if (restart || !withinBudget()){
+                 lbd_queue.clear();
+                 // Reached bound on number of conflicts:
+                 progress_estimate = progressEstimate();
+@@ -1017,22 +1039,18 @@
+                 reduceDB(); }
+ 
+             Lit next = lit_Undef;
+-            /*while (decisionLevel() < assumptions.size()){
+-                // Perform user provided assumption:
+-                Lit p = assumptions[decisionLevel()];
+-                if (value(p) == l_True){
+-                    // Dummy decision level:
+-                    newDecisionLevel();
+-                }else if (value(p) == l_False){
+-                    analyzeFinal(~p, conflict);
+-                    return l_False;
+-                }else{
+-                    next = p;
+-                    break;
++
++            if (decisionLevel() == 0) {
++                newDecisionLevel();
++                for (int i = 0; i < assumptions.size(); i++) {
++                    Lit p = assumptions[i];
++                    if (value(p) == l_False) { conflict.push(~p); return l_False; }
++                    else if (value(p) != l_True) uncheckedEnqueue(p);
+                 }
++                continue;
+             }
+ 
+-            if (next == lit_Undef)*/{
++            if (next == lit_Undef){
+                 // New variable decision:
+                 decisions++;
+                 next = pickBranchLit();
+@@ -1101,25 +1119,23 @@
+ 
+     solves++;
+ 
++    for (int i = 0; i <assumptions.size(); i++)
++        assump[var(assumptions[i])] = true;
++
+     max_learnts               = nClauses() * learntsize_factor;
+     learntsize_adjust_confl   = learntsize_adjust_start_confl;
+     learntsize_adjust_cnt     = (int)learntsize_adjust_confl;
+     lbool   status            = l_Undef;
+ 
+-    if (verbosity >= 1){
+-        printf("c ============================[ Search Statistics ]==============================\n");
+-        printf("c | Conflicts |          ORIGINAL         |          LEARNT          | Progress |\n");
+-        printf("c |           |    Vars  Clauses Literals |    Limit  Clauses Lit/Cl |          |\n");
+-        printf("c ===============================================================================\n");
+-    }
++    if (verbosity >= 1)
++        printf("c ======================[ COMiniSatPS search starting  ]========================\n");
+ 
+     add_tmp.clear();
+-
+     glucose_restart = true;
+     int init = 10000;
+-    while (status == l_Undef && init > 0 /*&& withinBudget()*/)
++    while (status == l_Undef && init > 0 && withinBudget())
+        status = search(init);
+-    glucose_restart = false;
++    if (status == l_Undef && withinBudget()) glucose_restart = false;
+ 
+     // Search:
+     int phase_allotment = 100;
+@@ -1127,9 +1143,9 @@
+         int weighted = glucose_restart ? phase_allotment * 2 : phase_allotment;
+         fflush(stdout);
+ 
+-        while (status == l_Undef && weighted > 0 /*&& withinBudget()*/)
++        while (status == l_Undef && weighted > 0 && withinBudget())
+             status = search(weighted);
+-        if (status != l_Undef /*|| !withinBudget()*/)
++        if (status != l_Undef || !withinBudget())
+             break; // Should break here for correctness in incremental SAT solving.
+ 
+         glucose_restart = !glucose_restart;
+@@ -1137,9 +1153,6 @@
+             phase_allotment += phase_allotment / 10;
+     }
+ 
+-    if (verbosity >= 1)
+-        printf("c ===============================================================================\n");
+-
+ #ifdef BIN_DRUP
+     if (drup_file && status == l_False) binDRUP_flush(drup_file);
+ #endif
+diff -urB cominisatps-SAT2016/core/Solver.h cominisatps/core/Solver.h
+--- cominisatps-SAT2016/core/Solver.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/core/Solver.h	2022-07-08 20:06:07.521169224 +0200
+@@ -23,7 +23,7 @@
+ #ifndef Minisat_Solver_h
+ #define Minisat_Solver_h
+ 
+-#define BIN_DRUP
++//#define BIN_DRUP
+ 
+ #define GLUCOSE23
+ //#define EXTRA_VAR_ACT_BUMP
+@@ -48,7 +48,7 @@
+ #define TIER2 2
+ #define CORE  3
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ // Solver -- the main class:
+@@ -143,6 +143,10 @@
+     void    budgetOff();
+     void    interrupt();          // Trigger a (potentially asynchronous) interruption of the solver.
+     void    clearInterrupt();     // Clear interrupt indicator flag.
++    // IPASIR:
++    //
++    inline void setTermCallback(void *state, int (*termCallback)(void *));
++
+ 
+     // Memory managment:
+     //
+@@ -228,6 +232,7 @@
+     OccLists<Lit, vec<Watcher>, WatcherDeleted>
+                         watches_bin,      // Watches for binary clauses only.
+                         watches;          // 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
++    vec<bool>           assump;           // Declares if a variable is an assumption variable or not.
+     vec<lbool>          assigns;          // The current assignments.
+     vec<char>           polarity;         // The preferred polarity of each variable.
+     vec<char>           decision;         // Declares if a variable is eligible for selection in the decision heuristic.
+@@ -274,6 +279,10 @@
+     int64_t             propagation_budget; // -1 means no budget.
+     bool                asynch_interrupt;
+ 
++    // IPASIR data
++    void *termCallbackState;
++    int (*termCallback)(void *state);
++
+     // Main internal methods:
+     //
+     void     insertVarOrder   (Var x);                                                 // Insert a variable in the decision order priority queue.
+@@ -284,7 +293,7 @@
+     CRef     propagate        ();                                                      // Perform unit propagation. Returns possibly conflicting clause.
+     void     cancelUntil      (int level);                                             // Backtrack until a certain level.
+     void     analyze          (CRef confl, vec<Lit>& out_learnt, int& out_btlevel, int& out_lbd);    // (bt = backtrack)
+-    void     analyzeFinal     (Lit p, vec<Lit>& out_conflict);                         // COULD THIS BE IMPLEMENTED BY THE ORDINARIY "analyze" BY SOME REASONABLE GENERALIZATION?
++    void     analyzeFinal(CRef confl, vec<Lit>& out_conflict);
+     bool     litRedundant     (Lit p, uint32_t abstract_levels);                       // (helper method for 'analyze()')
+     lbool    search           (int& nof_conflicts);                                    // Search for a given number of conflicts.
+     lbool    solve_           ();                                                      // Main solve method (assumptions given in 'assumptions').
+@@ -498,7 +508,8 @@
+ inline bool     Solver::withinBudget() const {
+     return !asynch_interrupt &&
+            (conflict_budget    < 0 || conflicts < (uint64_t)conflict_budget) &&
+-           (propagation_budget < 0 || propagations < (uint64_t)propagation_budget); }
++           (propagation_budget < 0 || propagations < (uint64_t)propagation_budget) &&
++           (termCallback == 0 || 0 == termCallback(termCallbackState)); }
+ 
+ // FIXME: after the introduction of asynchronous interrruptions the solve-versions that return a
+ // pure bool do not give a safe interface. Either interrupts must be possible to turn off here, or
+@@ -515,7 +526,9 @@
+ inline void     Solver::toDimacs     (const char* file, Lit p){ vec<Lit> as; as.push(p); toDimacs(file, as); }
+ inline void     Solver::toDimacs     (const char* file, Lit p, Lit q){ vec<Lit> as; as.push(p); as.push(q); toDimacs(file, as); }
+ inline void     Solver::toDimacs     (const char* file, Lit p, Lit q, Lit r){ vec<Lit> as; as.push(p); as.push(q); as.push(r); toDimacs(file, as); }
+-
++// IPASIR
++void Solver::setTermCallback(void *state, int (*termcallback)(void *)) {
++    termCallbackState = state; termCallback = termcallback; }
+ 
+ //=================================================================================================
+ // Debug etc:
+diff -urB cominisatps-SAT2016/core/SolverTypes.h cominisatps/core/SolverTypes.h
+--- cominisatps-SAT2016/core/SolverTypes.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/core/SolverTypes.h	2022-07-08 20:06:07.533169713 +0200
+@@ -32,7 +32,7 @@
+ #include "mtl/Map.h"
+ #include "mtl/Alloc.h"
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ // Variables, literals, lifted booleans, clauses:
+@@ -49,7 +49,7 @@
+     int     x;
+ 
+     // Use this as a constructor:
+-    friend Lit mkLit(Var var, bool sign = false);
++    //friend Lit mkLit(Var var, bool sign = false);
+ 
+     bool operator == (Lit p) const { return x == p.x; }
+     bool operator != (Lit p) const { return x != p.x; }
+@@ -57,7 +57,7 @@
+ };
+ 
+ 
+-inline  Lit  mkLit     (Var var, bool sign) { Lit p; p.x = var + var + (int)sign; return p; }
++inline  Lit  mkLit     (Var var, bool sign = false) { Lit p; p.x = var + var + (int)sign; return p; }
+ inline  Lit  operator ~(Lit p)              { Lit q; q.x = p.x ^ 1; return q; }
+ inline  Lit  operator ^(Lit p, bool b)      { Lit q; q.x = p.x ^ (unsigned int)b; return q; }
+ inline  bool sign      (Lit p)              { return p.x & 1; }
+diff -urB cominisatps-SAT2016/mtl/Alg.h cominisatps/mtl/Alg.h
+--- cominisatps-SAT2016/mtl/Alg.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/mtl/Alg.h	2022-07-08 20:06:07.565171010 +0200
+@@ -23,7 +23,7 @@
+ 
+ #include "mtl/Vec.h"
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ // Useful functions on vector-like types:
+diff -urB cominisatps-SAT2016/mtl/Alloc.h cominisatps/mtl/Alloc.h
+--- cominisatps-SAT2016/mtl/Alloc.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/mtl/Alloc.h	2022-07-08 20:06:07.581171659 +0200
+@@ -24,7 +24,7 @@
+ #include "mtl/XAlloc.h"
+ #include "mtl/Vec.h"
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ // Simple Region-based memory allocator:
+diff -urB cominisatps-SAT2016/mtl/Heap.h cominisatps/mtl/Heap.h
+--- cominisatps-SAT2016/mtl/Heap.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/mtl/Heap.h	2022-07-08 20:06:07.593172145 +0200
+@@ -23,7 +23,7 @@
+ 
+ #include "mtl/Vec.h"
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ // A heap implementation with support for decrease/increase key.
+diff -urB cominisatps-SAT2016/mtl/Map.h cominisatps/mtl/Map.h
+--- cominisatps-SAT2016/mtl/Map.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/mtl/Map.h	2022-07-08 20:06:07.569171172 +0200
+@@ -23,7 +23,7 @@
+ #include "mtl/IntTypes.h"
+ #include "mtl/Vec.h"
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ // Default hash/equals functions
+@@ -66,8 +66,8 @@
+     int        size;
+ 
+     // Don't allow copying (error prone):
+-    Map<K,D,H,E>&  operator = (Map<K,D,H,E>& other) { assert(0); }
+-                   Map        (Map<K,D,H,E>& other) { assert(0); }
++    Map<K,D,H,E>&  operator = (Map<K,D,H,E>& ) { assert(0); }
++                   Map        (Map<K,D,H,E>& ) { assert(0); }
+ 
+     bool    checkCap(int new_size) const { return new_size > cap; }
+ 
+diff -urB cominisatps-SAT2016/mtl/Queue.h cominisatps/mtl/Queue.h
+--- cominisatps-SAT2016/mtl/Queue.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/mtl/Queue.h	2022-07-08 20:06:07.597172308 +0200
+@@ -23,7 +23,7 @@
+ 
+ #include "mtl/Vec.h"
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ 
+diff -urB cominisatps-SAT2016/mtl/Sort.h cominisatps/mtl/Sort.h
+--- cominisatps-SAT2016/mtl/Sort.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/mtl/Sort.h	2022-07-08 20:06:07.609172794 +0200
+@@ -27,7 +27,7 @@
+ // Some sorting algorithms for vec's
+ 
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ template<class T>
+ struct LessThan_default {
+diff -urB cominisatps-SAT2016/mtl/template.mk cominisatps/mtl/template.mk
+--- cominisatps-SAT2016/mtl/template.mk	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/mtl/template.mk	2020-07-17 11:36:18.589345683 +0200
+@@ -44,7 +44,7 @@
+ %.o:			CFLAGS +=$(COPTIMIZE) -g -D DEBUG
+ %.op:			CFLAGS +=$(COPTIMIZE) -pg -g -D NDEBUG
+ %.od:			CFLAGS +=-O0 -g -D DEBUG
+-%.or:			CFLAGS +=$(COPTIMIZE) -g -D NDEBUG
++%.or:			CFLAGS +=$(COPTIMIZE)  -D NDEBUG
+ 
+ ## Link options
+ $(EXEC):		LFLAGS += -g
+@@ -95,7 +95,7 @@
+ depend.mk: $(CSRCS) $(CHDRS)
+ 	@echo Making dependencies
+ 	@$(CXX) $(CFLAGS) -I$(MROOT) \
+-	   $(CSRCS) -MM | sed 's|\(.*\):|$(PWD)/\1 $(PWD)/\1r $(PWD)/\1d $(PWD)/\1p:|' > depend.mk
++	   $(CSRCS) -MM | sed 's|\([^:]*\):|$(PWD)/\1 $(PWD)/\1r $(PWD)/\1d $(PWD)/\1p:|' > depend.mk
+ 	@for dir in $(DEPDIR); do \
+ 	      if [ -r $(MROOT)/$${dir}/depend.mk ]; then \
+ 		  echo Depends on: $${dir}; \
+diff -urB cominisatps-SAT2016/mtl/Vec.h cominisatps/mtl/Vec.h
+--- cominisatps-SAT2016/mtl/Vec.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/mtl/Vec.h	2022-07-08 20:06:07.585171821 +0200
+@@ -27,7 +27,7 @@
+ #include "mtl/IntTypes.h"
+ #include "mtl/XAlloc.h"
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ // Automatically resizable arrays
+@@ -41,8 +41,8 @@
+     int cap;
+ 
+     // Don't allow copying (error prone):
+-    vec<T>&  operator = (vec<T>& other) { assert(0); return *this; }
+-             vec        (vec<T>& other) { assert(0); }
++    vec<T>&  operator = (vec<T>& ) { assert(0); return *this; }
++             vec        (vec<T>& ) { assert(0); }
+              
+     // Helpers for calculating next capacity:
+     static inline int  imax   (int x, int y) { int mask = (y-x) >> (sizeof(int)*8-1); return (x&mask) + (y&(~mask)); }
+diff -urB cominisatps-SAT2016/mtl/XAlloc.h cominisatps/mtl/XAlloc.h
+--- cominisatps-SAT2016/mtl/XAlloc.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/mtl/XAlloc.h	2022-07-08 20:06:07.601172469 +0200
+@@ -24,7 +24,7 @@
+ #include <errno.h>
+ #include <stdlib.h>
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ // Simple layer on top of malloc/realloc to catch out-of-memory situtaions and provide some typing:
+diff -urB cominisatps-SAT2016/simp/Main.cc cominisatps/simp/Main.cc
+--- cominisatps-SAT2016/simp/Main.cc	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/simp/Main.cc	2022-07-08 20:05:56.112706723 +0200
+@@ -24,7 +24,7 @@
+ 
+ #include <signal.h>
+ #include <zlib.h>
+-#include <sys/resource.h>
++//#include <sys/resource.h>
+ 
+ #include "utils/System.h"
+ #include "utils/ParseUtils.h"
+@@ -32,7 +32,7 @@
+ #include "core/Dimacs.h"
+ #include "simp/SimpSolver.h"
+ 
+-using namespace Minisat;
++using namespace COMinisatPS;
+ 
+ //=================================================================================================
+ 
+@@ -41,11 +41,11 @@
+ {
+     double cpu_time = cpuTime();
+     double mem_used = memUsedPeak();
+-    printf("c restarts              : %"PRIu64"\n", solver.starts);
+-    printf("c conflicts             : %-12"PRIu64"   (%.0f /sec)\n", solver.conflicts   , solver.conflicts   /cpu_time);
+-    printf("c decisions             : %-12"PRIu64"   (%4.2f %% random) (%.0f /sec)\n", solver.decisions, (float)solver.rnd_decisions*100 / (float)solver.decisions, solver.decisions   /cpu_time);
+-    printf("c propagations          : %-12"PRIu64"   (%.0f /sec)\n", solver.propagations, solver.propagations/cpu_time);
+-    printf("c conflict literals     : %-12"PRIu64"   (%4.2f %% deleted)\n", solver.tot_literals, (solver.max_literals - solver.tot_literals)*100 / (double)solver.max_literals);
++    printf("c restarts              : %" PRIu64"\n", solver.starts);
++    printf("c conflicts             : %-12" PRIu64"   (%.0f /sec)\n", solver.conflicts   , solver.conflicts   /cpu_time);
++    printf("c decisions             : %-12" PRIu64"   (%4.2f %% random) (%.0f /sec)\n", solver.decisions, (float)solver.rnd_decisions*100 / (float)solver.decisions, solver.decisions   /cpu_time);
++    printf("c propagations          : %-12" PRIu64"   (%.0f /sec)\n", solver.propagations, solver.propagations/cpu_time);
++    printf("c conflict literals     : %-12" PRIu64"   (%4.2f %% deleted)\n", solver.tot_literals, (solver.max_literals - solver.tot_literals)*100 / (double)solver.max_literals);
+     if (mem_used != 0) printf("c Memory used           : %.2f MB\n", mem_used);
+     printf("c CPU time              : %g s\n", cpu_time);
+ }
+@@ -111,30 +111,12 @@
+         solver = &S;
+         // Use signal handlers that forcibly quit until the solver will be able to respond to
+         // interrupts:
+-        signal(SIGINT, SIGINT_exit);
+-        signal(SIGXCPU,SIGINT_exit);
++        sigTerm(SIGINT_exit);
++
++        // Try to set resource limits:
++        if (cpu_lim != INT32_MAX) limitTime(cpu_lim);
++        if (mem_lim != INT32_MAX) limitMemory(mem_lim);
+ 
+-        // Set limit on CPU-time:
+-        if (cpu_lim != INT32_MAX){
+-            rlimit rl;
+-            getrlimit(RLIMIT_CPU, &rl);
+-            if (rl.rlim_max == RLIM_INFINITY || (rlim_t)cpu_lim < rl.rlim_max){
+-                rl.rlim_cur = cpu_lim;
+-                if (setrlimit(RLIMIT_CPU, &rl) == -1)
+-                    printf("c WARNING! Could not set resource limit: CPU-time.\n");
+-            } }
+-
+-        // Set limit on virtual memory:
+-        if (mem_lim != INT32_MAX){
+-            rlim_t new_mem_lim = (rlim_t)mem_lim * 1024*1024;
+-            rlimit rl;
+-            getrlimit(RLIMIT_AS, &rl);
+-            if (rl.rlim_max == RLIM_INFINITY || new_mem_lim < rl.rlim_max){
+-                rl.rlim_cur = new_mem_lim;
+-                if (setrlimit(RLIMIT_AS, &rl) == -1)
+-                    printf("c WARNING! Could not set resource limit: Virtual memory.\n");
+-            } }
+-        
+         if (argc == 1)
+             printf("c Reading from standard input... Use '--help' for help.\n");
+ 
+@@ -160,8 +142,7 @@
+ 
+         // Change to signal-handlers that will only notify the solver and allow it to terminate
+         // voluntarily:
+-        signal(SIGINT, SIGINT_interrupt);
+-        signal(SIGXCPU,SIGINT_interrupt);
++        sigTerm(SIGINT_interrupt);
+ 
+         S.parsing = false;
+         S.eliminate(true);
+diff -urB cominisatps-SAT2016/simp/SimpSolver.cc cominisatps/simp/SimpSolver.cc
+--- cominisatps-SAT2016/simp/SimpSolver.cc	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/simp/SimpSolver.cc	2022-07-08 20:05:56.120707047 +0200
+@@ -24,7 +24,7 @@
+ #include "simp/SimpSolver.h"
+ #include "utils/System.h"
+ 
+-using namespace Minisat;
++using namespace COMinisatPS;
+ 
+ //=================================================================================================
+ // Options:
+@@ -648,10 +648,10 @@
+     n_cls  = nClauses();
+     n_vars = nFreeVars();
+ 
+-    printf("c Reduced to %d vars, %d cls (grow=%d)\n", n_vars, n_cls, grow);
++    if (verbosity >= 1) printf("c COMiniSatPS: Reduced to %d vars, %d cls (grow=%d)\n", n_vars, n_cls, grow);
+ 
+     if ((double)n_cls / n_vars >= 10 || n_vars < 10000){
+-        printf("c No iterative elimination performed. (vars=%d, c/v ratio=%.1f)\n", n_vars, (double)n_cls / n_vars);
++        if (verbosity >= 1) printf("c COMiniSatPS: No iterative elimination performed. (vars=%d, c/v ratio=%.1f)\n", n_vars, (double)n_cls / n_vars);
+         goto cleanup; }
+ 
+     grow = grow ? grow * 2 : 8;
+@@ -678,12 +678,12 @@
+         double cl_inc_rate  = (double)n_cls_now   / n_cls_last;
+         double var_dec_rate = (double)n_vars_last / n_vars_now;
+ 
+-        printf("c Reduced to %d vars, %d cls (grow=%d)\n", n_vars_now, n_cls_now, grow);
+-        printf("c cl_inc_rate=%.3f, var_dec_rate=%.3f\n", cl_inc_rate, var_dec_rate);
++        if (verbosity >= 1) printf("c COMiniSatPS: Reduced to %d vars, %d cls (grow=%d)\n", n_vars_now, n_cls_now, grow);
++        if (verbosity >= 1) printf("c COMiniSatPS: cl_inc_rate=%.3f, var_dec_rate=%.3f\n", cl_inc_rate, var_dec_rate);
+ 
+         if (n_cls_now > n_cls_init || cl_inc_rate > var_dec_rate) break;
+     }
+-    printf("c No. effective iterative eliminations: %d\n", iter);
++    if (verbosity >= 1) printf("c COMiniSatPS: No. effective iterative eliminations: %d\n", iter);
+ 
+ cleanup:
+     touched  .clear(true);
+diff -urB cominisatps-SAT2016/simp/SimpSolver.h cominisatps/simp/SimpSolver.h
+--- cominisatps-SAT2016/simp/SimpSolver.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/simp/SimpSolver.h	2022-07-08 20:06:07.541170038 +0200
+@@ -27,7 +27,7 @@
+ #include "core/Solver.h"
+ 
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //=================================================================================================
+ 
+diff -urB cominisatps-SAT2016/utils/Options.cc cominisatps/utils/Options.cc
+--- cominisatps-SAT2016/utils/Options.cc	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/utils/Options.cc	2022-07-08 20:05:56.136707695 +0200
+@@ -21,9 +21,9 @@
+ #include "utils/Options.h"
+ #include "utils/ParseUtils.h"
+ 
+-using namespace Minisat;
++using namespace COMinisatPS;
+ 
+-void Minisat::parseOptions(int& argc, char** argv, bool strict)
++void COMinisatPS::parseOptions(int& argc, char** argv, bool strict)
+ {
+     int i, j;
+     for (i = j = 1; i < argc; i++){
+@@ -54,9 +54,9 @@
+ }
+ 
+ 
+-void Minisat::setUsageHelp      (const char* str){ Option::getUsageString() = str; }
+-void Minisat::setHelpPrefixStr  (const char* str){ Option::getHelpPrefixString() = str; }
+-void Minisat::printUsageAndExit (int argc, char** argv, bool verbose)
++void COMinisatPS::setUsageHelp      (const char* str){ Option::getUsageString() = str; }
++void COMinisatPS::setHelpPrefixStr  (const char* str){ Option::getHelpPrefixString() = str; }
++void COMinisatPS::printUsageAndExit (int argc, char** argv, bool verbose)
+ {
+     const char* usage = Option::getUsageString();
+     if (usage != NULL)
+diff -urB cominisatps-SAT2016/utils/Options.h cominisatps/utils/Options.h
+--- cominisatps-SAT2016/utils/Options.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/utils/Options.h	2022-07-08 20:06:07.557170686 +0200
+@@ -29,7 +29,7 @@
+ #include "mtl/Vec.h"
+ #include "utils/ParseUtils.h"
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //==================================================================================================
+ // Top-level option parse/help functions:
+@@ -282,15 +282,15 @@
+         if (range.begin == INT64_MIN)
+             fprintf(stderr, "imin");
+         else
+-            fprintf(stderr, "%4"PRIi64, range.begin);
++            fprintf(stderr, "%4" PRIi64, range.begin);
+ 
+         fprintf(stderr, " .. ");
+         if (range.end == INT64_MAX)
+             fprintf(stderr, "imax");
+         else
+-            fprintf(stderr, "%4"PRIi64, range.end);
++            fprintf(stderr, "%4" PRIi64, range.end);
+ 
+-        fprintf(stderr, "] (default: %"PRIi64")\n", value);
++        fprintf(stderr, "] (default: %" PRIi64")\n", value);
+         if (verbose){
+             fprintf(stderr, "\n        %s\n", description);
+             fprintf(stderr, "\n");
+diff -urB cominisatps-SAT2016/utils/ParseUtils.h cominisatps/utils/ParseUtils.h
+--- cominisatps-SAT2016/utils/ParseUtils.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/utils/ParseUtils.h	2022-07-08 20:06:07.553170523 +0200
+@@ -26,7 +26,7 @@
+ 
+ #include <zlib.h>
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ //-------------------------------------------------------------------------------------------------
+ // A simple buffered character stream class:
+diff -urB cominisatps-SAT2016/utils/System.cc cominisatps/utils/System.cc
+--- cominisatps-SAT2016/utils/System.cc	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/utils/System.cc	2022-07-08 20:05:56.128707371 +0200
+@@ -18,14 +18,16 @@
+ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ **************************************************************************************************/
+ 
++#include <signal.h>
++#include <stdio.h>
++
+ #include "utils/System.h"
+ 
+ #if defined(__linux__)
+ 
+-#include <stdio.h>
+ #include <stdlib.h>
+ 
+-using namespace Minisat;
++using namespace COMinisatPS;
+ 
+ // TODO: split the memory reading functions into two: one for reading high-watermark of RSS, and
+ // one for reading the current virtual memory size.
+@@ -67,29 +69,94 @@
+     return peak_kb;
+ }
+ 
+-double Minisat::memUsed() { return (double)memReadStat(0) * (double)getpagesize() / (1024*1024); }
+-double Minisat::memUsedPeak() { 
++double COMinisatPS::memUsed() { return (double)memReadStat(0) * (double)getpagesize() / (1024*1024); }
++double COMinisatPS::memUsedPeak() { 
+     double peak = memReadPeak() / 1024;
+     return peak == 0 ? memUsed() : peak; }
+ 
+ #elif defined(__FreeBSD__)
+ 
+-double Minisat::memUsed(void) {
++double COMinisatPS::memUsed(void) {
+     struct rusage ru;
+     getrusage(RUSAGE_SELF, &ru);
+     return (double)ru.ru_maxrss / 1024; }
+-double MiniSat::memUsedPeak(void) { return memUsed(); }
++double COMinisatPS::memUsedPeak(void) { return memUsed(); }
+ 
+ 
+ #elif defined(__APPLE__)
+ #include <malloc/malloc.h>
+ 
+-double Minisat::memUsed(void) {
++double COMinisatPS::memUsed(void) {
+     malloc_statistics_t t;
+     malloc_zone_statistics(NULL, &t);
+     return (double)t.max_size_in_use / (1024*1024); }
++double COMinisatPS::memUsedPeak(void) { return memUsed(); }
+ 
+ #else
+-double Minisat::memUsed() { 
++double COMinisatPS::memUsed() { 
++    return 0; }
++double COMinisatPS::memUsedPeak() { 
+     return 0; }
+ #endif
++
++#if !defined(_MSC_VER) && !defined(__MINGW32__)
++void COMinisatPS::limitMemory(uint64_t max_mem_mb)
++{
++// FIXME: OpenBSD does not support RLIMIT_AS. Not sure how well RLIMIT_DATA works instead.
++#if defined(__OpenBSD__)
++#define RLIMIT_AS RLIMIT_DATA
++#endif
++
++    // Set limit on virtual memory:
++    if (max_mem_mb != 0){
++        rlim_t new_mem_lim = (rlim_t)max_mem_mb * 1024*1024;
++        rlimit rl;
++        getrlimit(RLIMIT_AS, &rl);
++        if (rl.rlim_max == RLIM_INFINITY || new_mem_lim < rl.rlim_max){
++            rl.rlim_cur = new_mem_lim;
++            if (setrlimit(RLIMIT_AS, &rl) == -1)
++                printf("WARNING! Could not set resource limit: Virtual memory.\n");
++        }
++    }
++
++#if defined(__OpenBSD__)
++#undef RLIMIT_AS
++#endif
++}
++#else
++void COMinisatPS::limitMemory(uint64_t /*max_mem_mb*/)
++{
++    printf("WARNING! Memory limit not supported on this architecture.\n");
++}
++#endif
++
++
++#if !defined(_MSC_VER) && !defined(__MINGW32__)
++void COMinisatPS::limitTime(uint32_t max_cpu_time)
++{
++    if (max_cpu_time != 0){
++        rlimit rl;
++        getrlimit(RLIMIT_CPU, &rl);
++        if (rl.rlim_max == RLIM_INFINITY || (rlim_t)max_cpu_time < rl.rlim_max){
++            rl.rlim_cur = max_cpu_time;
++            if (setrlimit(RLIMIT_CPU, &rl) == -1)
++                printf("WARNING! Could not set resource limit: CPU-time.\n");
++        }
++    }
++}
++#else
++void COMinisatPS::limitTime(uint32_t /*max_cpu_time*/)
++{
++    printf("WARNING! CPU-time limit not supported on this architecture.\n");
++}
++#endif
++
++
++void COMinisatPS::sigTerm(void handler(int))
++{
++    signal(SIGINT, handler);
++    signal(SIGTERM,handler);
++#ifdef SIGXCPU
++    signal(SIGXCPU,handler);
++#endif
++}
+diff -urB cominisatps-SAT2016/utils/System.h cominisatps/utils/System.h
+--- cominisatps-SAT2016/utils/System.h	2016-05-02 03:22:00.000000000 +0200
++++ cominisatps/utils/System.h	2022-07-08 20:06:07.545170200 +0200
+@@ -29,11 +29,16 @@
+ 
+ //-------------------------------------------------------------------------------------------------
+ 
+-namespace Minisat {
++namespace COMinisatPS {
+ 
+ static inline double cpuTime(void); // CPU-time in seconds.
+ extern double memUsed();            // Memory in mega bytes (returns 0 for unsupported architectures).
+ extern double memUsedPeak();        // Peak-memory in mega bytes (returns 0 for unsupported architectures).
++extern void   limitMemory(uint64_t max_mem_mb); // Set a limit on total memory usage. The exact
++                                                // semantics varies depending on architecture.
++extern void   limitTime(uint32_t max_cpu_time); // Set a limit on maximum CPU time. The exact
++                                                // semantics varies depending on architecture.
++extern void   sigTerm(void handler(int));      // Set up handling of available termination signals.
+ 
+ }
+ 
+@@ -43,14 +48,14 @@
+ #if defined(_MSC_VER) || defined(__MINGW32__)
+ #include <time.h>
+ 
+#include <chrono>
+-static inline double Minisat::cpuTime(void) { return (double)clock() / CLOCKS_PER_SEC; }
++static inline double COMinisatPS::cpuTime(void) { return (double)clock() / CLOCKS_PER_SEC; }
+ 
+ #else
+ #include <sys/time.h>
+ #include <sys/resource.h>
+ #include <unistd.h>
+ 
+-static inline double Minisat::cpuTime(void) {
++static inline double COMinisatPS::cpuTime(void) {
+     struct rusage ru;
+     getrusage(RUSAGE_SELF, &ru);
+     return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000; }

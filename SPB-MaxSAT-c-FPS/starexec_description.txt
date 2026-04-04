@@ -1,0 +1,5 @@
+SPB-MaxSAT-c-FPS: an incomplete solver by Mingming Jin, Email: mingmingk@hust.edu.cn
+
+./bin/starexec_run_default-runsolver instance-name
+
+./bin/starexec_run_short-runsolver instance-name

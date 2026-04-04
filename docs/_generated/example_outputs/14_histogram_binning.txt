@@ -1,0 +1,5 @@
+$ python examples/model/14_histogram_binning.py
+end_times = [2, 5, 11, 13, 17, 20]
+morning_count = 3
+afternoon_count = 2
+evening_count = 1

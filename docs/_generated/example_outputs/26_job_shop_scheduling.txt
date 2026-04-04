@@ -1,0 +1,15 @@
+$ python examples/model/26_job_shop_scheduling.py
+status: optimum
+makespan: 11
+J1:
+  op1: M1 dur=3 start=0 end=3
+  op2: M2 dur=2 start=3 end=5
+  op3: M3 dur=2 start=7 end=9
+J2:
+  op1: M2 dur=2 start=0 end=2
+  op2: M3 dur=1 start=2 end=3
+  op3: M1 dur=4 start=3 end=7
+J3:
+  op1: M3 dur=4 start=3 end=7
+  op2: M1 dur=3 start=7 end=10
+  op3: M2 dur=1 start=10 end=11

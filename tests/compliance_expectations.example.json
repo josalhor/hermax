@@ -1,0 +1,18 @@
+{
+  "solvers": {
+    "RC2Fork": {
+      "max": {
+        "ERR": 0,
+        "CRASH": 0,
+        "TIMEOUT": 0
+      }
+    },
+    "OpenWBOInc": {
+      "max": {
+        "ERR": 0,
+        "CRASH": 0,
+        "TIMEOUT": 0
+      }
+    }
+  }
+}

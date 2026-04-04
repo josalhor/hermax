@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 340" role="img" aria-label="Floating objective budgeting solution">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --stroke: rgba(74, 64, 54, 0.22);
+      --panel: rgba(244, 239, 232, 0.82);
+      --chosen: rgba(20, 99, 86, 0.20);
+      --chosen-stroke: #146356;
+      --dropped: rgba(120, 112, 103, 0.16);
+      --accent: #146356;
+      --accent-bg: rgba(20, 99, 86, 0.12);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --stroke: rgba(255, 255, 255, 0.16);
+        --panel: rgba(36, 35, 33, 0.88);
+        --chosen: rgba(79, 210, 181, 0.20);
+        --chosen-stroke: #4fd2b5;
+        --dropped: rgba(185, 172, 152, 0.12);
+        --accent: #4fd2b5;
+        --accent-bg: rgba(79, 210, 181, 0.16);
+      }
+    }
+
+    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; }
+    .title { font-size: 15px; font-weight: 700; fill: var(--ink); }
+    .subtitle { font-size: 13px; fill: var(--muted); }
+    .card { fill: var(--panel); stroke: var(--stroke); stroke-width: 1.4; rx: 16; }
+    .card.chosen { fill: var(--chosen); stroke: var(--chosen-stroke); stroke-width: 1.8; }
+    .card.dropped { fill: var(--dropped); }
+    .name { font-size: 18px; font-weight: 700; fill: var(--ink); }
+    .meta { font-size: 13px; fill: var(--muted); }
+    .tag { font-size: 12px; font-weight: 700; }
+    .tag.chosen { fill: var(--accent); }
+    .tag.dropped { fill: var(--muted); }
+    .box { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.5; rx: 14; }
+    .box-title { font-size: 14px; font-weight: 700; fill: var(--accent); }
+    .box-text { font-size: 13px; fill: var(--ink); }
+  </style>
+
+  <text class="title" x="38" y="28">Optimal Selection</text>
+  <text class="subtitle" x="172" y="28">fund Beta + Delta, keep capacity feasible, maximize ROI</text>
+
+  <rect class="card dropped" x="38" y="52" width="185" height="138" />
+  <text class="name" x="56" y="86">Alpha</text>
+  <text class="meta" x="56" y="115">dev-months: 5</text>
+  <text class="meta" x="56" y="140">ROI (M USD): 1.25</text>
+  <text class="tag dropped" x="56" y="168">not funded</text>
+
+  <rect class="card chosen" x="240" y="52" width="185" height="138" />
+  <text class="name" x="258" y="86">Beta</text>
+  <text class="meta" x="258" y="115">dev-months: 8</text>
+  <text class="meta" x="258" y="140">ROI (M USD): 3.40</text>
+  <text class="tag chosen" x="258" y="168">funded</text>
+
+  <rect class="card dropped" x="442" y="52" width="185" height="138" />
+  <text class="name" x="460" y="86">Gamma</text>
+  <text class="meta" x="460" y="115">dev-months: 6</text>
+  <text class="meta" x="460" y="140">ROI (M USD): 2.10</text>
+  <text class="tag dropped" x="460" y="168">not funded</text>
+
+  <rect class="card chosen" x="644" y="52" width="185" height="138" />
+  <text class="name" x="662" y="86">Delta</text>
+  <text class="meta" x="662" y="115">dev-months: 7</text>
+  <text class="meta" x="662" y="140">ROI (M USD): 2.80</text>
+  <text class="tag chosen" x="662" y="168">funded</text>
+
+  <rect class="box" x="38" y="214" width="250" height="92" />
+  <text class="box-title" x="56" y="238">Capacity usage</text>
+  <text class="box-text" x="56" y="263">used = 15</text>
+  <text class="box-text" x="56" y="286">limit = 18</text>
+
+  <rect class="box" x="307" y="214" width="250" height="92" />
+  <text class="box-title" x="325" y="238">ROI summary</text>
+  <text class="box-text" x="325" y="263">selected ROI = 6.20 M USD</text>
+  <text class="box-text" x="325" y="286">missed ROI = 3.35 M USD</text>
+
+  <rect class="box" x="576" y="214" width="253" height="92" />
+  <text class="box-title" x="594" y="238">Funded projects</text>
+  <text class="box-text" x="594" y="263">Beta, Delta</text>
+  <text class="box-text" x="594" y="286">status: optimum</text>
+</svg>

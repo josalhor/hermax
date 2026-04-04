@@ -1,0 +1,3 @@
+[submodule "code/solvers/topor/topor"]
+	path = code/solvers/topor/topor
+	url = https://github.com/alexander-nadel/intel_sat_solver.git

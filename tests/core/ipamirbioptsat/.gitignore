@@ -1,0 +1,8 @@
+/inputs/*
+!/inputs/medium.bicnf
+!/inputs/pima_100_3.bicnf
+!/inputs/skin_50_1.bicnf
+!/inputs/magic_50_1.bicnf
+!/inputs/weatherAUS_50_2.bicnf
+!/inputs/parkinsons.bicnf
+/*.zip

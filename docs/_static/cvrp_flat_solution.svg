@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 440" role="img" aria-label="CVRP solved routes">
+  <defs>
+    <marker id="arrowA" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-a" />
+    </marker>
+    <marker id="arrowB" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-b" />
+    </marker>
+  </defs>
+
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --grid: rgba(74, 64, 54, 0.14);
+      --route-a: #146356;
+      --route-b: #c84c09;
+      --depot: #202020;
+      --customer: #f2efe8;
+      --customer-stroke: #303030;
+      --halo: rgba(255, 252, 244, 0.88);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --grid: rgba(255, 255, 255, 0.10);
+        --route-a: #4fd2b5;
+        --route-b: #ff9c5b;
+        --depot: #f4efe6;
+        --customer: #242321;
+        --customer-stroke: #f4efe6;
+        --halo: rgba(24, 24, 24, 0.9);
+      }
+    }
+
+    .grid-line {
+      stroke: var(--grid);
+      stroke-width: 1;
+    }
+
+    .edge {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 6;
+    }
+
+    .route-a {
+      stroke: var(--route-a);
+    }
+
+    .route-b {
+      stroke: var(--route-b);
+    }
+
+    .arrow-a {
+      fill: var(--route-a);
+    }
+
+    .arrow-b {
+      fill: var(--route-b);
+    }
+
+    .label {
+      font: 700 12px "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+      fill: var(--ink);
+      paint-order: stroke;
+      stroke: var(--halo);
+      stroke-width: 4px;
+      stroke-linejoin: round;
+    }
+
+    .node text {
+      font: 700 13px "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      fill: var(--ink);
+    }
+
+    .node circle {
+      stroke-width: 2;
+    }
+
+    .node.depot circle {
+      fill: var(--depot);
+      stroke: var(--depot);
+    }
+
+    .node.depot text {
+      fill: var(--halo);
+    }
+
+    .node.customer circle {
+      fill: var(--customer);
+      stroke: var(--customer-stroke);
+    }
+
+    .demand,
+    .meta {
+      font: 11px "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+      fill: var(--muted);
+      text-anchor: middle;
+    }
+
+    .meta {
+      text-anchor: start;
+      font-size: 13px;
+      fill: var(--ink);
+      font-weight: 600;
+    }
+
+    .secondary {
+      fill: var(--muted);
+      font-weight: 400;
+    }
+  </style>
+
+  <g>
+    <line class="grid-line" x1="172.857" y1="56" x2="172.857" y2="390" />
+    <line class="grid-line" x1="255.714" y1="56" x2="255.714" y2="390" />
+    <line class="grid-line" x1="338.571" y1="56" x2="338.571" y2="390" />
+    <line class="grid-line" x1="421.429" y1="56" x2="421.429" y2="390" />
+    <line class="grid-line" x1="504.286" y1="56" x2="504.286" y2="390" />
+    <line class="grid-line" x1="587.143" y1="56" x2="587.143" y2="390" />
+
+    <line class="grid-line" x1="40" y1="137.5" x2="720" y2="137.5" />
+    <line class="grid-line" x1="40" y1="215" x2="720" y2="215" />
+    <line class="grid-line" x1="40" y1="292.5" x2="720" y2="292.5" />
+
+    <text class="meta" x="40" y="28">
+      Solved routes
+      <tspan class="secondary"> · cost 297 · vehicle 1: 0 → 1 → 4 → 0 · vehicle 2: 0 → 3 → 2 → 0</tspan>
+    </text>
+  </g>
+
+  <g>
+    <path class="edge route-a" marker-end="url(#arrowA)" d="M 90 348 Q 165 244 255.714 159.333" />
+    <path class="edge route-a" marker-end="url(#arrowA)" d="M 255.714 159.333 Q 203 118 172.857 112.167" />
+    <path class="edge route-a" marker-end="url(#arrowA)" d="M 172.857 112.167 Q 83 208 90 348" />
+
+    <path class="edge route-b" marker-end="url(#arrowB)" d="M 90 348 Q 362 210 670 65" />
+    <path class="edge route-b" marker-end="url(#arrowB)" d="M 670 65 Q 602 188 504.286 253.667" />
+    <path class="edge route-b" marker-end="url(#arrowB)" d="M 504.286 253.667 Q 290 347 90 348" />
+  </g>
+
+  <g class="node depot">
+    <circle cx="90" cy="348" r="18" />
+    <text x="90" y="349">0</text>
+  </g>
+
+  <g class="node customer">
+    <circle cx="255.714" cy="159.333" r="20" />
+    <text x="255.714" y="160.333">1</text>
+  </g>
+
+  <g class="node customer">
+    <circle cx="504.286" cy="253.667" r="20" />
+    <text x="504.286" y="254.667">2</text>
+  </g>
+
+  <g class="node customer">
+    <circle cx="670" cy="65" r="20" />
+    <text x="670" y="66">3</text>
+  </g>
+
+  <g class="node customer">
+    <circle cx="172.857" cy="112.167" r="20" />
+    <text x="172.857" y="113.167">4</text>
+  </g>
+</svg>

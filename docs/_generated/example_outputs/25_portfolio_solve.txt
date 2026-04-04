@@ -1,0 +1,5 @@
+$ python examples/model/25_portfolio_solve.py
+status: optimum
+cost: 1
+a: False
+b: True

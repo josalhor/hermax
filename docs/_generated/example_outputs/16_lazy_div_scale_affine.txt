@@ -1,0 +1,5 @@
+$ python examples/model/16_lazy_div_scale_affine.py
+x = 12
+q = x // 4 = 3
+s = 3*x = 36
+y = 38

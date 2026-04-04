@@ -1,0 +1,5 @@
+*.or
+*.o
+*.od
+code/depend.mk
+code/tt-open-wbo-inc-*

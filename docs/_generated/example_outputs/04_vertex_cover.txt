@@ -1,0 +1,4 @@
+$ python examples/model/04_vertex_cover.py
+status: optimum
+cost: 4
+vertex_cover: [0, 1, 3]

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 920" role="img" aria-labelledby="title desc">
+  <title id="title">Sudoku Solution</title>
+  <desc id="desc">Solved 9 by 9 Sudoku grid.</desc>
+  <style>
+    :root { --sudoku-grid: #475569; --sudoku-major: #0f172a; --sudoku-text: #0f172a; }
+    @media (prefers-color-scheme: dark) {
+      :root { --sudoku-grid: #94a3b8; --sudoku-major: #e2e8f0; --sudoku-text: #f8fafc; }
+    }
+  </style>
+  <rect x="0" y="0" width="920" height="920" fill="none"/>
+
+  <g stroke="var(--sudoku-grid)" fill="none">
+    <g stroke-width="1.6" opacity="0.58">
+      <line x1="100" y1="100" x2="820" y2="100"/>
+      <line x1="100" y1="180" x2="820" y2="180"/>
+      <line x1="100" y1="260" x2="820" y2="260"/>
+      <line x1="100" y1="340" x2="820" y2="340"/>
+      <line x1="100" y1="420" x2="820" y2="420"/>
+      <line x1="100" y1="500" x2="820" y2="500"/>
+      <line x1="100" y1="580" x2="820" y2="580"/>
+      <line x1="100" y1="660" x2="820" y2="660"/>
+      <line x1="100" y1="740" x2="820" y2="740"/>
+      <line x1="100" y1="820" x2="820" y2="820"/>
+
+      <line x1="100" y1="100" x2="100" y2="820"/>
+      <line x1="180" y1="100" x2="180" y2="820"/>
+      <line x1="260" y1="100" x2="260" y2="820"/>
+      <line x1="340" y1="100" x2="340" y2="820"/>
+      <line x1="420" y1="100" x2="420" y2="820"/>
+      <line x1="500" y1="100" x2="500" y2="820"/>
+      <line x1="580" y1="100" x2="580" y2="820"/>
+      <line x1="660" y1="100" x2="660" y2="820"/>
+      <line x1="740" y1="100" x2="740" y2="820"/>
+      <line x1="820" y1="100" x2="820" y2="820"/>
+    </g>
+
+    <g stroke="var(--sudoku-major)" stroke-width="4.2">
+      <line x1="100" y1="100" x2="820" y2="100"/>
+      <line x1="100" y1="340" x2="820" y2="340"/>
+      <line x1="100" y1="580" x2="820" y2="580"/>
+      <line x1="100" y1="820" x2="820" y2="820"/>
+
+      <line x1="100" y1="100" x2="100" y2="820"/>
+      <line x1="340" y1="100" x2="340" y2="820"/>
+      <line x1="580" y1="100" x2="580" y2="820"/>
+      <line x1="820" y1="100" x2="820" y2="820"/>
+    </g>
+  </g>
+
+  <g fill="var(--sudoku-text)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="42" text-anchor="middle" dominant-baseline="middle">
+    <text x="140" y="140">5</text><text x="220" y="140">3</text><text x="300" y="140">4</text><text x="380" y="140">6</text><text x="460" y="140">7</text><text x="540" y="140">8</text><text x="620" y="140">9</text><text x="700" y="140">1</text><text x="780" y="140">2</text>
+    <text x="140" y="220">6</text><text x="220" y="220">7</text><text x="300" y="220">2</text><text x="380" y="220">1</text><text x="460" y="220">9</text><text x="540" y="220">5</text><text x="620" y="220">3</text><text x="700" y="220">4</text><text x="780" y="220">8</text>
+    <text x="140" y="300">1</text><text x="220" y="300">9</text><text x="300" y="300">8</text><text x="380" y="300">3</text><text x="460" y="300">4</text><text x="540" y="300">2</text><text x="620" y="300">5</text><text x="700" y="300">6</text><text x="780" y="300">7</text>
+
+    <text x="140" y="380">8</text><text x="220" y="380">5</text><text x="300" y="380">9</text><text x="380" y="380">7</text><text x="460" y="380">6</text><text x="540" y="380">1</text><text x="620" y="380">4</text><text x="700" y="380">2</text><text x="780" y="380">3</text>
+    <text x="140" y="460">4</text><text x="220" y="460">2</text><text x="300" y="460">6</text><text x="380" y="460">8</text><text x="460" y="460">5</text><text x="540" y="460">3</text><text x="620" y="460">7</text><text x="700" y="460">9</text><text x="780" y="460">1</text>
+    <text x="140" y="540">7</text><text x="220" y="540">1</text><text x="300" y="540">3</text><text x="380" y="540">9</text><text x="460" y="540">2</text><text x="540" y="540">4</text><text x="620" y="540">8</text><text x="700" y="540">5</text><text x="780" y="540">6</text>
+
+    <text x="140" y="620">9</text><text x="220" y="620">6</text><text x="300" y="620">1</text><text x="380" y="620">5</text><text x="460" y="620">3</text><text x="540" y="620">7</text><text x="620" y="620">2</text><text x="700" y="620">8</text><text x="780" y="620">4</text>
+    <text x="140" y="700">2</text><text x="220" y="700">8</text><text x="300" y="700">7</text><text x="380" y="700">4</text><text x="460" y="700">1</text><text x="540" y="700">9</text><text x="620" y="700">6</text><text x="700" y="700">3</text><text x="780" y="700">5</text>
+    <text x="140" y="780">3</text><text x="220" y="780">4</text><text x="300" y="780">5</text><text x="380" y="780">2</text><text x="460" y="780">8</text><text x="540" y="780">6</text><text x="620" y="780">1</text><text x="700" y="780">7</text><text x="780" y="780">9</text>
+  </g>
+</svg>

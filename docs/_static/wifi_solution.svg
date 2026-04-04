@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 350" role="img" aria-label="WiFi channel assignment solution">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --edge: rgba(74, 64, 54, 0.26);
+      --f1: #c84c09;
+      --f3: #146356;
+      --node-stroke: rgba(74, 64, 54, 0.18);
+      --totals: rgba(200, 76, 9, 0.12);
+      --totals-stroke: #c84c09;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --edge: rgba(255, 255, 255, 0.18);
+        --f1: #ff9c5b;
+        --f3: #4fd2b5;
+        --node-stroke: rgba(255, 255, 255, 0.12);
+        --totals: rgba(255, 156, 91, 0.16);
+        --totals-stroke: #ff9c5b;
+      }
+    }
+
+    text {
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    .meta {
+      font-size: 13px;
+      font-weight: 600;
+      fill: var(--ink);
+    }
+
+    .secondary {
+      fill: var(--muted);
+      font-weight: 400;
+    }
+
+    .edge {
+      stroke: var(--edge);
+      stroke-width: 5;
+      fill: none;
+    }
+
+    .node {
+      stroke: var(--node-stroke);
+      stroke-width: 2;
+    }
+
+    .f1 {
+      fill: var(--f1);
+    }
+
+    .f3 {
+      fill: var(--f3);
+    }
+
+    .label {
+      font-size: 16px;
+      font-weight: 700;
+      fill: #fffaf2;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+
+    .hint {
+      font-size: 12px;
+      fill: var(--muted);
+      text-anchor: middle;
+    }
+
+    .totals {
+      fill: var(--totals);
+      stroke: var(--totals-stroke);
+      stroke-width: 1.5;
+      rx: 16;
+    }
+
+    .totals-title {
+      font-size: 15px;
+      font-weight: 700;
+      fill: var(--totals-stroke);
+    }
+
+    .totals-text {
+      font-size: 13px;
+      fill: var(--ink);
+    }
+  </style>
+
+  <text class="meta" x="40" y="28">
+    Solved WiFi assignment
+    <tspan class="secondary"> · {0: f3, 1: f1, 2: f3, 3: f1} · total cost 4</tspan>
+  </text>
+
+  <line class="edge" x1="170" y1="120" x2="380" y2="95" />
+  <line class="edge" x1="380" y1="95" x2="590" y2="120" />
+  <line class="edge" x1="590" y1="120" x2="380" y2="235" />
+  <line class="edge" x1="170" y1="120" x2="380" y2="235" />
+
+  <circle class="node f3" cx="170" cy="120" r="34" />
+  <text class="label" x="170" y="121">0</text>
+  <text class="hint" x="170" y="166">f3</text>
+
+  <circle class="node f1" cx="380" cy="95" r="34" />
+  <text class="label" x="380" y="96">1</text>
+  <text class="hint" x="380" y="42">f1</text>
+
+  <circle class="node f3" cx="590" cy="120" r="34" />
+  <text class="label" x="590" y="121">2</text>
+  <text class="hint" x="590" y="166">f3</text>
+
+  <circle class="node f1" cx="380" cy="235" r="34" />
+  <text class="label" x="380" y="236">3</text>
+  <text class="hint" x="380" y="282">f1</text>
+
+  <rect class="totals" x="40" y="304" width="680" height="30" />
+  <text class="totals-title" x="58" y="323">Objective</text>
+  <text class="totals-text" x="132" y="323">all routers stay online, with two using f1 and two using f3</text>
+</svg>

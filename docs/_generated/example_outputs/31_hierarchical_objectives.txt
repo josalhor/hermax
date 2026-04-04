@@ -1,0 +1,5 @@
+$ python examples/model/31_hierarchical_objectives.py
+status: optimum
+unassigned_vips (tier 0): 0
+travel_cost      (tier 1): 60
+assignments: {'VIP_1': 'Alice', 'VIP_2': 'Bob', 'Standard_1': None}

@@ -1,0 +1,4 @@
+$ python examples/model/05_job_assignment.py
+status: optimum
+cost: 5
+assignment: {'t1': 'bob', 't2': 'alice', 't3': 'carol'}

@@ -1,0 +1,5 @@
+$ python examples/model/19_all_different_backends.py
+xs = [1, 3, 0, 2]
+all distinct = True
+pairwise_clause_count = 42
+bipartite_clause_count = 84

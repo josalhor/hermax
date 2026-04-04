@@ -1,0 +1,3 @@
+$ python examples/model/13_piecewise_pricing_budget.py
+load = 0
+cost = 10

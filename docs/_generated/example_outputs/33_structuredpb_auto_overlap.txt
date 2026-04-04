@@ -1,0 +1,13 @@
+$ python examples/model/33_structuredpb_auto_overlap.py
+overlap_policy=paper_best_fit_dynamic_future
+nv=13
+clauses=22
+first_clauses=
+[6]
+[-2, -7]
+[-4, -7]
+[7, -8]
+[-1, -8]
+[-5, -2, -9]
+[9, -10]
+[-4, -10]

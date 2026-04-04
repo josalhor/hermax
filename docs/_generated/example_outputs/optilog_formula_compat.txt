@@ -1,0 +1,4 @@
+$ python examples/optilog_formula_compat.py
+status: OPTIMUM
+cost: 1
+model: [-1, 2]

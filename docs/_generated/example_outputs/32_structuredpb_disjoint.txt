@@ -1,0 +1,11 @@
+$ python examples/model/32_structuredpb_disjoint.py
+encoding=rggt
+nv=6
+clauses=6
+first_clauses=
+[-1, -2]
+[-3, -4]
+[-1, 5]
+[-2, 5]
+[-5, -4, 6]
+[-6]

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 280" role="img" aria-label="Element constraint solution visualization">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --line: rgba(74, 64, 54, 0.16);
+      --card: rgba(244, 239, 232, 0.82);
+      --card-stroke: rgba(74, 64, 54, 0.18);
+      --worker: #4b6cb7;
+      --pick: #146356;
+      --budget: #146356;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --line: rgba(255, 255, 255, 0.14);
+        --card: rgba(36, 35, 33, 0.88);
+        --card-stroke: rgba(255, 255, 255, 0.12);
+        --worker: #8aa8ff;
+        --pick: #4fd2b5;
+        --budget: #4fd2b5;
+      }
+    }
+    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; }
+    .meta { font-size: 13px; font-weight: 600; fill: var(--ink); }
+    .secondary { fill: var(--muted); font-weight: 400; }
+    .box { fill: var(--card); stroke: var(--card-stroke); stroke-width: 1.4; rx: 16; }
+    .label { font-size: 16px; font-weight: 700; fill: var(--ink); }
+    .small { font-size: 13px; font-weight: 600; fill: var(--muted); }
+    .num { font-size: 16px; font-weight: 700; fill: var(--ink); text-anchor: middle; dominant-baseline: middle; }
+    .head { font-size: 14px; font-weight: 700; fill: var(--ink); text-anchor: middle; }
+    .line { stroke: var(--line); stroke-width: 1.4; }
+    .pick { fill: color-mix(in srgb, var(--pick) 16%, transparent); stroke: color-mix(in srgb, var(--pick) 52%, var(--card-stroke)); stroke-width: 2.2; }
+    .pill { fill: color-mix(in srgb, var(--budget) 10%, transparent); stroke: color-mix(in srgb, var(--budget) 38%, var(--card-stroke)); rx: 12; }
+  </style>
+
+  <text class="meta" x="40" y="28">
+    Element constraint solution
+    <tspan class="secondary"> · worker = 1 · selected cost = 40 · budget = 40</tspan>
+  </text>
+
+  <rect class="box" x="60" y="66" width="400" height="148" />
+  <text class="label" x="82" y="92">worker_costs</text>
+
+  <line class="line" x1="160" y1="104" x2="160" y2="196" />
+  <line class="line" x1="240" y1="104" x2="240" y2="196" />
+  <line class="line" x1="320" y1="104" x2="320" y2="196" />
+  <line class="line" x1="400" y1="104" x2="400" y2="196" />
+  <line class="line" x1="80" y1="136" x2="440" y2="136" />
+
+  <rect class="pick" x="162" y="110" width="76" height="74" rx="14" />
+
+  <text class="head" x="120" y="126">0</text>
+  <text class="head" x="200" y="126">1</text>
+  <text class="head" x="280" y="126">2</text>
+  <text class="head" x="360" y="126">3</text>
+
+  <text class="num" x="120" y="166">20</text>
+  <text class="num" x="200" y="166">40</text>
+  <text class="num" x="280" y="166">75</text>
+  <text class="num" x="360" y="166">120</text>
+
+  <rect class="pill" x="500" y="88" width="200" height="104" />
+  <text class="label" x="522" y="116">chosen values</text>
+  <text class="small" x="522" y="142">worker = 1</text>
+  <text class="small" x="522" y="164">selected_cost = 40</text>
+  <text class="small" x="522" y="186">budget = 40</text>
+</svg>

@@ -1,0 +1,5 @@
+$ python examples/portfolio_mixed.py
+feasible: True
+status: OPTIMUM
+cost: 2
+model: [-1, 2]

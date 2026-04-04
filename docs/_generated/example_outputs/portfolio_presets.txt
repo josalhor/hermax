@@ -1,0 +1,7 @@
+$ python examples/portfolio_presets.py
+complete preset feasible: True
+complete preset status: OPTIMUM
+complete preset cost: 1
+performance preset feasible: True
+performance preset status: OPTIMUM
+performance preset cost: 3

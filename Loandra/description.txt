@@ -1,0 +1,3 @@
+Loandra implements core boosted linear search, a search strategy combining core guided search and a SAT UNSAT linear algorithm. 
+The 2022 version of Loandra is further extended with expressive MaxSAT preprocessing and solution minimization to alleviate issues with 
+misinterpreting the costs intermediate solutions found during search after preprocessing.

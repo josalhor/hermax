@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" role="img" aria-label="Facility location solution visualization">
+  <style>
+    :root {
+      --ink: #1c1b1a;
+      --muted: #6c655c;
+      --line: rgba(74, 64, 54, 0.16);
+      --north: #146356;
+      --south: #b85c38;
+      --client: #4b6cb7;
+      --hi: #146356;
+      --card: rgba(244, 239, 232, 0.82);
+      --card-stroke: rgba(74, 64, 54, 0.18);
+      --off: rgba(74, 64, 54, 0.10);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4efe6;
+        --muted: #cbbca8;
+        --line: rgba(255, 255, 255, 0.12);
+        --north: #4fd2b5;
+        --south: #ef8d6f;
+        --client: #8aa8ff;
+        --hi: #4fd2b5;
+        --card: rgba(36, 35, 33, 0.88);
+        --card-stroke: rgba(255, 255, 255, 0.12);
+        --off: rgba(255, 255, 255, 0.06);
+      }
+    }
+
+    text {
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    .meta {
+      font-size: 13px;
+      font-weight: 600;
+      fill: var(--ink);
+    }
+
+    .secondary {
+      fill: var(--muted);
+      font-weight: 400;
+    }
+
+    .box {
+      fill: var(--card);
+      stroke: var(--card-stroke);
+      stroke-width: 1.5;
+      rx: 18;
+    }
+
+    .label {
+      font-size: 16px;
+      font-weight: 700;
+      fill: var(--ink);
+    }
+
+    .small {
+      font-size: 13px;
+      font-weight: 600;
+      fill: var(--muted);
+    }
+
+    .link {
+      stroke: var(--line);
+      stroke-width: 3;
+      fill: none;
+    }
+
+    .sel {
+      stroke: var(--hi);
+      stroke-width: 6;
+      fill: none;
+    }
+
+    .north { fill: var(--north); }
+    .south { fill: var(--south); }
+    .client { fill: var(--client); }
+
+    .offnode {
+      opacity: 0.35;
+    }
+
+    .dotlabel {
+      font-size: 15px;
+      font-weight: 700;
+      fill: white;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+
+    .ann {
+      font-size: 13px;
+      font-weight: 700;
+      fill: var(--ink);
+      text-anchor: middle;
+    }
+
+    .pill {
+      fill: var(--off);
+      stroke: var(--card-stroke);
+      stroke-width: 1.2;
+      rx: 12;
+    }
+  </style>
+
+  <text class="meta" x="40" y="28">
+    Facility location solution
+    <tspan class="secondary"> · open north, assign all clients to north · cost = 10</tspan>
+  </text>
+
+  <rect class="box" x="34" y="56" width="692" height="274" />
+
+  <circle class="north" cx="365" cy="128" r="28" />
+  <text class="dotlabel" x="365" y="129">N</text>
+  <text class="label" x="365" y="172" text-anchor="middle">north</text>
+  <text class="small" x="365" y="192" text-anchor="middle">open</text>
+
+  <g class="offnode">
+    <circle class="south" cx="365" cy="248" r="28" />
+    <text class="dotlabel" x="365" y="249">S</text>
+    <text class="label" x="365" y="292" text-anchor="middle">south</text>
+    <text class="small" x="365" y="312" text-anchor="middle">closed</text>
+  </g>
+
+  <circle class="client" cx="150" cy="250" r="24" />
+  <text class="dotlabel" x="150" y="251">A</text>
+
+  <circle class="client" cx="150" cy="170" r="24" />
+  <text class="dotlabel" x="150" y="171">C</text>
+
+  <circle class="client" cx="580" cy="250" r="24" />
+  <text class="dotlabel" x="580" y="251">B</text>
+
+  <line class="sel" x1="174" y1="244" x2="337" y2="135" />
+  <line class="sel" x1="171" y1="177" x2="337" y2="134" />
+  <line class="sel" x1="556" y1="244" x2="393" y2="135" />
+
+  <rect class="pill" x="214" y="172" width="84" height="24" />
+  <text class="ann" x="256" y="188">A → north</text>
+
+  <rect class="pill" x="210" y="136" width="84" height="24" />
+  <text class="ann" x="252" y="152">C → north</text>
+
+  <rect class="pill" x="430" y="172" width="86" height="24" />
+  <text class="ann" x="473" y="188">B → north</text>
+</svg>

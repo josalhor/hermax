@@ -1,0 +1,31 @@
+Hermax
+Copyright 2026 Josep Maria Salvia Hornos
+
+This product includes software developed in the Hermax project and integrates
+bindings and wrappers around third-party MaxSAT/SAT solvers with their own
+licenses and citation requirements.
+
+Citation request
+----------------
+If you use Hermax in research, please cite:
+
+- Repository: https://github.com/josalhor/hermax
+
+and cite relevant solver/paper references for the evaluated backend(s).
+
+Latest available papers (selection)
+-----------------------------------
+- Niskanen, Berg, Jarvisalo. Incremental Maximum Satisfiability. SAT 2022.
+- Niskanen, Berg, Jarvisalo. Enabling Incrementality in the Implicit Hitting
+  Set Approach to MaxSAT Under Changing Weights. CP 2021.
+- Ignatiev, Morgado, Marques-Silva. RC2: An Efficient MaxSAT Solver. JSAT 2019.
+- Ignatiev, Morgado, Marques-Silva. PySAT: A Python Toolkit for Prototyping
+  with SAT Oracles. SAT 2018.
+- Piotrow. UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems.
+  ICTAI 2020.
+- Avellaneda. EvalMaxSAT. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
+- Bacchus. MaxHS in the 2020 MaxSAT Evaluation. MaxSAT Evaluation 2020.
+- Niskanen, Berg, Jarvisalo. Enabling Incrementality in the Implicit Hitting
+  Set Approach to MaxSAT Under Changing Weights. CP 2021.
+- Pan, Wang, Cai. An Efficient Core-Guided Solver for Weighted Partial MaxSAT.
+  IJCAI 2025.

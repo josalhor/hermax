@@ -1,0 +1,5 @@
+$ python examples/evalmaxsat_incr_relaxation.py
+feasible: True
+status: OPTIMUM
+cost: 3
+model: [1, 2, -3]

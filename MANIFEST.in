@@ -1,0 +1,25 @@
+recursive-include CASHWMaxSAT *
+recursive-include cashwmaxsat-py *
+recursive-include eval-py *
+recursive-include evalmaxsat *
+recursive-include evalmaxsat-incr-py *
+recursive-include evalmaxsat-latest-py *
+recursive-include EvalMaxSAT2022 *
+recursive-include imaxhs-py *
+recursive-include incremental-maxhs *
+recursive-include maxhs *
+recursive-include maxhs-py *
+recursive-include open-wbo *
+recursive-include open-wbo-inc *
+recursive-include urmaxsat-comp-py *
+recursive-include urmaxsat-py *
+recursive-include hermax *
+include CMakeLists.txt
+include setup.py
+include pyproject.toml
+include COMPILE.md
+include MANIFEST.in
+include README.md
+include LICENSE
+include NOTICE
+include CITATION.cff

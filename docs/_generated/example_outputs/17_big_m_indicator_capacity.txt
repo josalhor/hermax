@@ -1,0 +1,3 @@
+$ python examples/model/17_big_m_indicator_capacity.py
+use_truck = True
+load = 12
