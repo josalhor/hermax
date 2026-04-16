@@ -51,6 +51,8 @@ Core install:
 ```bash
 pip install hermax
 ```
+- User and API docs: https://hermax.readthedocs.io
+
 
 ## Modeling Example
 
@@ -92,10 +94,6 @@ if ok:
     print("cost:", solver.get_cost())
     print("model:", solver.get_model())
 ```
-
-## Documentation
-
-- User and API docs: https://hermax.readthedocs.io
 
 ## Citation
 

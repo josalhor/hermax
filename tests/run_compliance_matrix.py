@@ -335,15 +335,6 @@ def run_case(
     log_dir.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", case.name)
 
-    # Temporary platform policy: EvalMaxSAT variants are unstable on macOS.
-    if sys.platform == "darwin" and platform.machine() in {"arm64", "x86_64"} and case.name in {
-        "EvalMaxSAT",
-        "EvalMaxSATLatest",
-    }:
-        out = f"SKIPPED by platform policy: {case.name} on darwin/{platform.machine()}\n"
-        (log_dir / f"{safe}.log").write_text(out, encoding="utf-8")
-        return ("PASS", 0.0, 0, {}, out)
-
     base_flags = ["-vv", "-rA"] if exhaustive else ["-q"]
     cmd = [
         sys.executable,

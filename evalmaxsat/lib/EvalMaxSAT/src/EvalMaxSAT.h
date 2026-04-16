@@ -77,8 +77,10 @@ public:
         }
 
         bool modify = false;
-        for(int id=softVarFalsified.size()-1; id >= 0; id--) {
-            assumSatisfied.push_back( std::get<1>(softVarFalsified[id]) );
+        // Reverse iterate without narrowing from size_t to int (UB??).
+        for (size_t rid = softVarFalsified.size(); rid > 0; --rid) {
+            const size_t id = rid - 1;
+            assumSatisfied.push_back(std::get<1>(softVarFalsified[id]));
             if( solver->solveLimited(assumSatisfied, timeout_sec / (double)(softVarFalsified.size()+1) ) != 1 ) {
                 assumSatisfied.pop_back();
             } else {
@@ -798,7 +800,9 @@ public:
         assert(weight>0);
         //MaLib::MonRand::shuffle(conflict.begin(), conflict.end()-1);
 
-        for(int i=conflict.size()-2; i>=0; i--) {
+        // Reverse iterate over [0, size-2] safely even when size is 1.
+        for (size_t rid = conflict.size(); rid > 1; --rid) {
+            const size_t i = rid - 2;
             switch(solver->solveLimited(conflict, B, conflict[i])) {
             case -1: // UNKNOW
                 [[fallthrough]];

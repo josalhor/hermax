@@ -1859,21 +1859,11 @@ class TestEvalMaxSATLatestCompatTerminationCallback(TestIPAMIRSolverHardcore):
     def test_040_termination_interrupt_and_raise_flag(self):
         self.skipTest("EvalMaxSAT does not support set_terminate")
 
-    def test_020_soft_units_competing_weights(self):
-        if _is_macos_arm64():
-            self.skipTest("Known upstream EvalMaxSATLatest crash on macOS arm64 for this weighted-soft regression case.")
-        super().test_020_soft_units_competing_weights()
-
 class TestEvalMaxSATLatestSolverTerminationCallback(TestIPAMIRSolverHardcore):
     SOLVER_CLASS = EvalMaxSATLatestSolver
 
     def test_040_termination_interrupt_and_raise_flag(self):
         self.skipTest("EvalMaxSATLatest does not support set_terminate")
-
-    def test_020_soft_units_competing_weights(self):
-        if _is_macos_arm64():
-            self.skipTest("Known upstream EvalMaxSATLatest crash on macOS arm64 for this weighted-soft regression case.")
-        super().test_020_soft_units_competing_weights()
 
 class TestEvalMaxSATIncrSolverTerminationCallback(TestIPAMIRSolverHardcore):
     SOLVER_CLASS = EvalMaxSATIncrSolver
