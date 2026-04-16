@@ -13,10 +13,13 @@ int terminate_callback_wrapper(void* state) {
     if (!state) return 0;
     auto* callback = static_cast<std::function<int()>*>(state);
     try {
+        py::gil_scoped_acquire gil;
         return (*callback)();
     } catch (py::error_already_set& e) {
-        e.restore(); // Propagate Python exception
-        return 1; // Indicate termination due to error
+        e.discard_as_unraisable("UWrMaxSATComp termination callback");
+        return 1;
+    } catch (...) {
+        return 1;
     }
 }
 

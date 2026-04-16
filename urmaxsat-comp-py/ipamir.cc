@@ -31,6 +31,7 @@ IN THE SOFTWARE.
 #include "Main_utils.h"
 #include "Debug.h"
 #include "ipamir.h"
+#include <signal.h>
 
 extern bool opt_satisfiable_out;
 
@@ -64,6 +65,17 @@ struct MySolver {
     vec<Lit> assumptions;
     int solving_count;
 };
+
+namespace
+{
+void restore_ipamir_signal_handlers()
+{
+    signal(SIGINT, SIG_DFL);
+#ifdef SIGXCPU
+    signal(SIGXCPU, SIG_DFL);
+#endif
+}
+}
 
 extern "C" {
 
@@ -102,9 +114,15 @@ IPAMIR_API void * ipamir_init ()
  */
 IPAMIR_API void ipamir_release (void * solver)
 {
-    MySolver* s = (MySolver*)solver;
-    delete s;
+    restore_ipamir_signal_handlers();
     pb_solver = nullptr;
+    if (solver == nullptr) return;
+
+    MySolver* s = (MySolver*)solver;
+    s->solver->termCallbackState = nullptr;
+    s->solver->termCallback = nullptr;
+    s->solver->sat_solver.setTermCallback(nullptr, nullptr);
+    delete s;
 }
 
 namespace
@@ -269,6 +287,7 @@ IPAMIR_API int ipamir_solve (void * solver)
     clear_shared_formulas();
 
     s->solver->maxsat_solve(PbSolver::sc_Minimize);
+    restore_ipamir_signal_handlers();
     s->assumptions.clear();
     s->nomodel = true;
     s->solving_count++;
@@ -304,7 +323,9 @@ IPAMIR_API uint64_t ipamir_val_obj (void * solver)
     if (s->nomodel) return 0;
     pb_solver = s->solver;
     char* tmp = toString(s->solver->best_goalvalue);
-    return strtoull(tmp, nullptr, 10);
+    uint64_t v = strtoull(tmp, nullptr, 10);
+    xfree(tmp);
+    return v;
 }
 
 /**

@@ -504,6 +504,14 @@ class TestIPAMIRSolverHardcore(unittest.TestCase):
         # Accept large 64-bit weights, reject overflow if implemented.
         max_i64 = (1 << 63) - 1
         self.solver.add_clause([1])            # hard -> make instance SAT
+        base_solver = getattr(self.solver, "_solver", self.solver)
+        solver_name = type(base_solver).__name__
+        is_uwr_comp = solver_name in {"UWrMaxSATCompSolver", "UWrMaxSATCompReentrant"}
+        if is_uwr_comp and sys.platform in {"win32", "darwin"}:
+            with self.assertRaises((ValueError, OverflowError)):
+                self.solver.add_soft_unit(-1, max_i64)
+            return
+
         self.solver.add_soft_unit(-1, max_i64)  # soft penalizes x1 true with max weight
         sat = self.solver.solve()
         self.assertTrue(sat)
@@ -1879,17 +1887,6 @@ class TestUWrMaxSATSolverTerminationCallback(TestIPAMIRSolverHardcore):
 
 class TestUWrMaxSATCompSolverTerminationCallback(TestIPAMIRSolverHardcore):
     SOLVER_CLASS = UWrMaxSATCompSolver
-
-    @classmethod
-    def setUpClass(cls):
-        if sys.platform.startswith("win") or _is_macos():
-            raise unittest.SkipTest("UWrMaxSATComp backend is unstable on Windows (native crash).")
-        return super().setUpClass()
-
-    def test_023_soft_large_weights_64bit_bounds(self):
-        if sys.platform.startswith("win"):
-            self.skipTest("UWrMaxSATComp Windows backend crashes on INT64_MAX soft weight path.")
-        return super().test_023_soft_large_weights_64bit_bounds()
 
 class TestCASHWMaxSATSolverTerminationCallback(TestIPAMIRSolverHardcore):
     SOLVER_CLASS = CASHWMaxSATSolver

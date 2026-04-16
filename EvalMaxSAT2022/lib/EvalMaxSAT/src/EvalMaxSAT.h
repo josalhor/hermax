@@ -24,8 +24,6 @@ MaLib::Chrono C_extractAM("c Cumulative time spent for extractAM", false);
 MaLib::Chrono C_harden("c Cumulative time spent for harden", false);
 MaLib::Chrono C_extractAMAfterHarden("c Cumulative time spent for extractAM afterHarden", false);
 
-std::vector<bool> hardenedLits_I;
-
 template<class B>
 static void readClause(B& in, std::vector<int>& lits) {
     int parsed_lit;
@@ -133,6 +131,7 @@ private:
 
     std::vector<t_weight> _weight; // Weight of var at index, 0 if hard
     std::vector<bool> model; // Sign of var at index
+    std::vector<bool> hardenedLits_I;
     std::vector< std::tuple<int, unsigned int> > mapAssum2cardAndK; // Soft var as index to get <the index of CardIncremental_Lazy object in save_card, the k associed to the var>
     std::vector<bool> hardenedLits_backup;
 
@@ -466,6 +465,7 @@ public:
         }
 
         _weight.push_back(0);                   //
+        hardenedLits_I.clear();
         hardenedLits_I.push_back(false);
         model.push_back(false);                 // Fake lit with id=0
         mapAssum2cardAndK.push_back({-1, 0});   //
@@ -505,6 +505,7 @@ public:
        _timeOutFastMinimize = toclone._timeOutFastMinimize;
        _coefMinimizeTime = toclone._coefMinimizeTime;
        _assumption = toclone._assumption;
+       hardenedLits_I = toclone.hardenedLits_I;
        hardenedLits_backup = hardenedLits_I;
    }
 

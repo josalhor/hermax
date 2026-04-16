@@ -35,9 +35,9 @@ The classes map to the following backends:
    are compiled with SCIP integration disabled.
 
 .. warning::
-   ``UWrMaxSATCompetition`` is known to be unstable on Windows and macOS, experiencing 
-   native crashes. This backend is considered experimental and may be removed in 
-   future versions.
+   On Windows and macOS, preprocessing is disabled for
+   ``UWrMaxSATCompetition`` due to upstream undefined behavior (UB) that can
+   cause native crashes.
 
 .. warning::
    EvalMaxSAT backends are currently unstable on macOS (both ``arm64`` and

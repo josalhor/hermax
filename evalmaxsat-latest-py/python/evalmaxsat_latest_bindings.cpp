@@ -12,8 +12,8 @@ public:
     int num_vars;
 
     EvalMaxSATLatest() : num_vars(0) {
-#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
-        // Mac arm64: avoid intermittent crashes in EvalMaxSAT local optimizer path.
+#if defined(__APPLE__)
+        // macOS: avoid intermittent native crashes in EvalMaxSAT local optimizer path.
         // Keep solver functionality by disabling only that optimization phase.
         solver.disableOptimize();
 #endif

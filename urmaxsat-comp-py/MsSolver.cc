@@ -346,7 +346,8 @@ void reset_soft_cls(vec<Pair<weight_t,Minisat::vec<Lit>*>> &soft_cls, vec<Pair<w
 {
     for (int i = 0; i < fixed_soft_cls.size(); i++)
         soft_cls.push(fixed_soft_cls[i]), fixed_soft_cls[i].fst = WEIGHT_MAX, fixed_soft_cls[i].snd = nullptr;
-    Sort::sort(&soft_cls[0], soft_cls.size(), LT<Pair<weight_t, Minisat::vec<Lit>*> >());
+    if (soft_cls.size() > 1)
+        Sort::sort(&soft_cls[0], soft_cls.size(), LT<Pair<weight_t, Minisat::vec<Lit>*> >());
     for (int i = 0; i < modified_soft_cls.size(); i++) {
         Lit p = modified_soft_cls[i].snd;
         int fst = 0, cnt = soft_cls.size();
@@ -487,6 +488,16 @@ void MsSolver::maxsat_solve(solve_Command cmd)
             pj = p; j++; min_weight = 0;
         }
     }
+    if (ipamir_used && min_weight > 0) {
+        fixed_soft_cls.push(Pair_new(min_weight, new Minisat::vec<Lit>));
+        fixed_soft_cls.last().snd->push(pj);
+        if (j > 0 && soft_cls[j-1].fst == 0) {
+            fixed_soft_cls.push(Pair_new(min_weight, new Minisat::vec<Lit>));
+            fixed_soft_cls.last().snd->push(~pj);
+        } else
+            modified_soft_cls.push(Pair_new(min_weight, ~pj));
+    }
+    if (j > 0 && soft_cls[j-1].fst == 0) j--;
     if (j < soft_cls.size()) soft_cls.shrink(soft_cls.size() - j);
     top_for_strat = top_for_hard = soft_cls.size();
     Sort::sort(soft_cls);
@@ -1131,6 +1142,12 @@ struct mapLT { Map<Lit, vec<Lit>* >&c; bool operator()(Lit p, Lit q) { return c.
 void MsSolver::preprocess_soft_cls(Minisat::vec<Lit>& assump_ps, vec<Int>& assump_Cs, const Int& max_assump_Cs, 
                                               IntLitQueue& delayed_assump, Int& delayed_assump_sum)
 {
+    // Defensive guard: disable this preprocessing path on Windows/macOS where
+    // native heap corruption has been observed in UWrMaxSATCompetition flows.
+#if defined(_WIN32) || defined(__APPLE__)
+    return;
+#endif
+
     Map<Lit, vec<Lit>* > conns;
     vec<Lit> conns_lit, confl, lits;
     if (harden_assump.size() > 0) { // needed in IPAMIR
@@ -1157,6 +1174,7 @@ void MsSolver::preprocess_soft_cls(Minisat::vec<Lit>& assump_ps, vec<Int>& assum
     }
     if (harden_assump.size() > 0) global_assumptions.shrink(harden_assump.size()); // IPAMIR
     conns.domain(conns_lit);
+    if (confl.size() > 1) Sort::sortUnique(confl);
     if (confl.size() > 0) {
         for (int i = 0; i < conns_lit.size(); i++) {
             if (Sort::bin_search(confl, conns_lit[i]) >= 0) {
@@ -1171,6 +1189,18 @@ void MsSolver::preprocess_soft_cls(Minisat::vec<Lit>& assump_ps, vec<Int>& assum
             }
         }
         conns_lit.clear(); conns.domain(conns_lit);
+        // Keep adjacency lists consistent with the current map domain.
+        // Some nodes can be excluded above (conflict nodes or empty neighborhoods),
+        // and stale references would later be dereferenced through mapLT.
+        for (int i = 0; i < conns_lit.size(); i++) {
+            vec<Lit>& dep_lit = *conns.ref(conns_lit[i]);
+            int keep = 0, old_sz = dep_lit.size();
+            for (int j = 0; j < old_sz; j++) {
+                Lit q = dep_lit[j];
+                if (conns.has(q)) dep_lit[keep++] = q;
+            }
+            if (keep < old_sz) dep_lit.shrink(old_sz - keep);
+        }
         for (int l, i = 0; i < confl.size(); i++) {
             Lit p = confl[i];
             if ((l = Sort::bin_search(assump_ps, p)) >= 0 && is_input_var(assump_ps[l])) {

@@ -15,23 +15,18 @@
 
 using namespace MaLib;
 
-extern std::vector<bool> hardenedLits_I;
-
 class SetLit {
 public:
    int lit;
-   SetLit() {}
+   bool hardened;
+   SetLit() : lit(0), hardened(false) {}
    SetLit (int passedLit, bool hardened=false){
        lit = passedLit;
-       if (hardened) {
-           hardenedLits_I[abs(lit)] = true;
-       }
+       this->hardened = hardened;
    }
    bool operator < (SetLit otherSetLit) const {
-       bool hardened = hardenedLits_I[abs(lit)];
-       bool otherHardened = hardenedLits_I[abs(otherSetLit.lit)];
        if (hardened) {
-           if (otherHardened) {
+           if (otherSetLit.hardened) {
                return lit < otherSetLit.lit;
            }
            else {
@@ -39,7 +34,7 @@ public:
            }
        }
 
-       if (otherHardened)
+       if (otherSetLit.hardened)
        {
            return false;
        }
@@ -47,7 +42,7 @@ public:
        return (lit < otherSetLit.lit);
    }
 
-   SetLit& operator = (int otherLit) { lit = otherLit; return *this; }
+   SetLit& operator = (int otherLit) { lit = otherLit; hardened = false; return *this; }
    bool operator == (int otherLit) const { return lit == otherLit; }
    bool operator == (SetLit otherSetLit) const { return lit == otherSetLit.lit; }
    explicit operator int() const { return lit; }

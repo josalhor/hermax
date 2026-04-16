@@ -63,6 +63,11 @@ Backend mapping:
    disabled.
 
 .. warning::
+   On Windows and macOS, preprocessing is disabled for
+   ``UWrMaxSATCompetition`` due to undefined behavior (UB) that can
+   cause native crashes.
+
+.. warning::
    ``hermax.non_incremental.EvalMaxSAT`` is currently unstable on macOS
    (both ``arm64`` and ``x86_64``) and may crash on some weighted-core
    instances.

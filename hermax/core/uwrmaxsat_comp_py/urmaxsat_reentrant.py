@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import List, Optional, Callable, Dict, Tuple, Iterable, Set
 
 from pysat.formula import WCNF
@@ -50,8 +51,26 @@ class UWrMaxSATCompReentrant(IPAMIRSolver):
 
     def set_soft(self, lit: int, weight: int) -> None:
         self._require_open()
-        self._soft_unit_by_lit[int(lit)] = int(weight)
-        self._max_var = max(self._max_var, abs(int(lit)))
+        ilit = int(lit)
+        if ilit == 0:
+            raise ValueError("Literal 0 is invalid.")
+        if not isinstance(weight, int) or weight != int(weight):
+            raise ValueError("Weight must be an integer.")
+        iweight = int(weight)
+        if iweight < 0:
+            raise ValueError("Weight must be a non-negative integer.")
+        if sys.platform in {"win32", "darwin"} and iweight >= (1 << 63) - 1:
+            raise ValueError(
+                "Weight exceeds platform-safe range for UWrMaxSATComp backend."
+            )
+
+        if iweight == 0:
+            self._soft_unit_by_lit.pop(ilit, None)
+            self._invalidate_last_solution()
+            return
+
+        self._soft_unit_by_lit[ilit] = iweight
+        self._max_var = max(self._max_var, abs(ilit))
         self._invalidate_last_solution()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
@@ -84,6 +103,16 @@ class UWrMaxSATCompReentrant(IPAMIRSolver):
             for a in assumptions:
                 solver.addClause([a], None)
 
+        # Work around a backend crash path on hard-only instances.
+        # Inject a single neutral soft unit [b] with weight 1.
+        # The backend can satisfy it by setting b=true, preserving objective 0.
+        if not self._soft_unit_by_lit and not self._soft_nonunit:
+            guard_var = current_max + 1
+            while current_max < guard_var:
+                solver.newVar()
+                current_max += 1
+            solver.addClause([guard_var], 1)
+
         # Replay unit softs
         for lit, w in self._soft_unit_by_lit.items():
             solver.addClause([lit], w)
@@ -106,7 +135,10 @@ class UWrMaxSATCompReentrant(IPAMIRSolver):
                     else:
                         model.append(-i)
                 self._last_model = model
-                self._last_cost = int(solver.getCost())
+                if not self._soft_unit_by_lit and not self._soft_nonunit:
+                    self._last_cost = 0
+                else:
+                    self._last_cost = int(solver.getCost())
                 return True
             elif r == 20: # UNSAT
                 self._last_status = SolveStatus.UNSAT

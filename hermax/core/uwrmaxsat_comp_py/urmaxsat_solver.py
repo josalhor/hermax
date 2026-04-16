@@ -110,6 +110,11 @@ class UWrMaxSATCompSolver(IPAMIRSolver):
             raise ValueError("Weight must be an integer.")
         if weight < 0:
             raise ValueError("Weight must be a non-negative integer.")
+        # On Windows/macOS, this backend overflows at the INT64_MAX edge.
+        if sys.platform in {"win32", "darwin"} and int(weight) >= (1 << 63) - 1:
+            raise ValueError(
+                "Weight exceeds platform-safe range for UWrMaxSATComp backend."
+            )
         v = abs(lit)
         while v > self.num_vars:
             self.new_var()
@@ -132,17 +137,15 @@ class UWrMaxSATCompSolver(IPAMIRSolver):
 
     def solve(self, assumptions=None, raise_on_abnormal=False) -> bool:
         # Work around a backend crash path in UWrMaxSATComp on hard-only instances.
-        # Inject a neutral pair:
-        #   hard [-b] and soft [-b] with weight 1
-        # This guarantees objective cost 0 while avoiding the native hard-only crash.
+        # Inject a single neutral soft unit [b] with weight 1.
+        # The backend can satisfy it by setting b=true, so the objective remains 0.
         if (
             not self._hard_only_guard_installed
             and not self._anon_soft_by_lit
             and not self._id_soft_b_weight
         ):
             b = self.num_vars + 1  # internal-only variable; do not expose in Python model length
-            self.solver.addClause([-b], None)
-            self.solver.addClause([-b], 1)
+            self.solver.addClause([b], 1)
             self._hard_only_guard_installed = True
 
         assumps = list(assumptions) if assumptions else []
@@ -179,7 +182,12 @@ class UWrMaxSATCompSolver(IPAMIRSolver):
                     model[vi - 1] = vi if a > 0 else -vi
 
             self._model = model
-            self._last_cost = int(self.solver.getCost())  # trust backend objective
+            # Native getCost() appears unstable on hard-only traces on some platforms.
+            # For formulas without user softs, objective is always 0 by definition.
+            if not self._anon_soft_by_lit and not self._id_soft_b_weight:
+                self._last_cost = 0
+            else:
+                self._last_cost = int(self.solver.getCost())
             return True
         elif self._last_solve_result == 20:
             self._status = SolveStatus.UNSAT

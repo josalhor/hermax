@@ -89,7 +89,12 @@ public:
 
        for (int32_t lit : assumptions)
        {
-           int real_lit = literal_to_real_id[std::abs(lit)];
+           auto it = literal_to_real_id.find(std::abs(lit));
+           if (it == literal_to_real_id.end()) {
+               // Assumptions over undeclared vars are irrelevant to current objective.
+               continue;
+           }
+           int real_lit = it->second;
            real_lit = lit < 0 ? -real_lit : real_lit;
            maxSATwithAssump->addClause({real_lit});
        }
@@ -113,7 +118,7 @@ public:
    }
    int32_t val_lit(int32_t lit)
    {
-       if (!literal_to_real_id.count(lit))
+       if (!literal_to_real_id.count(std::abs(lit)))
        {
            return 0;
        }
@@ -128,7 +133,7 @@ private:
    vector<int32_t> clause;
 
    vector<vector<int32_t>> hard_clauses_total;
-   uint64_t objective_value;
+   uint64_t objective_value = 0;
    map<int32_t, int64_t> soft_lits_total;
 
    bool resetSolverWithoutAssumps = false;
@@ -138,7 +143,7 @@ private:
    map<int32_t,int32_t> assignment;
 
    inline bool literal_was_declared(int lit) {
-       return literal_to_real_id.count(lit);
+       return literal_to_real_id.count(std::abs(lit));
    }
 
    bool add_literal_if_not_declared(int& lit) {

@@ -168,12 +168,14 @@ void outputResult(const PbSolver& S, bool optimum)
                 Int sum = 0;
                 vec<bool> bmodel( abs(model.back()) + 1);
                 for (int i = model.size() - 1; i >= 0; i--) bmodel[abs(model[i])] = (model[i] > 0);
-                for (int j, i = pb_solver->orig_soft_cls.size() - 1; i >= 0; i--) {
-                    for (j = pb_solver->orig_soft_cls[i].snd->size() - 1; j >= 0; j--) {
-                        Lit p = (*pb_solver->orig_soft_cls[i].snd)[j];
-                        if ((sign(p) && !bmodel[var(p)]) || (!sign(p) && bmodel[var(p)])) break;
+                if (pb_solver != NULL) {
+                    for (int j, i = pb_solver->orig_soft_cls.size() - 1; i >= 0; i--) {
+                        for (j = pb_solver->orig_soft_cls[i].snd->size() - 1; j >= 0; j--) {
+                            Lit p = (*pb_solver->orig_soft_cls[i].snd)[j];
+                            if ((sign(p) && !bmodel[var(p)]) || (!sign(p) && bmodel[var(p)])) break;
+                        }
+                        if (j < 0) sum += pb_solver->orig_soft_cls[i].fst;
                     }
-                    if (j < 0) sum += pb_solver->orig_soft_cls[i].fst;
                 }
                 if (sum < S.best_goalvalue) printf("o %s\n", toString(sum));
             }
@@ -241,14 +243,16 @@ void handlerOutputResult(const PbSolver& S, bool optimum = true)
             for (int i = model.size() - 1; i >= 0; i--) bmodel[abs(model[i])] = (model[i] > 0);
             if (!optimum && opt_satisfiable_out) {
                 Int sum = 0;
-                for (int j, i = pb_solver->orig_soft_cls.size() - 1; i >= 0; i--) {
-                    for (j = pb_solver->orig_soft_cls[i].snd->size() - 1; j >= 0; j--) {
-                        Lit p = (*pb_solver->orig_soft_cls[i].snd)[j];
-                        if ((sign(p) && !bmodel[var(p)]) || (!sign(p) && bmodel[var(p)])) break;
+                if (pb_solver != NULL) {
+                    for (int j, i = pb_solver->orig_soft_cls.size() - 1; i >= 0; i--) {
+                        for (j = pb_solver->orig_soft_cls[i].snd->size() - 1; j >= 0; j--) {
+                            Lit p = (*pb_solver->orig_soft_cls[i].snd)[j];
+                            if ((sign(p) && !bmodel[var(p)]) || (!sign(p) && bmodel[var(p)])) break;
+                        }
+                        if (j < 0) sum += pb_solver->orig_soft_cls[i].fst;
                     }
-                    if (j < 0) sum += pb_solver->orig_soft_cls[i].fst;
                 }
-                if (sum < pb_solver->best_goalvalue * pb_solver->goal_gcd) {
+                if (pb_solver != NULL && sum < pb_solver->best_goalvalue * pb_solver->goal_gcd) {
                     buf[lst++] = '\n'; buf[lst++] = 'o'; buf[lst++] = ' ';
                     if (sum == 0) buf[lst++] =  '0';
                     else {
@@ -333,14 +337,17 @@ void SIGINT_handler(int /*signum*/) {
 
 
 void SIGTERM_handler(int signum) {
+    MsSolver *s = pb_solver;
     if (opt_verbosity >= 1) {
         reportf("\n");
         reportf("*** TERMINATED by signal %d ***\n", signum);
         reportf("_______________________________________________________________________________\n\n");
-        pb_solver->printStats();
+        if (s != NULL)
+            s->printStats();
         reportf("_______________________________________________________________________________\n");
     }
-    handlerOutputResult(*pb_solver, false);
+    if (s != NULL)
+        handlerOutputResult(*s, false);
     //SatELite::deleteTmpFiles();
     //fflush(stdout);
     std::_Exit(0);
