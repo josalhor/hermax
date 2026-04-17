@@ -354,9 +354,13 @@ private:
     }
 
     bool toOptimize = true;
+    bool usePreprocessing = true;
 public:
     void disableOptimize() {
         toOptimize = false;
+    }
+    void disablePreprocessing() {
+        usePreprocessing = false;
     }
     void setIncremental(bool value=true) {
         is_incremental = value;
@@ -396,8 +400,10 @@ public:
         Chrono chronoLastSolve;
         Chrono chronoLastOptimize;
 
-        adapt_am1_exact();
-        adapt_am1_FastHeuristicV7();
+        if (usePreprocessing) {
+            adapt_am1_exact();
+            adapt_am1_FastHeuristicV7();
+        }
 
         if(cost >= solutionCost) {
             return true;
@@ -415,7 +421,7 @@ public:
 
         if(harden(assum)) {
             assert(_mapWeight2Assum.size());
-            if(adapt_am1_VeryFastHeuristic()) {
+            if(usePreprocessing && adapt_am1_VeryFastHeuristic()) {
                 if(cost >= solutionCost) {
                     return true;
                 }

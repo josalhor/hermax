@@ -14,8 +14,9 @@ public:
     EvalMaxSATLatest() : num_vars(0) {
 #if defined(__APPLE__)
         // macOS: avoid intermittent native crashes in EvalMaxSAT local optimizer path.
-        // Keep solver functionality by disabling only that optimization phase.
+        // Keep solver functionality by disabling only crash-prone phases.
         solver.disableOptimize();
+        solver.disablePreprocessing();
 #endif
     }
 

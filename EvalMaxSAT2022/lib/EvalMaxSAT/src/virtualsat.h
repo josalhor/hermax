@@ -25,21 +25,9 @@ public:
        this->hardened = hardened;
    }
    bool operator < (SetLit otherSetLit) const {
-       if (hardened) {
-           if (otherSetLit.hardened) {
-               return lit < otherSetLit.lit;
-           }
-           else {
-               return true;
-           }
-       }
-
-       if (otherSetLit.hardened)
-       {
-           return false;
-       }
-
-       return (lit < otherSetLit.lit);
+       // Set key equivalence must depend only on literal value so
+       // erase/count using temporary SetLit(int) behave correctly.
+       return lit < otherSetLit.lit;
    }
 
    SetLit& operator = (int otherLit) { lit = otherLit; hardened = false; return *this; }
