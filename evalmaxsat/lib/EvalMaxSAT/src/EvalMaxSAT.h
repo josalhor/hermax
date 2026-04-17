@@ -1251,12 +1251,12 @@ private:
                     return 1;
                 }
             } else {
-               auto it2 =it;
-               it2--;
-               if(it2 == _mapWeight2Assum.end()) {
+               if (it == _mapWeight2Assum.begin()) {
                    MonPrint("minWeightToConsider == ", 1);
                    return 1;
                }
+               auto it2 = it;
+               --it2;
 
                /*
                if(it2->first < it->first * 0.1 ) {   // hyper paramétre
