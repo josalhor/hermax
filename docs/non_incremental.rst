@@ -36,7 +36,7 @@ For incomplete / subprocess-isolated wrappers (e.g. ``SPB``, ``NuWLS-c-IBR``,
 Backend mapping:
 
 * :class:`hermax.non_incremental.RC2`:
-  ``hermax.core.rc2.RC2Reentrant`` (re-encoding wrapper around RC2 [1]_ [2]_).
+  ``hermax.core.rc2.RC2Reentrant`` (re-encoding wrapper around RC2 [1]_ [2]_ [8]_).
 * :class:`hermax.non_incremental.UWrMaxSATCompetition`:
   ``hermax.core.uwrmaxsat_comp_py.UWrMaxSATCompReentrant`` [4]_.
 * :class:`hermax.non_incremental.EvalMaxSAT`:
@@ -48,11 +48,11 @@ Backend mapping:
 ..   same backend as CASHWMaxSAT with SCIP disabled (adapter mode).
 
 * :class:`hermax.non_incremental.CGSS`:
-  ``hermax.core.cgss_py.CGSSSolver`` (vendored RC2WCE/CGSS wrapper [7]_).
+  ``hermax.core.cgss_py.CGSSSolver`` (vendored RC2WCE/CGSS wrapper [7]_ [8]_).
 * :class:`hermax.non_incremental.CGSSPMRES`:
-  ``hermax.core.cgss_py.CGSSPMRESSolver`` (vendored PMRES variant [7]_).
+  ``hermax.core.cgss_py.CGSSPMRESSolver`` (vendored PMRES variant [7]_ [8]_).
 * :class:`hermax.non_incremental.OpenWBOOLL`:
-  ``hermax.core.openwbo_py.OLLSolver`` (Open-WBO OLL backend).
+  ``hermax.core.openwbo_py.OLLSolver`` (Open-WBO OLL backend [8]_).
 * :class:`hermax.non_incremental.OpenWBOPartMSU3`:
   ``hermax.core.openwbo_py.PartMSU3Solver`` (Open-WBO PartMSU3 backend).
 * :class:`hermax.non_incremental.OpenWBO`:
@@ -68,9 +68,8 @@ Backend mapping:
    cause native crashes.
 
 .. warning::
-   ``hermax.non_incremental.EvalMaxSAT`` is currently unstable on macOS
-   (both ``arm64`` and ``x86_64``) and may crash on some weighted-core
-   instances.
+   On macOS, preprocessing is disabled for EvalMaxSAT backends due to
+   possible native crashes.
 
 API Details
 -----------
@@ -153,4 +152,8 @@ References
 .. [4] Marek Piotrów. *UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems*. ICTAI 2020.
 .. [5] Florent Avellaneda. *EvalMaxSAT*. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
 .. [6] Shiwei Pan, Yiyuan Wang, Shaowei Cai. *An Efficient Core-Guided Solver for Weighted Partial MaxSAT*. IJCAI 2025.
-.. [7] Hannes Ihalainen, Jeremias Berg, Matti Järvisalo. *Refined Core Relaxation for Core-Guided MaxSAT Solving*. CP 2021.
+.. [7] Hannes Ihalainen, Jeremias Berg, Matti Jarvisalo. *Refined Core Relaxation for Core-Guided MaxSAT Solving*. CP 2021.
+
+.. [8] Benjamin Andres, Benjamin Kaufmann, Oliver Matheis, Torsten Schaub. *Unsatisfiability-based Optimization in clasp*. ICLP 2012 Technical Communications.
+
+

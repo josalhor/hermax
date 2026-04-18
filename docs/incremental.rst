@@ -40,9 +40,8 @@ The classes map to the following backends:
    cause native crashes.
 
 .. warning::
-   EvalMaxSAT backends are currently unstable on macOS (both ``arm64`` and
-   ``x86_64``) and may crash in some weighted-core workflows.
-   Prefer other backends on macOS until this is fixed.
+   On macOS, preprocessing is disabled for EvalMaxSAT backends due to
+   possible native crashes.
 
 Incremental MaxSAT
 ------------------

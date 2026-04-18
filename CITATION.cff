@@ -63,6 +63,38 @@ references:
     year: 2023
   - type: conference-paper
     authors:
+      - family-names: "Ihalainen"
+        given-names: "Hannes"
+      - family-names: "Berg"
+        given-names: "Jeremias"
+      - family-names: "Jarvisalo"
+        given-names: "Matti"
+    title: "Refined Core Relaxation for Core-Guided MaxSAT Solving"
+    year: 2021
+  - type: conference-paper
+    authors:
+      - family-names: "Berg"
+        given-names: "Jeremias"
+      - family-names: "Demirovic"
+        given-names: "Emir"
+      - family-names: "Stuckey"
+        given-names: "Peter J."
+    title: "Core-Boosted Linear Search for Incomplete MaxSAT"
+    year: 2019
+  - type: conference-paper
+    authors:
+      - family-names: "Andres"
+        given-names: "Benjamin"
+      - family-names: "Kaufmann"
+        given-names: "Benjamin"
+      - family-names: "Matheis"
+        given-names: "Oliver"
+      - family-names: "Schaub"
+        given-names: "Torsten"
+    title: "Unsatisfiability-based Optimization in clasp"
+    year: 2012
+  - type: conference-paper
+    authors:
       - family-names: "Pan"
         given-names: "Shiwei"
       - family-names: "Wang"

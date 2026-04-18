@@ -25,19 +25,32 @@ Glucose [1]_, CaDiCaL [2]_, MiniSat [3]_, and CominiSatPS [4]_.
 .. [3] Niklas Sorensson and Niklas Een.
    *Minisat v1.13 - a SAT solver with conflict-clause minimization*.
    SAT, 53:1-2, 2005.
-.. [4] Chanseok Oh. *Cominisatps pulsar and ghackcomsps*.
-   Balyo et al., pages 12-13, 2017.
+.. [4] Chanseok Oh. *COMiniSatPS Pulsar and GHackCOMSPS*.
+   In Tomas Balyo, Marijn J. H. Heule, and Matti Jarvisalo (eds.),
+   *Proceedings of SAT Competition 2017: Solver and Benchmark Descriptions*,
+   volume B-2017-1, pages 12-13, 2017. Department of Computer Science,
+   University of Helsinki.
 
-Python SAT References
+Python and SAT References
 ----------------------
 
 * Alexey Ignatiev, Antonio Morgado, Joao Marques-Silva.
   *PySAT: A Python Toolkit for Prototyping with SAT Oracles*. SAT 2018.
-* Carlos Ansótegui, Jesus Ojeda, António Pacheco, Josep Pon, Josep M. Salvia,
+* Carlos Ansotegui, Jesus Ojeda, Antonio Pacheco, Josep Pon, Josep M. Salvia,
   Eduard Torres.
   *Optilog: A framework for SAT-based systems*. SAT 2021.
-* Josep Alos, Carlos Ansótegui, Josep M. Salvia, Eduard Torres.
+* Josep Alos, Carlos Ansotegui, Josep M. Salvia, Eduard Torres.
   *Optilog V2: model, solve, tune and run*. SAT 2022.
+* Tias Guns.
+  *Increasing modeling language convenience with a universal n-dimensional array, CPpy as python-embedded example*.
+  Proceedings of the 18th workshop on Constraint Modelling and Reformulation at CP (ModRef 2019), volume 19, 2019.
+* Nicholas Nethercote, Peter J. Stuckey, Ralph Becket, Sebastian Brand,
+  Gregory J. Duck, Guido Tack.
+  *MiniZinc: Towards a standard CP modelling language*.
+  International Conference on Principles and Practice of Constraint Programming, pages 529-543, 2007.
+* J. S. Roy, Stuart A. Mitchell, and PuLP contributors.
+  *PuLP*, version 3.3.0, 2025.
+  https://pypi.org/project/PuLP/
 
 MaxSAT References
 ------------------------------------------
@@ -61,6 +74,9 @@ Hermax documentation set:
   *Certified Core-Guided MaxSAT Solving*. CADE 29, 2023.
 * Ruben Martins, Vasco Manquinho, Ines Lynce.
   *Open-WBO: A Modular MaxSAT Solver*. SAT 2014.
+* Benjamin Andres, Benjamin Kaufmann, Oliver Matheis, Torsten Schaub.
+  *Unsatisfiability-based Optimization in clasp*. ICLP 2012 Technical
+  Communications.
 * Saurabh Joshi, Prateek Kumar, Sukrut Rao, Ruben Martins.
   *Open-WBO-Inc: Approximation Strategies for Incomplete Weighted MaxSAT*.
   Journal on Satisfiability, Boolean Modelling and Computation 11(1), 2019.
@@ -69,11 +85,10 @@ Hermax documentation set:
 * Mingming Jin, Kun He, Jiongzhi Zheng, Jinghui Xue, Zhuo Chen.
   *Combining BandMaxSAT and FPS with SPB-MaxSAT-c*.
   MaxSAT Evaluation 2024: Solver and Benchmark Descriptions, 2024.
-* Jiayi Chu, Chuan Luo, et al.
+* Menghua Jiang.
   *NuWLS-c-IBR*. MaxSAT Evaluation solver description, 2023.
-* Jeremias Berg.
-  *Loandra in the 2022 (and 2023) MaxSAT Evaluation*.
-  MaxSAT Evaluation 2023, 21, 2023.
+* Jeremias Berg, Emir Demirovic, Peter J. Stuckey.
+  *Core-Boosted Linear Search for Incomplete MaxSAT*. CPAIOR 2019.
 * Xujie Si, Xin Zhang, Vasco Manquinho, Mikolás Janota, Alexey Ignatiev,
   Mayur Naik.
   *On Incremental Core-Guided MaxSAT Solving*. CP 2016.
@@ -82,3 +97,7 @@ Hermax documentation set:
 * Tobias Paxian, Armin Biere.
   *MaxSAT Fuzzing and Delta Debugging*. Journal of Artificial Intelligence
   Research, 85, 2026.
+
+
+
+

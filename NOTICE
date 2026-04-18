@@ -24,8 +24,13 @@ Latest available papers (selection)
 - Piotrow. UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems.
   ICTAI 2020.
 - Avellaneda. EvalMaxSAT. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
-- Bacchus. MaxHS in the 2020 MaxSAT Evaluation. MaxSAT Evaluation 2020.
-- Niskanen, Berg, Jarvisalo. Enabling Incrementality in the Implicit Hitting
-  Set Approach to MaxSAT Under Changing Weights. CP 2021.
+- Berg, Demirovic, Stuckey. Core-Boosted Linear Search for Incomplete MaxSAT.
+  CPAIOR 2019.
+- Ihalainen, Berg, Jarvisalo. Refined Core Relaxation for Core-Guided MaxSAT
+  Solving. CP 2021.
+- Andres, Kaufmann, Matheis, Schaub. Unsatisfiability-based Optimization in
+  clasp. ICLP 2012 Technical Communications.
+- Davies, Bacchus. Exploiting the Power of MIP Solvers in MAXSAT. SAT 2013.
+- Davies, Bacchus. Postponing Optimization to Speed Up MAXSAT Solving. CP 2013.
 - Pan, Wang, Cai. An Efficient Core-Guided Solver for Weighted Partial MaxSAT.
   IJCAI 2025.

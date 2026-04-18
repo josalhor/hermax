@@ -18,7 +18,7 @@ iterative optimization workflows.
 - Unified API across heterogeneous MaxSAT engines.
 - Incremental and non-incremental solver families
 - Scientific and reproducible workflow
-- Native compatibility with PySAT
+- Native compatibility with [PySAT](https://pysathq.github.io/)
 
 Who Is This For?
 ----------------
@@ -30,11 +30,13 @@ Hermax is for combinatorially hard problems where:
 
 This is usually a better fit than MILP tooling when your problem is not mainly
 about floating-point structure, large integer arithmetic, or strong LP
-relaxations. In those cases, a MILP such as PuLP, SCIP, or Gurobi is
+relaxations. In those cases, a MILP such as [PuLP](https://pypi.org/project/PuLP/),
+[SCIP](https://www.scipopt.org/), or [Gurobi](https://www.gurobi.com/) is
 often the more natural first choice.
 
 If your problem is highly combinatorial but can benefit from a broader
-black-box CP approach, CP-SAT may also be a good alternative.
+black-box CP approach, [CP-SAT](https://developers.google.com/optimization/cp/cp_solver)
+may also be a good alternative.
 
 Hermax is especially relevant for:
 
@@ -104,9 +106,8 @@ Hermax is designed for the incremental MaxSAT setting formalized by:
 If you use Hermax in research:
 
 1. Cite the repository: https://github.com/josalhor/hermax
-2. Cite the backend solver papers relevant to your experiments.
-3. See machine-readable metadata in `CITATION.cff`.
-4. See additional attribution and latest-paper list in `NOTICE`.
+2. Cite the backend solver papers relevant to your experiments (see `CITATION.cff` as a starting point)
+3. See additional attribution and latest-paper list in `NOTICE`.
 
 ## License
 

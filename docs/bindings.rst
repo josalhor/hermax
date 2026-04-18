@@ -441,9 +441,11 @@ References
 * Marek Piotrów. *UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems*. ICTAI 2020.
 * Florent Avellaneda. *EvalMaxSAT*. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
 * Alexey Ignatiev, Antonio Morgado, Joao Marques-Silva. *RC2: An Efficient MaxSAT Solver*. JSAT 11(1), 2019.
+* Hannes Ihalainen, Jeremias Berg, Matti Jarvisalo. *Refined Core Relaxation for Core-Guided MaxSAT Solving*. CP 2021.
 * Ruben Martins, Vasco Manquinho, Ines Lynce. *Open-WBO: A Modular MaxSAT Solver*. SAT 2014.
+* Benjamin Andres, Benjamin Kaufmann, Oliver Matheis, Torsten Schaub. *Unsatisfiability-based Optimization in clasp*. ICLP 2012 Technical Communications.
 * Saurabh Joshi, Prateek Kumar, Sukrut Rao, Ruben Martins. *Open-WBO-Inc: Approximation Strategies for Incomplete Weighted MaxSAT*. Journal on Satisfiability, Boolean Modelling and Computation 11(1), 2019.
 * Shiwei Pan, Yiyuan Wang, Shaowei Cai. *An Efficient Core-Guided Solver for Weighted Partial MaxSAT*. IJCAI 2025.
 * Mingming Jin, Kun He, Jiongzhi Zheng, Jinghui Xue, Zhuo Chen. *Combining BandMaxSAT and FPS with SPB-MaxSAT-c*. MaxSAT Evaluation 2024: Solver and Benchmark Descriptions, 2024.
-* Jiayi Chu, Chuan Luo, et al. *NuWLS-c-IBR*. MaxSAT Evaluation solver description, 2023.
-* Jeremias Berg. *Loandra in the 2022 (and 2023) MaxSAT Evaluation*. MaxSAT Evaluation 2023, 21, 2023.
+* Menghua Jiang. *NuWLS-c-IBR*. MaxSAT Evaluation solver description, 2023.
+* Jeremias Berg, Emir Demirovic, Peter J. Stuckey. *Core-Boosted Linear Search for Incomplete MaxSAT*. CPAIOR 2019.

@@ -74,6 +74,7 @@ References
 
 .. [1] Andreas Niskanen, Jeremias Berg, Matti Järvisalo. *Incremental Maximum Satisfiability*. SAT 2022.
 .. [2] Niklas Eén, Niklas Sörensson. *An Extensible SAT-solver*. SAT 2003.
-.. [3] Tomas Balyo, Armin Biere. *IPASIR: The Standard Interface for Incremental Satisfiability Solving*. https://github.com/biotomas/ipasir
+.. [3] Tomas Balyo, Armin Biere, Markus Iser, Carsten Sinz, Allen Van Gelder.
+   *SAT race 2015*. Artificial Intelligence, 241:45-65, 2016.
 .. [4] Xujie Si, Xin Zhang, Vasco Manquinho, Mikolás Janota, Alexey Ignatiev, Mayur Naik. *On Incremental Core-Guided MaxSAT Solving*. CP 2016.
 .. [5] Alexey Ignatiev, Yacine Izza, Peter J. Stuckey, Joao Marques-Silva. *Using MaxSAT for Efficient Explanations of Tree Ensembles*. AAAI 2022.

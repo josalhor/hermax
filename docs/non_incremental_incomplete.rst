@@ -105,5 +105,5 @@ References
 * Saurabh Joshi, Prateek Kumar, Sukrut Rao, Ruben Martins. *Open-WBO-Inc: Approximation Strategies for Incomplete Weighted MaxSAT*. Journal on Satisfiability, Boolean Modelling and Computation 11(1), 2019.
 * Alexander Nadel. *TT-Open-WBO-Inc: an efficient anytime MaxSAT solver*. Journal on Satisfiability, Boolean Modelling and Computation 15(1), 2024.
 * Alexander Nadel. *Polarity and Variable Selection Heuristics for SAT-Based Anytime MaxSAT: System Description*. Journal on Satisfiability, Boolean Modelling and Computation 12(1), 2020.
-* Jeremias Berg. *Loandra in the 2022 (and 2023) MaxSAT Evaluation*. MaxSAT Evaluation 2023, 21, 2023.
-* Jiayi Chu, Chuan Luo, et al. *NuWLS-c-IBR*. MaxSAT Evaluation solver description, 2023.
+* Jeremias Berg, Emir Demirovic, Peter J. Stuckey. *Core-Boosted Linear Search for Incomplete MaxSAT*. CPAIOR 2019.
+* Menghua Jiang. *NuWLS-c-IBR*. MaxSAT Evaluation solver description, 2023.
