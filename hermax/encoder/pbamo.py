@@ -232,33 +232,69 @@ def extract_cardinality_features(lits, groups, bound):
 
 
 def choose_portfolio(lits, weights, groups, bound):
+    lits = [int(lit) for lit in lits]
+    weights = [int(weight) for weight in weights]
     groups = _normalize_groups(groups)
     non_singleton_groups = sum(1 for group in groups if len(group) > 1)
     if non_singleton_groups == 0:
         return "pblib"
-    if len(lits) <= 11:
+    n_terms = len(lits)
+    if n_terms <= 11:
+        return "pblib"
+    amo_cap = amo_upper_bound(weights, groups, lits=lits) if groups else 0
+    if amo_cap > 3596:
         return "pblib"
     return "pbamo"
 
 
 def choose_cardinality_portfolio(lits, groups, bound):
+    n_terms = len(lits)
     features = extract_cardinality_features(lits, groups, bound)
-    if len(lits) <= 11:
+    if n_terms <= 11:
         return "card"
     if features["non_singleton_groups"] == 0.0:
         return "card"
-    if features["card_structure_score"] >= CARD_STRUCTURE_THRESHOLD:
+    amo_cap = features["n_groups"]
+    card_score = features["card_structure_score"]
+    structured_coverage = features["structured_coverage"]
+
+    decision = "card"
+    if amo_cap <= 46.5 and card_score > 0.235817:
+        if amo_cap <= 31.5:
+            decision = "pbamo"
+        elif structured_coverage > 0.591751:
+            decision = "pbamo"
+
+    if decision == "pbamo":
+        if n_terms >= 45 and amo_cap >= 22.0:
+            return "card"
+        if n_terms >= 40 and card_score < 1.0:
+            return "card"
         return "pbamo"
     return "card"
 
 
 def choose_encoding(lits, weights, groups, bound):
-    features = extract_features(lits, weights, groups, bound)
-    if features["bound_ratio_amo"] <= 0.91:
-        if features["n_terms"] <= 23.0:
+    lits = [int(lit) for lit in lits]
+    weights = [int(weight) for weight in weights]
+    groups = _normalize_groups(groups)
+    n_terms = float(len(lits))
+    n_groups = float(len(groups))
+    amo_cap = float(amo_upper_bound(weights, groups, lits=lits)) if groups else 0.0
+    non_singleton_groups = float(sum(1 for group in groups if len(group) > 1))
+
+    if n_terms <= 35.5:
+        if amo_cap > 4381.0:
+            return EncType.ggpw
+        if amo_cap > 477.5 and non_singleton_groups > 8.5:
+            return EncType.ggpw
+        return EncType.rggt
+
+    if amo_cap <= 222.5:
+        return EncType.rggt
+    if n_groups <= 7.5:
             return EncType.rggt
-        return EncType.ggpw
-    return EncType.mdd
+    return EncType.ggpw
 
 
 class PBAMOEnc:

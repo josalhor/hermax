@@ -1171,7 +1171,7 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
 
 setup(
     name="hermax",
-    version="1.1.1",
+    version="1.2.0",
     author="Josep Maria Salvia Hornos",
     author_email="josh.salvia@gmail.com",
     description="A Python library of incremental MaxSAT solvers",

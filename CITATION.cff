@@ -8,7 +8,7 @@ authors:
 repository-code: "https://github.com/josalhor/hermax"
 url: "https://github.com/josalhor/hermax"
 license: "Apache-2.0"
-version: "1.1.1"
+version: "1.2.0"
 date-released: 2026-02-18
 preferred-citation:
   type: software

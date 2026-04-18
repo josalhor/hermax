@@ -1,5 +1,5 @@
-#ifndef STRUCTUREDPB_GMTO_HPP
-#define STRUCTUREDPB_GMTO_HPP
+#ifndef STRUCTUREDPB_GMTO_PAPER_HPP
+#define STRUCTUREDPB_GMTO_PAPER_HPP
 
 #include "structuredpb/encoder.hpp"
 

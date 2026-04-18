@@ -1,76 +1,31 @@
 #include "structuredpb/gmto.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
-#include <numeric>
 #include <stdexcept>
-#include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace structuredpb {
 namespace {
 
-struct GroupTerm {
-    int lit = 0;
-    Weight weight = 0;
-};
-
-struct GroupData {
-    std::vector<GroupTerm> terms;
-};
-
-struct DigitVector {
-    std::vector<Weight> values;
-    std::vector<int> lits;
+struct DigitList {
+    std::vector<int> indices;
+    std::unordered_map<int, int> lit_by_index;
 };
 
 struct Node {
-    Weight total = 0;
-    std::vector<Weight> reachable_sums;
-    std::vector<DigitVector> digits;
-    std::unique_ptr<Node> left;
-    std::unique_ptr<Node> right;
+    bool leaf = false;
+    Node* left = nullptr;
+    Node* right = nullptr;
+    std::vector<DigitList> digits;
+    std::vector<int> carries;
 };
-
-struct EstimateNode {
-    std::vector<Weight> reachable_sums;
-    std::vector<std::vector<Weight>> digits;
-    std::size_t clauses = 0;
-    std::size_t vars = 0;
-};
-
-struct BeamState {
-    std::vector<Weight> moduli;
-    std::vector<Weight> residuals;
-    Weight product = 1;
-    long double score = 0.0L;
-};
-
-Weight safe_sum(Weight a, Weight b) {
-    if (std::numeric_limits<Weight>::max() - a < b) {
-        return std::numeric_limits<Weight>::max();
-    }
-    return a + b;
-}
-
-Weight safe_mul(Weight a, Weight b) {
-    if (a == 0 || b == 0) {
-        return 0;
-    }
-    if (std::numeric_limits<Weight>::max() / a < b) {
-        return std::numeric_limits<Weight>::max();
-    }
-    return a * b;
-}
-
-Weight ceil_div(Weight a, Weight b) {
-    return (a / b) + (a % b != 0 ? 1 : 0);
-}
 
 void add_pairwise_amo(const GroupedLeqConstraint& constraint, CnfFormula& cnf) {
     if (!constraint.emit_amo) {
@@ -85,690 +40,495 @@ void add_pairwise_amo(const GroupedLeqConstraint& constraint, CnfFormula& cnf) {
     }
 }
 
-bool normalize_clause(Clause& clause) {
-    std::sort(clause.begin(), clause.end());
-    clause.erase(std::unique(clause.begin(), clause.end()), clause.end());
-    for (std::size_t i = 1; i < clause.size(); ++i) {
-        if (clause[i - 1] == -clause[i]) {
-            return false;
-        }
-    }
-    return !clause.empty();
-}
-
-void add_implication_clause(CnfFormula& cnf, const std::vector<int>& antecedent_lits, int out_lit) {
-    Clause clause;
-    clause.reserve(antecedent_lits.size() + (out_lit != 0 ? 1 : 0));
-    for (int lit : antecedent_lits) {
-        if (lit != 0) {
-            clause.push_back(-lit);
-        }
-    }
-    if (out_lit != 0) {
-        clause.push_back(out_lit);
-    }
-    if (normalize_clause(clause)) {
-        cnf.add_clause(std::move(clause));
-    }
-}
-
-Weight clip_upper_value(Weight value, Weight upper_cap) {
-    if (upper_cap == 0) {
-        return value;
-    }
-    return std::min(value, upper_cap);
-}
-
-std::vector<Weight> distinct_sorted(std::vector<Weight> values) {
-    values.erase(std::remove(values.begin(), values.end(), 0), values.end());
-    std::sort(values.begin(), values.end());
-    values.erase(std::unique(values.begin(), values.end()), values.end());
-    return values;
-}
-
-std::vector<GroupData> preprocess_groups(const GroupedLeqConstraint& constraint, CnfFormula& cnf) {
-    std::unordered_map<int, Weight> weight_by_lit;
-    weight_by_lit.reserve(constraint.terms.size());
+std::unordered_map<int, Weight> make_weight_map(const GroupedLeqConstraint& constraint) {
+    std::unordered_map<int, Weight> out;
+    out.reserve(constraint.terms.size());
     for (const auto& term : constraint.terms) {
-        weight_by_lit.emplace(term.lit, term.weight);
+        out.emplace(term.lit, term.weight);
     }
+    return out;
+}
 
-    std::vector<GroupData> groups;
+std::vector<std::vector<int>> preprocess_groups(const GroupedLeqConstraint& constraint,
+                                                const std::unordered_map<int, Weight>& weight_by_lit,
+                                                CnfFormula& cnf) {
+    std::vector<std::vector<int>> groups;
     groups.reserve(constraint.groups.size());
-    for (const auto& group_lits : constraint.groups) {
-        GroupData group;
-        for (int lit : group_lits) {
-            const Weight weight = weight_by_lit.at(lit);
-            if (weight > constraint.bound) {
+    for (const auto& group : constraint.groups) {
+        std::vector<int> filtered;
+        filtered.reserve(group.size());
+        for (int lit : group) {
+            const auto it = weight_by_lit.find(lit);
+            if (it == weight_by_lit.end()) {
+                throw std::invalid_argument("structuredpb: literal missing weight in gmto preprocess");
+            }
+            if (it->second > constraint.bound) {
                 cnf.add_clause({-lit});
                 continue;
             }
-            group.terms.push_back(GroupTerm{lit, weight});
+            filtered.push_back(lit);
         }
-        if (!group.terms.empty()) {
-            groups.push_back(std::move(group));
+        if (!filtered.empty()) {
+            groups.push_back(std::move(filtered));
         }
     }
     return groups;
 }
 
-Weight total_group_capacity(const std::vector<GroupData>& groups) {
+Weight grouped_capacity(const std::vector<std::vector<int>>& groups,
+                        const std::unordered_map<int, Weight>& weight_by_lit) {
     Weight total = 0;
     for (const auto& group : groups) {
         Weight best = 0;
-        for (const auto& term : group.terms) {
-            best = std::max(best, term.weight);
+        for (int lit : group) {
+            const auto it = weight_by_lit.find(lit);
+            if (it == weight_by_lit.end()) {
+                throw std::invalid_argument("structuredpb: missing literal in grouped_capacity");
+            }
+            best = std::max(best, it->second);
         }
-        total = safe_sum(total, best);
+        if (std::numeric_limits<Weight>::max() - total < best) {
+            return std::numeric_limits<Weight>::max();
+        }
+        total += best;
     }
     return total;
 }
 
-int max_input_var(const GroupedLeqConstraint& constraint) {
-    int top = 0;
+std::vector<int> weight_digits(Weight value, const std::vector<int>& base) {
+    const std::size_t beta = base.size();
+    std::vector<int> digits(beta + 1, 0);
+    Weight q = value;
+    for (std::size_t h = 0; h < beta; ++h) {
+        const Weight lambda = static_cast<Weight>(base[h]);
+        digits[h] = static_cast<int>(q % lambda);
+        q /= lambda;
+    }
+    digits[beta] = static_cast<int>(q);
+    return digits;
+}
+
+std::vector<int> select_base_greedy(const GroupedLeqConstraint& constraint) {
+    std::vector<int> base;
+    if (constraint.bound <= 1) {
+        return base;
+    }
+
+    std::vector<Weight> reduced;
+    reduced.reserve(constraint.terms.size());
     for (const auto& term : constraint.terms) {
-        top = std::max(top, std::abs(term.lit));
-    }
-    return top;
-}
-
-std::vector<Weight> decompose_number(Weight value, const std::vector<Weight>& moduli) {
-    std::vector<Weight> digits;
-    digits.reserve(moduli.size() + 1);
-    Weight current = value;
-    for (Weight modulus : moduli) {
-        digits.push_back(current % modulus);
-        current /= modulus;
-    }
-    digits.push_back(current);
-    return digits;
-}
-
-std::vector<Weight> combine_reachable_sums(const std::vector<Weight>& left,
-                                           const std::vector<Weight>& right,
-                                           Weight strict_bound) {
-    std::vector<Weight> out;
-    out.reserve(left.size() * right.size());
-    for (Weight a : left) {
-        for (Weight b : right) {
-            out.push_back(std::min(strict_bound, safe_sum(a, b)));
-        }
-    }
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
-    return out;
-}
-
-std::vector<std::vector<Weight>> digit_domains_from_reachable(const std::vector<Weight>& reachable_sums,
-                                                              const std::vector<Weight>& moduli,
-                                                              Weight upper_cap) {
-    std::vector<std::vector<Weight>> digits(moduli.size() + 1);
-    for (Weight sum : reachable_sums) {
-        if (sum == 0) {
-            continue;
-        }
-        auto decomp = decompose_number(sum, moduli);
-        for (std::size_t level = 0; level < decomp.size(); ++level) {
-            Weight value = decomp[level];
-            if (level + 1 == decomp.size()) {
-                value = clip_upper_value(value, upper_cap);
-            }
-            if (value > 0) {
-                digits[level].push_back(value);
-            }
-        }
-    }
-    for (auto& digit : digits) {
-        digit = distinct_sorted(std::move(digit));
-    }
-    return digits;
-}
-
-int digit_lit(const DigitVector& digit, Weight value) {
-    if (value == 0) {
-        throw std::invalid_argument("structuredpb: digit value 0 does not correspond to a literal");
-    }
-    const auto it = std::lower_bound(digit.values.begin(), digit.values.end(), value);
-    if (it == digit.values.end() || *it != value) {
-        throw std::out_of_range("structuredpb: digit value missing in GMTO node");
-    }
-    return digit.lits[static_cast<std::size_t>(it - digit.values.begin())];
-}
-
-std::vector<Weight> factor_candidates(Weight value, Weight limit) {
-    std::vector<Weight> out;
-    if (value < 2) {
-        return out;
-    }
-    for (Weight d = 2; d * d <= value && d <= limit; ++d) {
-        if (value % d != 0) {
-            continue;
-        }
-        out.push_back(d);
-        const Weight other = value / d;
-        if (other <= limit) {
-            out.push_back(other);
-        }
-    }
-    if (value <= limit) {
-        out.push_back(value);
-    }
-    return distinct_sorted(std::move(out));
-}
-
-std::vector<Weight> build_divisibility_sequence(const std::vector<Weight>& weights,
-                                                Weight strict_bound,
-                                                Weight candidate_limit_cap) {
-    if (strict_bound <= 4) {
-        return {2};
+        reduced.push_back(term.weight);
     }
 
-    std::vector<Weight> residuals = weights;
-    std::vector<Weight> moduli;
     Weight product = 1;
-    const std::size_t max_levels = 8;
+    while (product <= constraint.bound) {
+        Weight max_coeff = 0;
+        for (Weight q : reduced) {
+            max_coeff = std::max(max_coeff, q);
+        }
 
-    while (product < strict_bound && moduli.size() < max_levels) {
-        const Weight remaining = ceil_div(strict_bound, product);
-        const Weight candidate_limit = std::max<Weight>(2, std::min<Weight>(remaining, candidate_limit_cap));
-
-        Weight best = 2;
-        long double best_score = -1e300L;
-        for (Weight candidate = 2; candidate <= candidate_limit; ++candidate) {
-            std::vector<Weight> remainders;
-            std::vector<Weight> quotients;
-            remainders.reserve(residuals.size());
-            quotients.reserve(residuals.size());
-            std::size_t divisible = 0;
-            for (Weight weight : residuals) {
-                if (weight == 0) {
-                    continue;
+        int best_lambda = 0;
+        std::size_t best_count = 0;
+        if (max_coeff >= 2) {
+            for (Weight candidate = 2; candidate <= max_coeff; ++candidate) {
+                std::size_t divisible = 0;
+                for (Weight q : reduced) {
+                    if (q % candidate == 0) {
+                        ++divisible;
+                    }
                 }
-                const Weight rem = weight % candidate;
-                const Weight quo = weight / candidate;
-                if (rem == 0) {
-                    ++divisible;
-                } else {
-                    remainders.push_back(rem);
+                if (divisible > best_count || (divisible == best_count && static_cast<int>(candidate) > best_lambda)) {
+                    best_count = divisible;
+                    best_lambda = static_cast<int>(candidate);
                 }
-                if (quo > 0) {
-                    quotients.push_back(quo);
-                }
-            }
-            remainders = distinct_sorted(std::move(remainders));
-            quotients = distinct_sorted(std::move(quotients));
-            const long double divisibility =
-                residuals.empty() ? 0.0L : static_cast<long double>(divisible) / static_cast<long double>(residuals.size());
-            const long double digit_penalty = static_cast<long double>(remainders.size());
-            const long double upper_penalty = static_cast<long double>(quotients.size());
-            const long double scale_bonus = std::log(static_cast<long double>(candidate) + 1.0L) / std::log(2.0L);
-            const long double score = (divisibility * 1000.0L) - (digit_penalty * 10.0L) - upper_penalty + scale_bonus;
-            if (score > best_score || (score == best_score && candidate > best)) {
-                best_score = score;
-                best = candidate;
             }
         }
 
-        moduli.push_back(best);
-        product = safe_mul(product, best);
-        for (Weight& weight : residuals) {
-            weight /= best;
+        if (best_lambda <= 1) {
+            best_lambda = 2;
         }
+        base.push_back(best_lambda);
 
-        bool all_zero = true;
-        for (Weight weight : residuals) {
-            if (weight != 0) {
-                all_zero = false;
-                break;
-            }
-        }
-        if (all_zero && product >= strict_bound) {
+        const Weight lambda_w = static_cast<Weight>(best_lambda);
+        if (product > std::numeric_limits<Weight>::max() / lambda_w) {
             break;
         }
+        product *= lambda_w;
+
+        for (Weight& q : reduced) {
+            q /= lambda_w;
+        }
     }
 
-    if (moduli.empty()) {
-        moduli.push_back(2);
-    }
-    return moduli;
+    return base;
 }
 
-std::vector<Weight> build_equal_sequence(Weight strict_bound, std::size_t levels) {
-    if (strict_bound <= 4) {
-        return {2};
-    }
-    if (levels == 0) {
-        levels = 1;
-    }
-    const long double exponent = 1.0L / static_cast<long double>(levels + 1);
-    Weight base = static_cast<Weight>(std::ceil(std::pow(static_cast<long double>(strict_bound), exponent)));
-    base = std::max<Weight>(2, base);
-    std::vector<Weight> moduli(levels, base);
-    Weight product = 1;
-    for (Weight modulus : moduli) {
-        product = safe_mul(product, modulus);
-    }
-    while (product < strict_bound) {
-        moduli.back() += 1;
-        product = safe_mul(product / std::max<Weight>(2, moduli.back() - 1), moduli.back());
-    }
-    return moduli;
+int make_true_var(CnfFormula& cnf, VariableManager& vm) {
+    const int lit = vm.new_var();
+    cnf.add_clause({lit});
+    return lit;
 }
 
-void append_candidate(std::vector<std::vector<Weight>>& candidates, std::vector<Weight> candidate) {
-    if (candidate.empty()) {
+int get_lit(const DigitList& list, int idx) {
+    auto it = list.lit_by_index.find(idx);
+    if (it == list.lit_by_index.end()) {
+        return 0;
+    }
+    return it->second;
+}
+
+void ensure_sorted_unique(DigitList& list) {
+    std::sort(list.indices.begin(), list.indices.end());
+    list.indices.erase(std::unique(list.indices.begin(), list.indices.end()), list.indices.end());
+}
+
+Node* make_leaf(std::vector<std::unique_ptr<Node>>& storage,
+                const std::vector<int>& group,
+                const std::unordered_map<int, Weight>& weight_by_lit,
+                const std::vector<int>& base,
+                CnfFormula& cnf,
+                VariableManager& vm,
+                int true_lit) {
+    const std::size_t beta = base.size();
+    auto node = std::make_unique<Node>();
+    node->leaf = true;
+    node->digits.resize(beta + 1);
+    for (std::size_t h = 0; h <= beta; ++h) {
+        node->digits[h].indices.push_back(0);
+        node->digits[h].lit_by_index.emplace(0, true_lit);
+    }
+
+    std::vector<std::vector<int>> group_digits;
+    group_digits.reserve(group.size());
+    for (int lit : group) {
+        const auto it = weight_by_lit.find(lit);
+        if (it == weight_by_lit.end()) {
+            throw std::invalid_argument("structuredpb: literal missing weight in gmto");
+        }
+        group_digits.push_back(weight_digits(it->second, base));
+    }
+
+    for (std::size_t h = 0; h <= beta; ++h) {
+        int max_digit = 0;
+        for (const auto& dvec : group_digits) {
+            max_digit = std::max(max_digit, dvec[h]);
+        }
+        for (int sigma = 1; sigma <= max_digit; ++sigma) {
+            std::vector<int> lits;
+            lits.reserve(group.size());
+            for (std::size_t gi = 0; gi < group.size(); ++gi) {
+                if (group_digits[gi][h] >= sigma) {
+                    lits.push_back(group[gi]);
+                }
+            }
+            if (lits.empty()) {
+                continue;
+            }
+            int out_lit = 0;
+            if (lits.size() == 1) {
+                out_lit = lits[0];
+            } else {
+                out_lit = vm.new_var();
+                for (int src : lits) {
+                    cnf.add_clause({-src, out_lit});
+                }
+            }
+            node->digits[h].indices.push_back(sigma);
+            node->digits[h].lit_by_index.emplace(sigma, out_lit);
+        }
+        ensure_sorted_unique(node->digits[h]);
+    }
+
+    storage.push_back(std::move(node));
+    return storage.back().get();
+}
+
+Node* make_parent(std::vector<std::unique_ptr<Node>>& storage,
+                  Node* left,
+                  Node* right,
+                  const std::vector<int>& base,
+                  CnfFormula& cnf,
+                  VariableManager& vm,
+                  int true_lit) {
+    const std::size_t beta = base.size();
+    auto node = std::make_unique<Node>();
+    node->left = left;
+    node->right = right;
+    node->digits.resize(beta + 1);
+    node->carries.assign(beta, 0);
+
+    for (std::size_t h = 0; h <= beta; ++h) {
+        node->digits[h].indices.push_back(0);
+        node->digits[h].lit_by_index.emplace(0, true_lit);
+    }
+
+    for (std::size_t h = 0; h < beta; ++h) {
+        const int lambda = base[h];
+        const bool has_carry_in = (h > 0 && node->carries[h - 1] != 0);
+
+        bool need_carry = false;
+        for (int i : left->digits[h].indices) {
+            for (int j : right->digits[h].indices) {
+                if (i + j >= lambda || (has_carry_in && i + j + 1 >= lambda)) {
+                    need_carry = true;
+                    break;
+                }
+            }
+            if (need_carry) {
+                break;
+            }
+        }
+        if (need_carry) {
+            node->carries[h] = vm.new_var();
+        }
+
+        std::unordered_set<int> needed;
+        needed.insert(0);
+        for (int i : left->digits[h].indices) {
+            for (int j : right->digits[h].indices) {
+                const int s = i + j;
+                if (s < lambda) {
+                    needed.insert(s);
+                }
+                if (s > lambda) {
+                    needed.insert(s % lambda);
+                }
+                if (has_carry_in) {
+                    const int s1 = s + 1;
+                    if (s1 < lambda) {
+                        needed.insert(s1);
+                    }
+                    if (s1 > lambda) {
+                        needed.insert(s1 % lambda);
+                    }
+                }
+            }
+        }
+
+        int max_idx = 0;
+        for (int idx : needed) {
+            max_idx = std::max(max_idx, idx);
+        }
+        max_idx = std::min(max_idx, lambda - 1);
+        for (int idx = 1; idx <= max_idx; ++idx) {
+            if (idx == 0) {
+                continue;
+            }
+            const int lit = vm.new_var();
+            node->digits[h].indices.push_back(idx);
+            node->digits[h].lit_by_index.emplace(idx, lit);
+        }
+        ensure_sorted_unique(node->digits[h]);
+    }
+
+    {
+        std::unordered_set<int> needed;
+        needed.insert(0);
+        const bool has_carry_in = (beta > 0 && node->carries[beta - 1] != 0);
+        for (int i : left->digits[beta].indices) {
+            for (int j : right->digits[beta].indices) {
+                needed.insert(i + j);
+                if (has_carry_in) {
+                    needed.insert(i + j + 1);
+                }
+            }
+        }
+        int max_idx = 0;
+        for (int idx : needed) {
+            max_idx = std::max(max_idx, idx);
+        }
+        for (int idx = 1; idx <= max_idx; ++idx) {
+            if (idx == 0) {
+                continue;
+            }
+            const int lit = vm.new_var();
+            node->digits[beta].indices.push_back(idx);
+            node->digits[beta].lit_by_index.emplace(idx, lit);
+        }
+        ensure_sorted_unique(node->digits[beta]);
+    }
+
+    for (std::size_t h = 0; h < beta; ++h) {
+        const int lambda = base[h];
+        const int carry = node->carries[h];
+        const bool has_carry_in = (h > 0 && node->carries[h - 1] != 0);
+        const int carry_in = has_carry_in ? node->carries[h - 1] : 0;
+
+        for (int i : left->digits[h].indices) {
+            const int li = get_lit(left->digits[h], i);
+            for (int j : right->digits[h].indices) {
+                const int rj = get_lit(right->digits[h], j);
+                const int s = i + j;
+
+                if (s < lambda) {
+                    const int out = get_lit(node->digits[h], s);
+                    if (out != 0) {
+                        Clause cl{-li, -rj, out};
+                        if (carry != 0) {
+                            cl.push_back(carry);
+                        }
+                        cnf.add_clause(std::move(cl));
+                    }
+                }
+
+                if (s >= lambda && carry != 0) {
+                    cnf.add_clause({-li, -rj, carry});
+                }
+
+                if (s > lambda) {
+                    const int out = get_lit(node->digits[h], s % lambda);
+                    if (out != 0) {
+                        cnf.add_clause({-li, -rj, out});
+                    }
+                }
+
+                if (!has_carry_in) {
+                    continue;
+                }
+
+                const int s1 = s + 1;
+                if (s1 < lambda) {
+                    const int out = get_lit(node->digits[h], s1);
+                    if (out != 0) {
+                        Clause cl{-carry_in, -li, -rj, out};
+                        if (carry != 0) {
+                            cl.push_back(carry);
+                        }
+                        cnf.add_clause(std::move(cl));
+                    }
+                }
+
+                if (s1 >= lambda && carry != 0) {
+                    cnf.add_clause({-carry_in, -li, -rj, carry});
+                }
+
+                if (s1 > lambda) {
+                    const int out = get_lit(node->digits[h], s1 % lambda);
+                    if (out != 0) {
+                        cnf.add_clause({-carry_in, -li, -rj, out});
+                    }
+                }
+            }
+        }
+    }
+
+    {
+        const bool has_carry_in = (beta > 0 && node->carries[beta - 1] != 0);
+        const int carry_in = has_carry_in ? node->carries[beta - 1] : 0;
+
+        for (int i : left->digits[beta].indices) {
+            const int li = get_lit(left->digits[beta], i);
+            for (int j : right->digits[beta].indices) {
+                const int rj = get_lit(right->digits[beta], j);
+                const int s = i + j;
+
+                const int out = get_lit(node->digits[beta], s);
+                if (out != 0) {
+                    cnf.add_clause({-li, -rj, out});
+                }
+
+                if (has_carry_in) {
+                    const int out1 = get_lit(node->digits[beta], s + 1);
+                    if (out1 != 0) {
+                        cnf.add_clause({-carry_in, -li, -rj, out1});
+                    }
+                }
+            }
+        }
+    }
+
+    storage.push_back(std::move(node));
+    return storage.back().get();
+}
+
+Node* build_balanced_tree(std::vector<Node*> leaves,
+                          std::vector<std::unique_ptr<Node>>& storage,
+                          const std::vector<int>& base,
+                          CnfFormula& cnf,
+                          VariableManager& vm,
+                          int true_lit) {
+    if (leaves.empty()) {
+        return nullptr;
+    }
+    while (leaves.size() > 1) {
+        std::vector<Node*> next;
+        next.reserve((leaves.size() + 1) / 2);
+        for (std::size_t i = 0; i < leaves.size(); i += 2) {
+            if (i + 1 == leaves.size()) {
+                next.push_back(leaves[i]);
+            } else {
+                next.push_back(make_parent(storage, leaves[i], leaves[i + 1], base, cnf, vm, true_lit));
+            }
+        }
+        leaves = std::move(next);
+    }
+    return leaves.front();
+}
+
+void add_comparator(Node* root,
+                    const std::vector<int>& base,
+                    Weight bound,
+                    CnfFormula& cnf) {
+    if (root == nullptr) {
         return;
     }
-    if (std::find(candidates.begin(), candidates.end(), candidate) == candidates.end()) {
-        candidates.push_back(std::move(candidate));
-    }
-}
 
-std::vector<Weight> next_modulus_candidates(const std::vector<Weight>& residuals, Weight remaining) {
-    const Weight limit = std::max<Weight>(2, std::min<Weight>(remaining, 4096));
-    std::vector<Weight> candidates;
-    for (Weight v = 2; v <= std::min<Weight>(32, limit); ++v) {
-        candidates.push_back(v);
+    if (bound == std::numeric_limits<Weight>::max()) {
+        return;
     }
 
-    Weight gcd_all = 0;
-    for (Weight weight : residuals) {
-        if (weight <= 1) {
-            continue;
-        }
-        gcd_all = (gcd_all == 0) ? weight : std::gcd(gcd_all, weight);
-    }
-    if (gcd_all > 1) {
-        auto gcd_factors = factor_candidates(gcd_all, limit);
-        candidates.insert(candidates.end(), gcd_factors.begin(), gcd_factors.end());
-    }
+    const Weight strict_k = bound + static_cast<Weight>(1);
+    const auto kdigits = weight_digits(strict_k, base);
+    const std::size_t beta = base.size();
 
-    std::vector<std::pair<std::size_t, Weight>> heavy;
-    for (Weight weight : residuals) {
-        if (weight > 1) {
-            heavy.push_back({static_cast<std::size_t>(weight), weight});
-        }
-    }
-    std::sort(heavy.begin(), heavy.end(), std::greater<>());
-    for (std::size_t i = 0; i < std::min<std::size_t>(heavy.size(), 6); ++i) {
-        auto factors = factor_candidates(heavy[i].second, limit);
-        candidates.insert(candidates.end(), factors.begin(), factors.end());
-    }
-
-    for (std::size_t levels = 1; levels <= 6; ++levels) {
-        const long double exponent = 1.0L / static_cast<long double>(levels + 1);
-        Weight root = static_cast<Weight>(std::llround(std::pow(static_cast<long double>(remaining), exponent)));
-        root = std::max<Weight>(2, std::min<Weight>(root, limit));
-        candidates.push_back(root);
-        if (root + 1 <= limit) {
-            candidates.push_back(root + 1);
-        }
-    }
-
-    return distinct_sorted(std::move(candidates));
-}
-
-BeamState advance_state(const BeamState& state, Weight modulus) {
-    BeamState next = state;
-    next.moduli.push_back(modulus);
-    next.product = safe_mul(next.product, modulus);
-    next.residuals.clear();
-    next.residuals.reserve(state.residuals.size());
-
-    std::vector<Weight> remainders;
-    std::vector<Weight> quotients;
-    remainders.reserve(state.residuals.size());
-    quotients.reserve(state.residuals.size());
-    std::size_t divisible = 0;
-    for (Weight weight : state.residuals) {
-        if (weight == 0) {
-            next.residuals.push_back(0);
-            continue;
-        }
-        const Weight rem = weight % modulus;
-        const Weight quo = weight / modulus;
-        next.residuals.push_back(quo);
-        if (rem == 0) {
-            ++divisible;
-        } else {
-            remainders.push_back(rem);
-        }
-        if (quo > 0) {
-            quotients.push_back(quo);
-        }
-    }
-
-    remainders = distinct_sorted(std::move(remainders));
-    quotients = distinct_sorted(std::move(quotients));
-    const long double divisibility =
-        state.residuals.empty() ? 0.0L : static_cast<long double>(divisible) / static_cast<long double>(state.residuals.size());
-    next.score += (divisibility * 1000.0L)
-        - (static_cast<long double>(remainders.size()) * 12.0L)
-        - (static_cast<long double>(quotients.size()) * 3.0L)
-        + (std::log(static_cast<long double>(modulus) + 1.0L) / std::log(2.0L));
-    return next;
-}
-
-EstimateNode estimate_tree(const std::vector<GroupData>& groups,
-                           std::size_t begin,
-                           std::size_t end,
-                           const std::vector<Weight>& moduli,
-                           Weight strict_bound,
-                           Weight upper_cap) {
-    EstimateNode node;
-    if (end - begin == 1) {
-        node.reachable_sums.push_back(0);
-        for (const auto& term : groups[begin].terms) {
-            node.reachable_sums.push_back(std::min(strict_bound, term.weight));
-        }
-        std::sort(node.reachable_sums.begin(), node.reachable_sums.end());
-        node.reachable_sums.erase(std::unique(node.reachable_sums.begin(), node.reachable_sums.end()), node.reachable_sums.end());
-        node.digits = digit_domains_from_reachable(node.reachable_sums, moduli, upper_cap);
-        for (std::size_t level = 0; level < node.digits.size(); ++level) {
-            for (Weight value : node.digits[level]) {
-                std::size_t count = 0;
-                for (const auto& term : groups[begin].terms) {
-                    Weight digit = decompose_number(term.weight, moduli)[level];
-                    if (level + 1 == node.digits.size()) {
-                        digit = clip_upper_value(digit, upper_cap);
-                    }
-                    if (digit == value) {
-                        ++count;
-                    }
-                }
-                if (count > 1) {
-                    node.vars += 1;
-                    node.clauses += count;
-                }
-            }
-        }
-        return node;
-    }
-
-    const std::size_t mid = begin + (end - begin) / 2;
-    EstimateNode left = estimate_tree(groups, begin, mid, moduli, strict_bound, upper_cap);
-    EstimateNode right = estimate_tree(groups, mid, end, moduli, strict_bound, upper_cap);
-    node.clauses = left.clauses + right.clauses;
-    node.vars = left.vars + right.vars;
-    node.reachable_sums = combine_reachable_sums(left.reachable_sums, right.reachable_sums, strict_bound);
-    node.digits = digit_domains_from_reachable(node.reachable_sums, moduli, upper_cap);
-    for (const auto& digit : node.digits) {
-        node.vars += digit.size();
-    }
-    for (Weight left_sum : left.reachable_sums) {
-        for (Weight right_sum : right.reachable_sums) {
-            if (left_sum == 0 && right_sum == 0) {
+    auto add_for_digit = [&](std::size_t h, int threshold, const std::vector<int>& prefix, bool include_threshold) {
+        for (int idx : root->digits[h].indices) {
+            const bool beyond = include_threshold ? (idx >= threshold) : (idx > threshold);
+            if (!beyond) {
                 continue;
             }
-            const Weight out_sum = std::min(strict_bound, safe_sum(left_sum, right_sum));
-            const auto out_digits = decompose_number(out_sum, moduli);
-            for (Weight digit : out_digits) {
-                if (digit > 0) {
-                    node.clauses += 1;
-                }
-            }
-        }
-    }
-    return node;
-}
-
-std::vector<Weight> select_moduli(const std::vector<GroupData>& groups, Weight strict_bound) {
-    std::vector<Weight> weights;
-    for (const auto& group : groups) {
-        for (const auto& term : group.terms) {
-            weights.push_back(term.weight);
-        }
-    }
-
-    std::vector<std::vector<Weight>> candidates;
-    for (std::size_t levels = 1; levels <= 6; ++levels) {
-        append_candidate(candidates, build_equal_sequence(strict_bound, levels));
-    }
-    append_candidate(candidates, build_divisibility_sequence(weights, strict_bound, 64));
-    append_candidate(candidates, build_divisibility_sequence(weights, strict_bound, 256));
-    append_candidate(candidates, build_divisibility_sequence(weights, strict_bound, 1024));
-
-    std::vector<BeamState> frontier = {BeamState{{}, weights, 1, 0.0L}};
-    const std::size_t beam_width = 8;
-    const std::size_t max_levels = 8;
-    for (std::size_t depth = 0; depth < max_levels; ++depth) {
-        std::vector<BeamState> expanded;
-        for (const BeamState& state : frontier) {
-            if (state.product >= strict_bound) {
-                append_candidate(candidates, state.moduli);
-                expanded.push_back(state);
+            const int lit = get_lit(root->digits[h], idx);
+            if (lit == 0) {
                 continue;
             }
-            const Weight remaining = ceil_div(strict_bound, state.product);
-            const auto modulus_candidates = next_modulus_candidates(state.residuals, remaining);
-            for (Weight modulus : modulus_candidates) {
-                expanded.push_back(advance_state(state, modulus));
+            Clause cl;
+            cl.reserve(prefix.size() + 1);
+            for (int guard : prefix) {
+                cl.push_back(guard);
             }
+            cl.push_back(-lit);
+            cnf.add_clause(std::move(cl));
         }
-        std::sort(expanded.begin(), expanded.end(), [](const BeamState& a, const BeamState& b) {
-            if (a.score != b.score) {
-                return a.score > b.score;
-            }
-            return a.moduli.size() < b.moduli.size();
-        });
-        frontier.clear();
-        for (const BeamState& state : expanded) {
-            if (frontier.size() >= beam_width) {
-                break;
-            }
-            frontier.push_back(state);
-            if (state.product >= strict_bound) {
-                append_candidate(candidates, state.moduli);
-            }
-        }
-    }
-    for (const BeamState& state : frontier) {
-        append_candidate(candidates, state.moduli);
+    };
+
+    if (beta == 0) {
+        add_for_digit(0, kdigits[0], {}, true);
+        return;
     }
 
-    std::vector<Weight> best = candidates.front();
-    std::size_t best_clauses = std::numeric_limits<std::size_t>::max();
-    std::size_t best_vars = std::numeric_limits<std::size_t>::max();
-    for (const auto& candidate : candidates) {
-        const Weight candidate_upper_cap = decompose_number(strict_bound, candidate).back() + 1;
-        const EstimateNode est = estimate_tree(groups, 0, groups.size(), candidate, strict_bound, candidate_upper_cap);
-        if (est.clauses < best_clauses ||
-            (est.clauses == best_clauses && est.vars < best_vars) ||
-            (est.clauses == best_clauses && est.vars == best_vars && candidate.size() < best.size())) {
-            best = candidate;
-            best_clauses = est.clauses;
-            best_vars = est.vars;
+    std::vector<int> prefix;
+    add_for_digit(beta, kdigits[beta], prefix, false);
+
+    if (kdigits[beta] > 0) {
+        const int eq_lit = get_lit(root->digits[beta], kdigits[beta]);
+        if (eq_lit == 0) {
+            return;
         }
+        prefix.push_back(-eq_lit);
     }
-    return best;
-}
 
-Weight group_sort_key(const GroupData& group) {
-    Weight best = 0;
-    for (const auto& term : group.terms) {
-        best = std::max(best, term.weight);
-    }
-    return best;
-}
-
-std::vector<GroupData> reorder_groups(std::vector<GroupData> groups, const std::vector<Weight>& moduli) {
-    std::sort(groups.begin(), groups.end(), [&](const GroupData& a, const GroupData& b) {
-        const auto da = decompose_number(group_sort_key(a), moduli);
-        const auto db = decompose_number(group_sort_key(b), moduli);
-        for (std::size_t rev = 0; rev < da.size(); ++rev) {
-            const std::size_t idx = da.size() - 1 - rev;
-            if (da[idx] != db[idx]) {
-                return da[idx] > db[idx];
+    for (std::size_t h = beta; h-- > 1;) {
+        add_for_digit(h, kdigits[h], prefix, false);
+        if (kdigits[h] > 0) {
+            const int eq_lit = get_lit(root->digits[h], kdigits[h]);
+            if (eq_lit == 0) {
+                return;
             }
-        }
-        return group_sort_key(a) > group_sort_key(b);
-    });
-    return groups;
-}
-
-std::unique_ptr<Node> build_tree(const std::vector<GroupData>& groups,
-                                 std::size_t begin,
-                                 std::size_t end,
-                                 const std::vector<Weight>& moduli,
-                                 Weight strict_bound,
-                                 Weight upper_cap,
-                                 VariableManager& varmgr,
-                                 CnfFormula& cnf) {
-    auto node = std::make_unique<Node>();
-
-    if (end - begin == 1) {
-        node->reachable_sums.push_back(0);
-        for (const auto& term : groups[begin].terms) {
-            node->reachable_sums.push_back(std::min(strict_bound, term.weight));
-            node->total = std::max(node->total, term.weight);
-        }
-        std::sort(node->reachable_sums.begin(), node->reachable_sums.end());
-        node->reachable_sums.erase(std::unique(node->reachable_sums.begin(), node->reachable_sums.end()), node->reachable_sums.end());
-        std::vector<std::vector<Weight>> domains = digit_domains_from_reachable(node->reachable_sums, moduli, upper_cap);
-        node->digits.resize(domains.size());
-        for (std::size_t level = 0; level < domains.size(); ++level) {
-            node->digits[level].values = domains[level];
-            node->digits[level].lits.reserve(domains[level].size());
-            for (Weight value : domains[level]) {
-                std::vector<int> linked;
-                for (const auto& term : groups[begin].terms) {
-                    Weight digit = decompose_number(term.weight, moduli)[level];
-                    if (level + 1 == domains.size()) {
-                        digit = clip_upper_value(digit, upper_cap);
-                    }
-                    if (digit == value) {
-                        linked.push_back(term.lit);
-                    }
-                }
-                if (linked.empty()) {
-                    throw std::logic_error("structuredpb: missing leaf digit source in GMTO");
-                }
-                if (linked.size() == 1) {
-                    node->digits[level].lits.push_back(linked.front());
-                } else {
-                    const int aux = varmgr.new_var();
-                    node->digits[level].lits.push_back(aux);
-                    for (int lit : linked) {
-                        cnf.add_clause({-lit, aux});
-                    }
-                }
-            }
-        }
-        return node;
-    }
-
-    const std::size_t mid = begin + (end - begin) / 2;
-    node->left = build_tree(groups, begin, mid, moduli, strict_bound, upper_cap, varmgr, cnf);
-    node->right = build_tree(groups, mid, end, moduli, strict_bound, upper_cap, varmgr, cnf);
-    node->total = safe_sum(node->left->total, node->right->total);
-    node->reachable_sums = combine_reachable_sums(node->left->reachable_sums, node->right->reachable_sums, strict_bound);
-
-    std::vector<std::vector<Weight>> domains = digit_domains_from_reachable(node->reachable_sums, moduli, upper_cap);
-    node->digits.resize(domains.size());
-    for (std::size_t level = 0; level < domains.size(); ++level) {
-        node->digits[level].values = std::move(domains[level]);
-        node->digits[level].lits.reserve(node->digits[level].values.size());
-        for (std::size_t i = 0; i < node->digits[level].values.size(); ++i) {
-            node->digits[level].lits.push_back(varmgr.new_var());
+            prefix.push_back(-eq_lit);
         }
     }
 
-    for (Weight left_sum : node->left->reachable_sums) {
-        const auto left_digits = decompose_number(left_sum, moduli);
-        for (Weight right_sum : node->right->reachable_sums) {
-            if (left_sum == 0 && right_sum == 0) {
-                continue;
-            }
-            const auto right_digits = decompose_number(right_sum, moduli);
-            const Weight out_sum = std::min(strict_bound, safe_sum(left_sum, right_sum));
-            const auto out_digits = decompose_number(out_sum, moduli);
-
-            std::vector<int> antecedent;
-            antecedent.reserve(node->digits.size() * 2);
-            for (std::size_t level = 0; level < node->digits.size(); ++level) {
-                if (left_digits[level] > 0) {
-                    Weight value = left_digits[level];
-                    if (level + 1 == node->digits.size()) {
-                        value = clip_upper_value(value, upper_cap);
-                    }
-                    antecedent.push_back(digit_lit(node->left->digits[level], value));
-                }
-                if (right_digits[level] > 0) {
-                    Weight value = right_digits[level];
-                    if (level + 1 == node->digits.size()) {
-                        value = clip_upper_value(value, upper_cap);
-                    }
-                    antecedent.push_back(digit_lit(node->right->digits[level], value));
-                }
-            }
-
-            for (std::size_t level = 0; level < node->digits.size(); ++level) {
-                Weight value = out_digits[level];
-                if (level + 1 == node->digits.size()) {
-                    value = clip_upper_value(value, upper_cap);
-                }
-                if (value > 0) {
-                    add_implication_clause(cnf, antecedent, digit_lit(node->digits[level], value));
-                }
-            }
-        }
-    }
-
-    return node;
-}
-
-void add_comparator(const Node& root,
-                    Weight strict_bound,
-                    const std::vector<Weight>& moduli,
-                    CnfFormula& cnf) {
-    const auto bound_digits = decompose_number(strict_bound, moduli);
-    const std::size_t levels = root.digits.size();
-
-    for (std::size_t rev = 0; rev < levels; ++rev) {
-        const std::size_t level = levels - 1 - rev;
-        const Weight bound_value = bound_digits[level];
-        const bool is_lowest = level == 0;
-
-        std::vector<int> prefix;
-        bool reachable_prefix = true;
-        for (std::size_t higher = levels - 1; higher > level; --higher) {
-            const Weight higher_bound = bound_digits[higher];
-            if (higher_bound == 0) {
-                continue;
-            }
-            const auto it = std::lower_bound(root.digits[higher].values.begin(),
-                                             root.digits[higher].values.end(),
-                                             higher_bound);
-            if (it == root.digits[higher].values.end() || *it != higher_bound) {
-                reachable_prefix = false;
-                break;
-            }
-            prefix.push_back(-root.digits[higher].lits[static_cast<std::size_t>(it - root.digits[higher].values.begin())]);
-        }
-        if (!reachable_prefix) {
-            continue;
-        }
-
-        if (is_lowest && bound_value == 0) {
-            if (normalize_clause(prefix)) {
-                cnf.add_clause(std::move(prefix));
-            }
-            continue;
-        }
-
-        for (std::size_t i = 0; i < root.digits[level].values.size(); ++i) {
-            const Weight value = root.digits[level].values[i];
-            const bool forbid = is_lowest ? (value >= bound_value) : (value > bound_value);
-            if (!forbid) {
-                continue;
-            }
-            Clause clause = prefix;
-            clause.push_back(-root.digits[level].lits[i]);
-            if (normalize_clause(clause)) {
-                cnf.add_clause(std::move(clause));
-            }
-        }
-    }
+    add_for_digit(0, kdigits[0], prefix, true);
 }
 
 }  // namespace
@@ -778,45 +538,45 @@ EncodeResult GmtoEncoder::encode(const GroupedLeqConstraint& constraint,
     constraint.validate();
 
     EncodeResult result;
-    add_pairwise_amo(constraint, result.cnf);
-    std::vector<GroupData> groups = preprocess_groups(constraint, result.cnf);
+    VariableManager vm(options.top_id);
+    result.cnf.num_vars = options.top_id;
 
-    const int input_top = max_input_var(constraint);
-    const int base_top = std::max(input_top, options.top_id);
-    result.cnf.num_vars = base_top;
+    add_pairwise_amo(constraint, result.cnf);
+    const auto weight_by_lit = make_weight_map(constraint);
+    const auto groups = preprocess_groups(constraint, weight_by_lit, result.cnf);
 
     if (groups.empty()) {
-        result.cnf.num_vars = std::max(result.cnf.num_vars, base_top);
-        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - base_top);
+        result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
+        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
         result.stats.clauses = result.cnf.clauses.size();
         return result;
     }
 
-    const Weight total = total_group_capacity(groups);
-    if (total <= constraint.bound) {
-        result.cnf.num_vars = std::max(result.cnf.num_vars, base_top);
-        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - base_top);
-        result.stats.clauses = result.cnf.clauses.size();
-        return result;
-    }
-    if (constraint.bound == std::numeric_limits<Weight>::max()) {
-        result.cnf.num_vars = std::max(result.cnf.num_vars, base_top);
-        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - base_top);
+    if (grouped_capacity(groups, weight_by_lit) <= constraint.bound) {
+        result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
+        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
         result.stats.clauses = result.cnf.clauses.size();
         return result;
     }
 
-    const Weight strict_bound = constraint.bound + 1;
-    const auto moduli = select_moduli(groups, strict_bound);
-    const Weight upper_cap = decompose_number(strict_bound, moduli).back() + 1;
-    groups = reorder_groups(std::move(groups), moduli);
+    const auto base = select_base_greedy(constraint);
 
-    VariableManager varmgr(base_top);
-    std::unique_ptr<Node> root = build_tree(groups, 0, groups.size(), moduli, strict_bound, upper_cap, varmgr, result.cnf);
-    add_comparator(*root, strict_bound, moduli, result.cnf);
+    const int true_lit = make_true_var(result.cnf, vm);
 
-    result.cnf.num_vars = std::max(result.cnf.num_vars, varmgr.max_var());
-    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - base_top);
+    std::vector<std::unique_ptr<Node>> storage;
+    storage.reserve(groups.size() * 2 + 1);
+
+    std::vector<Node*> leaves;
+    leaves.reserve(groups.size());
+    for (const auto& group : groups) {
+        leaves.push_back(make_leaf(storage, group, weight_by_lit, base, result.cnf, vm, true_lit));
+    }
+
+    Node* root = build_balanced_tree(leaves, storage, base, result.cnf, vm, true_lit);
+    add_comparator(root, base, constraint.bound, result.cnf);
+
+    result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
+    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
     result.stats.clauses = result.cnf.clauses.size();
     return result;
 }
