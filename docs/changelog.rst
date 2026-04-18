@@ -1,6 +1,15 @@
 Changelog
 =========
 
+Version 1.2.0
+-------------
+
+Highlights
+~~~~~~~~~~
+
+* Reimplementesd GMTO to follow original PB(AMO) paper closely.
+* Safer and more efficient PB(AMO) default auto-routing.
+
 Version 1.1.1
 -------------
 

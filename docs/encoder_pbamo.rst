@@ -4,13 +4,6 @@ PB(AMO) API
 Hermax includes an internal structured pseudo-Boolean layer for constraints
 that can exploit known ``AMO``/``EO`` structure [1]_.
 
-Implementation note:
-
-* Current ``gmto`` encoder is GMTO-inspired, but its construction is
-  not an implementation from [1]_. It uses a different heuristic to choose a
-  mixed-radix base and reorders groups before building the balanced tree;
-  it does not follow the paper's greedy selection over the original group order.
-
 This is useful for constraints of the form:
 
 .. code-block:: text
