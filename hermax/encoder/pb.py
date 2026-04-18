@@ -4,6 +4,7 @@ from hermax.internal.kmerge import (
     DEFAULT_KMERGE_CONFIG,
     KMergeConfig,
     PBConstraintStub,
+    get_shared_support_ratio,
     partition_constraints,
     resolve_cluster_config,
 )
@@ -87,6 +88,54 @@ class PBCompiler:
         current_top = int(top_id)
         effective_kmerge_config = kmerge_config or DEFAULT_KMERGE_CONFIG
 
+        def _get_overlaps(pb_lits, cur_amo, cur_eo):
+            pb_lit_set = set(pb_lits)
+            pb_amo = []
+            pb_eo = []
+            for group in cur_amo:
+                overlap = [lit for lit in group if lit in pb_lit_set]
+                if len(overlap) > 1:
+                    pb_amo.append(overlap)
+            for group in cur_eo:
+                overlap = [lit for lit in group if lit in pb_lit_set]
+                if len(overlap) == len(group) and len(overlap) > 1:
+                    pb_eo.append(overlap)
+                elif len(overlap) > 1:
+                    pb_amo.append(overlap)
+            return pb_amo, pb_eo
+
+        def _amo_cap(weights: List[int], lits: List[int], groups: List[List[int]]) -> int:
+            if not groups:
+                return 0
+            by_lit = {int(lit): int(weight) for lit, weight in zip(lits, weights)}
+            cap = 0
+            for group in groups:
+                best = 0
+                for lit in group:
+                    best = max(best, by_lit.get(int(lit), 0))
+                cap += best
+            return int(cap)
+
+        def _compile_item_with_overlap(item: PBItem, cur_top: int):
+            pb_amo, pb_eo = _get_overlaps(item.lits, amo_groups, eo_groups)
+            if item.cmp_op == "<=":
+                return PBAMOEnc.auto_leq(
+                    lits=item.lits,
+                    weights=item.get_weights(),
+                    bound=item.bound,
+                    amo_groups=pb_amo,
+                    eo_groups=pb_eo,
+                    top_id=cur_top,
+                )
+            return PBAMOEnc.auto_eq(
+                lits=item.lits,
+                weights=item.get_weights(),
+                bound=item.bound,
+                amo_groups=pb_amo,
+                eo_groups=pb_eo,
+                top_id=cur_top,
+            )
+
         # 1. K-MERGE Optimization
         # Group by connected components (shared variables)
         merge_candidates = [
@@ -124,7 +173,7 @@ class PBCompiler:
                             if comp_items
                             else 0.0
                         )
-                        if mean_term_len < float(getattr(effective_kmerge_config, "min_mean_term_len_for_merge", 0.0)):
+                        if mean_term_len < float(effective_kmerge_config.min_mean_term_len_for_merge):
                             continue
                         union_set = sorted(set().union(*(c.lits for c in comp_items)))
                         core = tuple(union_set)
@@ -141,11 +190,51 @@ class PBCompiler:
                         for part in partitions:
                             if len(part) < 2:
                                 continue
-                            
-                            for p_idx in part:
-                                kmerge_indices.add(comp[p_idx])
-                            
+
+                            # Conservative default: only attempt k-merge when
+                            # overlap structure indicates a likely net win.
+                            safe_min_cluster_size = int(effective_kmerge_config.safe_min_cluster_size_for_merge)
+                            safe_min_shared_support = float(effective_kmerge_config.safe_min_shared_support_ratio)
+                            safe_max_union_ratio = float(effective_kmerge_config.safe_max_union_ratio)
+                            safe_max_amo_easy_fraction = float(effective_kmerge_config.safe_max_amo_easy_fraction)
+                            safe_min_mean_term_len_floor = float(effective_kmerge_config.safe_min_mean_term_len_floor)
+
+                            cluster_items = [comp_items[p_idx] for p_idx in part]
+                            cluster_size = len(cluster_items)
+                            if cluster_size < safe_min_cluster_size:
+                                continue
+                            cluster_mean_term_len = sum(len(it.lits) for it in cluster_items) / float(cluster_size)
+                            if cluster_mean_term_len < max(
+                                float(effective_kmerge_config.min_mean_term_len_for_merge),
+                                safe_min_mean_term_len_floor,
+                            ):
+                                continue
+                            cluster_mean_size = sum(len(it.lits) for it in cluster_items) / float(cluster_size)
+                            union_ratio = float(len(core)) / max(cluster_mean_size, 1.0)
+                            if union_ratio > safe_max_union_ratio:
+                                continue
+
                             cluster_stubs = [stubs[p_idx] for p_idx in part]
+                            shared_support_ratio = get_shared_support_ratio(
+                                cluster_stubs,
+                                config=effective_kmerge_config,
+                            )
+                            if shared_support_ratio < safe_min_shared_support:
+                                continue
+
+                            amo_easy_count = 0
+                            for item in cluster_items:
+                                pb_amo, pb_eo = _get_overlaps(item.lits, amo_groups, eo_groups)
+                                pb_groups = pb_amo + pb_eo
+                                if not pb_groups:
+                                    continue
+                                weights = item.get_weights()
+                                cap = _amo_cap(weights, item.lits, pb_groups)
+                                if cap <= int(item.bound):
+                                    amo_easy_count += 1
+                            if (amo_easy_count / float(cluster_size)) > safe_max_amo_easy_fraction:
+                                continue
+
                             cluster_config = resolve_cluster_config(cluster_stubs, effective_kmerge_config)
                             cluster_cnf = PBAMOEnc.multi_leq(
                                 lits=core,
@@ -153,8 +242,32 @@ class PBCompiler:
                                 top_id=current_top,
                                 kmerge_config=cluster_config,
                             )
-                            results.append(cluster_cnf)
-                            current_top = max(current_top, cluster_cnf.nv)
+
+                            # Safety acceptance: keep merged cluster only if it
+                            # is at least as compact as baseline per-item route.
+                            baseline_cnfs = []
+                            baseline_top = int(current_top)
+                            for item in cluster_items:
+                                sub = _compile_item_with_overlap(item, baseline_top)
+                                baseline_cnfs.append(sub)
+                                baseline_top = max(baseline_top, int(sub.nv))
+                            baseline_clauses = sum(len(cnf.clauses) for cnf in baseline_cnfs)
+                            merged_clauses = len(cluster_cnf.clauses)
+                            baseline_max_nv = max([int(current_top)] + [int(cnf.nv) for cnf in baseline_cnfs])
+                            merged_max_nv = int(cluster_cnf.nv)
+
+                            use_merged = (merged_clauses < baseline_clauses) or (
+                                merged_clauses == baseline_clauses and merged_max_nv <= baseline_max_nv
+                            )
+
+                            for p_idx in part:
+                                kmerge_indices.add(comp[p_idx])
+                            if use_merged:
+                                results.append(cluster_cnf)
+                                current_top = max(current_top, int(cluster_cnf.nv))
+                            else:
+                                results.extend(baseline_cnfs)
+                                current_top = max(current_top, baseline_max_nv)
 
         # 2. Sorting for remaining constraints
         remaining = [(idx, item) for idx, item in enumerate(items) if idx not in kmerge_indices]
@@ -174,22 +287,6 @@ class PBCompiler:
         sorted_remaining = sorted(remaining, key=lambda x: (_priority(x[1]), x[0]))
 
         # 3. Compilation
-        # Helper to find overlaps with local structure
-        def _get_overlaps(pb_lits, cur_amo, cur_eo):
-            pb_lit_set = set(pb_lits)
-            pb_amo = []
-            pb_eo = []
-            for group in cur_amo:
-                overlap = [lit for lit in group if lit in pb_lit_set]
-                if len(overlap) > 1:
-                    pb_amo.append(overlap)
-            for group in cur_eo:
-                overlap = [lit for lit in group if lit in pb_lit_set]
-                if len(overlap) == len(group) and len(overlap) > 1:
-                    pb_eo.append(overlap)
-                elif len(overlap) > 1:
-                    pb_amo.append(overlap)
-            return pb_amo, pb_eo
 
         for idx, item in sorted_remaining:
             lits = item.lits

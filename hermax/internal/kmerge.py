@@ -41,6 +41,11 @@ class KMergeConfig:
     selector_delay_penalty: float = 0.5
     selector_delta_variance_min: float = 0.35
     selector_delta_variance_weight: float = 0.10
+    safe_min_cluster_size_for_merge: int = 3
+    safe_min_shared_support_ratio: float = 0.60
+    safe_max_union_ratio: float = 1.25
+    safe_max_amo_easy_fraction: float = 0.25
+    safe_min_mean_term_len_floor: float = 20.0
 
     def with_updates(self, **kwargs) -> "KMergeConfig":
         return replace(self, **kwargs)
