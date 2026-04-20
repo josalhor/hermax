@@ -735,6 +735,10 @@ class CMakeBuildURMaxSAT(CMakeBuild):
             return self.build_evalmaxsat_latest(ext)
         if ext.name == "hermax.core.evalmaxsat_incr":
             return self.build_evalmaxsat_incr(ext)
+        if ext.name == "hermax.core.maxhs_py":
+            return self.build_maxhs(ext)
+        if ext.name == "hermax.core.imaxhs_py":
+            return self.build_imaxhs(ext)
         return super().build_extension(ext)
 
     def _ranlib(self, lib_path, env=None):
@@ -804,6 +808,120 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         res2 = subprocess.run(["/usr/bin/ar", "-t", lib_path], capture_output=True, text=True)
         if res2.returncode == 0 and "/" in res2.stdout.splitlines():
             raise RuntimeError(f"{lib_path} still contains '/' after rebuild")
+
+    def _resolve_cplex_paths(self) -> tuple[str, str]:
+        inc = (os.environ.get("CPLEX_INC_DIR", "") or "").strip()
+        lib = (os.environ.get("CPLEX_LIB_DIR", "") or "").strip()
+        if _looks_like_cplex_include(inc) and _looks_like_cplex_lib(lib):
+            return os.path.abspath(inc), os.path.abspath(lib)
+        det_inc, det_lib, reason = _detect_cplex_paths()
+        if det_inc and det_lib:
+            os.environ.setdefault("CPLEX_INC_DIR", det_inc)
+            os.environ.setdefault("CPLEX_LIB_DIR", det_lib)
+            return det_inc, det_lib
+        raise RuntimeError(
+            "CPLEX headers/libraries not detected "
+            f"({reason}). Set CPLEX_INC_DIR and CPLEX_LIB_DIR."
+        )
+
+    def build_imaxhs(self, ext):
+        abi_tag = sysconfig.get_config_var("SOABI") or f"cp{sys.version_info.major}{sys.version_info.minor}"
+        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
+        build_temp_path = os.path.join(self.build_temp, f"build_{ext.name}_{abi_tag}")
+        os.makedirs(build_temp_path, exist_ok=True)
+
+        env = self.get_base_env()
+        env = self._darwin_make_env(env)
+        cplex_inc_dir, cplex_lib_dir = self._resolve_cplex_paths()
+
+        imaxhs_src_dir = os.path.abspath("incremental-maxhs/src")
+        self._make(["clean"], cwd=imaxhs_src_dir, env=env)
+        self._make(
+            [
+                "ipamir",
+                "-j",
+                f"CPLEXINCDIR={cplex_inc_dir}",
+                f"CPLEXLIBDIR={cplex_lib_dir}",
+                "CXXFLAGS=-fPIC",
+            ],
+            cwd=imaxhs_src_dir,
+            env=env,
+        )
+
+        imaxhs_a = os.path.join(imaxhs_src_dir, "build", "release", "lib", "libipamirmaxhs.a")
+        if not os.path.exists(imaxhs_a):
+            raise RuntimeError(f"libipamirmaxhs.a not produced at {imaxhs_a}")
+        self._ranlib(imaxhs_a, env=env)
+        self._macos_rebuild_archive_if_gnu(imaxhs_a)
+
+        cmake_args = [
+            f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
+            f"-DPython3_EXECUTABLE={sys.executable}",
+            f"-DPython3_ROOT_DIR={sys.exec_prefix}",
+            f"-Dpybind11_DIR={pybind11.get_cmake_dir()}",
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+            "-DPYBIND11_FINDPYTHON=ON",
+            "-DCMAKE_BUILD_TYPE=Release",
+            f"-DIMAXHS_LIB_ABS={imaxhs_a}",
+            f"-DCPLEX_LIB_DIR={cplex_lib_dir}",
+            "-DCMAKE_C_STANDARD=11",
+            "-DCMAKE_CXX_STANDARD=17",
+            f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS', '')}",
+            f"-DCMAKE_C_FLAGS={env.get('CFLAGS', '')}",
+        ]
+        subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
+        subprocess.check_call(["cmake", "--build", ".", "--config", "Release"], cwd=build_temp_path, env=env)
+        self.verify_abi(ext, extdir, abi_tag)
+
+    def build_maxhs(self, ext):
+        abi_tag = sysconfig.get_config_var("SOABI") or f"cp{sys.version_info.major}{sys.version_info.minor}"
+        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
+        build_temp_path = os.path.join(self.build_temp, f"build_{ext.name}_{abi_tag}")
+        os.makedirs(build_temp_path, exist_ok=True)
+
+        env = self.get_base_env()
+        env = self._darwin_make_env(env)
+        cplex_inc_dir, cplex_lib_dir = self._resolve_cplex_paths()
+
+        maxhs_src_dir = os.path.abspath("maxhs")
+        self._make(["clean"], cwd=maxhs_src_dir, env=env)
+        self._make(
+            [
+                "lr",
+                "-j",
+                f"CPLEXINCDIR={cplex_inc_dir}",
+                f"CPLEXLIBDIR={cplex_lib_dir}",
+                "CXXFLAGS=-fPIC",
+            ],
+            cwd=maxhs_src_dir,
+            env=env,
+        )
+
+        maxhs_a = os.path.join(maxhs_src_dir, "build", "release", "lib", "libmaxhs.a")
+        if not os.path.exists(maxhs_a):
+            raise RuntimeError(f"libmaxhs.a not produced at {maxhs_a}")
+        self._ranlib(maxhs_a, env=env)
+        self._macos_rebuild_archive_if_gnu(maxhs_a)
+
+        cmake_args = [
+            f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
+            f"-DPython3_EXECUTABLE={sys.executable}",
+            f"-DPython3_ROOT_DIR={sys.exec_prefix}",
+            f"-Dpybind11_DIR={pybind11.get_cmake_dir()}",
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+            "-DPYBIND11_FINDPYTHON=ON",
+            "-DCMAKE_BUILD_TYPE=Release",
+            f"-DMAXHS_LIB_ABS={maxhs_a}",
+            f"-DCPLEX_LIB_DIR={cplex_lib_dir}",
+            f"-DMAXHS_INC_DIR={maxhs_src_dir}",
+            "-DCMAKE_C_STANDARD=11",
+            "-DCMAKE_CXX_STANDARD=17",
+            f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS', '')}",
+            f"-DCMAKE_C_FLAGS={env.get('CFLAGS', '')}",
+        ]
+        subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
+        subprocess.check_call(["cmake", "--build", ".", "--config", "Release"], cwd=build_temp_path, env=env)
+        self.verify_abi(ext, extdir, abi_tag)
 
 
     def build_evalmaxsat_incr(self, ext):
@@ -1138,6 +1256,158 @@ def _parse_csv_env(name: str) -> set[str]:
     return {tok.strip() for tok in raw.split(",") if tok.strip()}
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = (os.environ.get(name, "") or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _optional_solver_mode(name: str, *, legacy_skip_env: str | None = None) -> str:
+    # Mode values:
+    # - "auto": include only if CPLEX include+lib are detected.
+    # - "on": force include; fail fast if CPLEX isn't detected.
+    # - "off": never include.
+    raw = (os.environ.get(f"HERMAX_ENABLE_{name.upper()}", "auto") or "").strip().lower()
+    if raw in {"", "auto"}:
+        mode = "auto"
+    elif raw in {"1", "true", "yes", "on", "force", "required"}:
+        mode = "on"
+    elif raw in {"0", "false", "no", "off", "disable", "disabled"}:
+        mode = "off"
+    else:
+        print(f"Unknown HERMAX_ENABLE_{name.upper()}={raw!r}; using auto.")
+        mode = "auto"
+
+    if legacy_skip_env and _env_flag(legacy_skip_env, default=False):
+        mode = "off"
+    return mode
+
+
+def _candidate_cplex_include_dirs() -> list[str]:
+    out: list[str] = []
+    for key in ("CPLEX_INC_DIR",):
+        value = (os.environ.get(key, "") or "").strip()
+        if value:
+            out.append(value)
+
+    for home_key in ("CPLEX_HOME", "CPLEX_ROOT", "CPLEX_STUDIO_DIR", "CPLEX_STUDIO_DIR2211", "CPLEX_STUDIO_DIR2212"):
+        root = (os.environ.get(home_key, "") or "").strip()
+        if not root:
+            continue
+        out.append(os.path.join(root, "include"))
+        out.append(os.path.join(root, "cplex", "include"))
+
+    home = os.path.expanduser("~")
+    out.extend(
+        [
+            os.path.join(home, "opt", "cplex", "cplex", "include"),
+            os.path.join(home, "Applications", "IBM", "ILOG", "CPLEX_Studio2212", "cplex", "include"),
+            "/opt/ibm/ILOG/CPLEX_Studio2212/cplex/include",
+            "/opt/ibm/ILOG/CPLEX_Studio2211/cplex/include",
+        ]
+    )
+
+    dedup: list[str] = []
+    seen: set[str] = set()
+    for p in out:
+        n = os.path.abspath(os.path.expanduser(p))
+        if n not in seen:
+            seen.add(n)
+            dedup.append(n)
+    return dedup
+
+
+def _candidate_cplex_lib_dirs() -> list[str]:
+    out: list[str] = []
+    for key in ("CPLEX_LIB_DIR",):
+        value = (os.environ.get(key, "") or "").strip()
+        if value:
+            out.append(value)
+
+    for home_key in ("CPLEX_HOME", "CPLEX_ROOT", "CPLEX_STUDIO_DIR", "CPLEX_STUDIO_DIR2211", "CPLEX_STUDIO_DIR2212"):
+        root = (os.environ.get(home_key, "") or "").strip()
+        if not root:
+            continue
+        out.extend(
+            [
+                os.path.join(root, "lib", "x86-64_linux", "static_pic"),
+                os.path.join(root, "lib", "x86-64_linux"),
+                os.path.join(root, "lib", "x86-64_osx", "static_pic"),
+                os.path.join(root, "lib", "x86-64_osx"),
+                os.path.join(root, "bin", "x86-64_linux"),
+                os.path.join(root, "bin", "x64_win64"),
+                os.path.join(root, "cplex", "lib", "x86-64_linux", "static_pic"),
+                os.path.join(root, "cplex", "lib", "x86-64_linux"),
+                os.path.join(root, "cplex", "lib", "x86-64_osx", "static_pic"),
+                os.path.join(root, "cplex", "lib", "x86-64_osx"),
+                os.path.join(root, "cplex", "bin", "x86-64_linux"),
+                os.path.join(root, "cplex", "bin", "x64_win64"),
+            ]
+        )
+
+    home = os.path.expanduser("~")
+    out.extend(
+        [
+            os.path.join(home, "opt", "cplex", "cplex", "lib", "x86-64_linux", "static_pic"),
+            os.path.join(home, "opt", "cplex", "cplex", "lib", "x86-64_linux"),
+            os.path.join(home, "opt", "cplex", "cplex", "bin", "x86-64_linux"),
+            os.path.join(home, "opt", "cplex", "cplex", "lib", "x86-64_osx", "static_pic"),
+            os.path.join(home, "opt", "cplex", "cplex", "lib", "x86-64_osx"),
+            os.path.join(home, "Applications", "IBM", "ILOG", "CPLEX_Studio2212", "cplex", "lib", "x86-64_osx", "static_pic"),
+            "/opt/ibm/ILOG/CPLEX_Studio2212/cplex/lib/x86-64_linux/static_pic",
+            "/opt/ibm/ILOG/CPLEX_Studio2212/cplex/lib/x86-64_linux",
+            "/opt/ibm/ILOG/CPLEX_Studio2212/cplex/bin/x86-64_linux",
+        ]
+    )
+
+    dedup: list[str] = []
+    seen: set[str] = set()
+    for p in out:
+        n = os.path.abspath(os.path.expanduser(p))
+        if n not in seen:
+            seen.add(n)
+            dedup.append(n)
+    return dedup
+
+
+def _looks_like_cplex_include(path: str) -> bool:
+    if not path or not os.path.isdir(path):
+        return False
+    return (
+        os.path.exists(os.path.join(path, "ilcplex", "cplex.h"))
+        or os.path.exists(os.path.join(path, "ilcplex", "cplexx.h"))
+    )
+
+
+def _looks_like_cplex_lib(path: str) -> bool:
+    if not path or not os.path.isdir(path):
+        return False
+    patterns = (
+        "libcplex*.so",
+        "libcplex*.dylib",
+        "libcplex*.a",
+        "cplex*.lib",
+        "cplex*.dll",
+    )
+    for pat in patterns:
+        if glob.glob(os.path.join(path, pat)):
+            return True
+    return False
+
+
+def _detect_cplex_paths() -> tuple[str | None, str | None, str]:
+    inc = next((p for p in _candidate_cplex_include_dirs() if _looks_like_cplex_include(p)), None)
+    lib = next((p for p in _candidate_cplex_lib_dirs() if _looks_like_cplex_lib(p)), None)
+    if inc and lib:
+        return inc, lib, "detected"
+    if not inc and not lib:
+        return None, None, "missing include and library"
+    if not inc:
+        return None, lib, "missing include"
+    return inc, None, "missing library"
+
+
 def _filter_solver_extensions(exts):
     include = _parse_csv_env("HERMAX_SOLVER_INCLUDE")
     if include and {tok.lower() for tok in include} <= {"none", "off", "null"}:
@@ -1153,6 +1423,40 @@ def _filter_solver_extensions(exts):
     return filtered
 
 
+_CPLEX_INC_DIR_DETECTED, _CPLEX_LIB_DIR_DETECTED, _CPLEX_DETECT_REASON = _detect_cplex_paths()
+if _CPLEX_INC_DIR_DETECTED:
+    os.environ.setdefault("CPLEX_INC_DIR", _CPLEX_INC_DIR_DETECTED)
+if _CPLEX_LIB_DIR_DETECTED:
+    os.environ.setdefault("CPLEX_LIB_DIR", _CPLEX_LIB_DIR_DETECTED)
+
+
+def _optional_cplex_solver_extensions() -> list[CMakeExtension]:
+    entries = [
+        ("maxhs", "SKIP_MAXHS", CMakeExtension("hermax.core.maxhs_py", sourcedir="maxhs-py")),
+        ("imaxhs", "SKIP_IMAXHS", CMakeExtension("hermax.core.imaxhs_py", sourcedir="imaxhs-py")),
+    ]
+    out: list[CMakeExtension] = []
+
+    for name, legacy_skip_env, ext in entries:
+        mode = _optional_solver_mode(name, legacy_skip_env=legacy_skip_env)
+        if mode == "off":
+            print(f"{ext.name}: disabled by environment.")
+            continue
+        if _CPLEX_INC_DIR_DETECTED and _CPLEX_LIB_DIR_DETECTED:
+            out.append(ext)
+            print(f"{ext.name}: enabled (CPLEX include={_CPLEX_INC_DIR_DETECTED}, lib={_CPLEX_LIB_DIR_DETECTED}).")
+            continue
+        msg = (
+            f"{ext.name}: CPLEX not fully detected ({_CPLEX_DETECT_REASON}); "
+            "set CPLEX_INC_DIR and CPLEX_LIB_DIR to enable."
+        )
+        if mode == "auto":
+            print(f"{msg} Skipping.")
+            continue
+        raise RuntimeError(f"{msg} HERMAX_ENABLE_{name.upper()} is forced on.")
+    return out
+
+
 SOLVER_EXTENSIONS = _filter_solver_extensions([
     CMakeExtension('hermax.core.openwbo', sourcedir='open-wbo'),
     CMakeExtension('hermax.core.openwbo_inc', sourcedir='open-wbo-inc'),
@@ -1166,6 +1470,7 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
     CMakeExtension('hermax.core.spb_maxsat_c_fps', sourcedir='spb-maxsat-c-fps-py'),
     CMakeExtension('hermax.core.nuwls_c_ibr', sourcedir='nuwls-c-ibr-py'),
     CMakeExtension('hermax.core.loandra', sourcedir='loandra-py'),
+    *_optional_cplex_solver_extensions(),
 ])
 
 

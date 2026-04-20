@@ -10,6 +10,7 @@ List of Classes
    hermax.non_incremental.RC2
    hermax.non_incremental.UWrMaxSATCompetition
    hermax.non_incremental.EvalMaxSAT
+   hermax.non_incremental.MaxHS
    hermax.non_incremental.CASHWMaxSAT
    hermax.non_incremental.CGSS
    hermax.non_incremental.CGSSPMRES
@@ -41,6 +42,8 @@ Backend mapping:
   ``hermax.core.uwrmaxsat_comp_py.UWrMaxSATCompReentrant`` [4]_.
 * :class:`hermax.non_incremental.EvalMaxSAT`:
   ``hermax.core.evalmaxsat_latest_py.EvalMaxSATLatestReentrant`` [5]_.
+* :class:`hermax.non_incremental.MaxHS`:
+  ``hermax.core.maxhs_wrapper_py.MaxHSSolver`` (optional CPLEX-backed MaxHS wrapper [9]_).
 * :class:`hermax.non_incremental.CASHWMaxSAT`:
   ``hermax.core.cashwmaxsat_py.CASHWMaxSATSolver`` [6]_.
 
@@ -89,6 +92,13 @@ API Details
    :special-members: __init__
 
 .. autoclass:: hermax.non_incremental.EvalMaxSAT
+   :members:
+   :inherited-members:
+   :undoc-members:
+   :show-inheritance:
+   :special-members: __init__
+
+.. autoclass:: hermax.non_incremental.MaxHS
    :members:
    :inherited-members:
    :undoc-members:
@@ -155,5 +165,4 @@ References
 .. [7] Hannes Ihalainen, Jeremias Berg, Matti Jarvisalo. *Refined Core Relaxation for Core-Guided MaxSAT Solving*. CP 2021.
 
 .. [8] Benjamin Andres, Benjamin Kaufmann, Oliver Matheis, Torsten Schaub. *Unsatisfiability-based Optimization in clasp*. ICLP 2012 Technical Communications.
-
-
+.. [9] Jessica Davies. *Solving MaxSAT by Decoupling Optimization and Satisfaction*. Doctoral dissertation, 2014.

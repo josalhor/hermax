@@ -14,7 +14,7 @@ import sys
 def _preload_gmp_runtime_deps() -> None:
     # Preload for auditwheel-style vendored GMP names.
     # Needed when native modules link to hashed sonames (e.g. libgmp-*.so).
-    suffixes = ("hermax.libs", "pymaxsat.libs")
+    suffixes = ("hermax.libs",)
     bases: list[Path] = []
 
     here = Path(__file__).resolve()
@@ -68,6 +68,8 @@ _EXPORTS = {
     "SPBMaxSATCFPSReentrant": (".spb_maxsat_c_fps_py", "SPBMaxSATCFPSReentrant"),
     "NuWLSCIBRSolver": (".nuwls_c_ibr_py", "NuWLSCIBRSolver"),
     "LoandraSolver": (".loandra_py", "LoandraSolver"),
+    "IMaxHSSolver": (".imaxhs_wrapper_py", "IMaxHSSolver"),
+    "MaxHSSolver": (".maxhs_wrapper_py", "MaxHSSolver"),
     "RC2Reentrant": (".rc2", "RC2Reentrant"),
     "CGSSSolver": (".cgss_py", "CGSSSolver"),
     "CGSSPMRESSolver": (".cgss_py", "CGSSPMRESSolver"),

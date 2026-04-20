@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 import importlib
+import importlib.util
 
 from pysat.formula import WCNF
 
@@ -19,20 +20,15 @@ class WMaxCDCLSolver(IPAMIRSolver):
 
     @classmethod
     def is_available(cls) -> bool:
-        try:
-            mod = importlib.import_module("hermax.core.wmaxcdcl")
-            return hasattr(mod, "WMaxCDCL")
-        except Exception:
-            return False
+        return importlib.util.find_spec("hermax.core.wmaxcdcl") is not None
 
     def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
         formula = normalize_wcnf_formula(formula)
         super().__init__(formula, *args, **kwargs)
-        try:
-            wmaxcdcl_native = importlib.import_module("hermax.core.wmaxcdcl")
-            self._backend_ctor = wmaxcdcl_native.WMaxCDCL
-        except Exception as exc:
-            raise RuntimeError("WMaxCDCL native module is not available in this build.") from exc
+        if not self.is_available():
+            raise RuntimeError("WMaxCDCL native module is not available in this build.")
+        wmaxcdcl_native = importlib.import_module("hermax.core.wmaxcdcl")
+        self._backend_ctor = wmaxcdcl_native.WMaxCDCL
         self.solver = self._backend_ctor()
 
         self._model: Optional[List[int]] = None
@@ -149,11 +145,10 @@ class WMaxCDCLSolver(IPAMIRSolver):
         assumptions: Optional[List[int]] = None,
         raise_on_abnormal: bool = False,
     ) -> bool:
-        assumps = None
         temp_hard_assumptions: List[int] = []
         if assumptions:
-            assumps = [int(l) for l in assumptions]
-            for lit in assumps:
+            for lit in assumptions:
+                lit = int(lit)
                 if lit == 0:
                     raise ValueError("Assumptions must be non-zero integers.")
                 v = abs(lit)
@@ -165,17 +160,9 @@ class WMaxCDCLSolver(IPAMIRSolver):
         for lit in temp_hard_assumptions:
             self.solver.addClause([int(lit)], None)
 
-        try:
-            # Native WMaxCDCL binding does not provide IPAMIR-compliant assumptions.
-            # We emulate them by rebuilding and adding temporary hard units above.
-            res = self.solver.solve(None)
-        except Exception:
-            self._status = SolveStatus.ERROR
-            self._model = None
-            self._last_cost = None
-            if raise_on_abnormal:
-                raise
-            return False
+        # Native WMaxCDCL binding does not provide IPAMIR-compliant assumptions.
+        # We emulate them by rebuilding and adding temporary hard units above.
+        res = self.solver.solve(None)
 
         if res:
             self._status = SolveStatus.OPTIMUM

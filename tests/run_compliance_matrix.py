@@ -91,6 +91,20 @@ CASES: list[SolverCase] = [
         ],
     ),
     SolverCase(
+        "IMaxHS",
+        [
+            "core/test_ipamir_solver.py::TestIMaxHSSolverTerminationCallback",
+            "core/test_ipamir_solver_hardcore.py::TestIMaxHSSolverTerminationCallback",
+        ],
+    ),
+    SolverCase(
+        "MaxHS",
+        [
+            "core/test_ipamir_solver.py::TestMaxHSSolverTerminationCallback",
+            "core/test_ipamir_solver_hardcore.py::TestMaxHSSolverTerminationCallback",
+        ],
+    ),
+    SolverCase(
         "RC2Reentrant",
         [
             "core/test_ipamir_solver.py::TestRC2ReentrantTerminationCallback",
@@ -202,6 +216,9 @@ STATUS_RE = re.compile(
 
 def canonical_test_id(test_id: str) -> str:
     s = test_id.strip().replace("\\", "/")
+    # Pytest -vv lines can append " <- <origin>" after parametrized node ids.
+    if " <- " in s:
+        s = s.split(" <- ", 1)[0]
     if s.startswith("./"):
         s = s[2:]
     if s.startswith("tests/"):

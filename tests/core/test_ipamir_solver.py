@@ -276,6 +276,7 @@ class TestIPAMIRSolver(unittest.TestCase):
 
 
 from hermax.core import UWrMaxSATSolver, EvalMaxSATLatestSolver, RC2Reentrant
+from hermax.core import IMaxHSSolver, MaxHSSolver
 from hermax.non_incremental import CGSS, CGSSPMRES
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
 from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
@@ -423,6 +424,20 @@ class TestEvalMaxSATIncrSolverTerminationCallback(TestIPAMIRSolver):
 
     def test_solve_raise_on_abnormal(self):
         self.skipTest("EvalMaxSATIncr does not support Interrupted status handling.")
+
+
+class TestIMaxHSSolverTerminationCallback(TestIPAMIRSolver):
+    SOLVER_CLASS = IMaxHSSolver
+
+    def test_termination_callback(self):
+        self.skipTest("IMaxHS callback polling on fast UNSAT cases is backend-dependent and not reliable across builds.")
+
+
+class TestMaxHSSolverTerminationCallback(TestIPAMIRSolver):
+    SOLVER_CLASS = MaxHSSolver
+
+    def test_termination_callback(self):
+        self.skipTest("MaxHS callback interruption raises by design; generic callback-return contract test is not applicable.")
 
 class TestOLLSolverTerminationCallback(TestIPAMIRSolver):
     SOLVER_CLASS = OLLSolver

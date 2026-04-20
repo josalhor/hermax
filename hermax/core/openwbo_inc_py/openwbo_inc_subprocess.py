@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 from typing import Dict, List, Optional, Tuple
 
 from pysat.formula import WCNF
@@ -23,13 +24,26 @@ class OpenWBOInc(IPAMIRSolver):
 
     @classmethod
     def is_available(cls) -> bool:
-        try:
-            mod_name, _, attr = _WORKER_SOLVER_CLASS.rpartition(".")
-            mod = importlib.import_module(mod_name)
-            backend_cls = getattr(mod, attr)
-            return bool(getattr(backend_cls, "is_available", lambda: True)())
-        except Exception:
+        if importlib.util.find_spec("hermax.core.openwbo_inc") is None:
             return False
+        mod_name, _, _ = _WORKER_SOLVER_CLASS.rpartition(".")
+        return importlib.util.find_spec(mod_name) is not None
+
+    @staticmethod
+    def _coerce_int(value: object) -> Optional[int]:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return int(value)
+        if isinstance(value, str):
+            s = value.strip()
+            if s.startswith(("+", "-")):
+                sign, digits = s[0], s[1:]
+                if digits.isdigit():
+                    return int(sign + digits)
+            elif s.isdigit():
+                return int(s)
+        return None
 
     def __init__(
         self,
@@ -191,14 +205,21 @@ class OpenWBOInc(IPAMIRSolver):
                 raise RuntimeError(f"{resp.get('error_type', 'WorkerError')}: {self._last_error}")
             return False
 
-        try:
-            self._status = SolveStatus(int(resp["status"]))
-        except Exception:
+        status_i = self._coerce_int(resp.get("status"))
+        if status_i not in {
+            int(SolveStatus.INTERRUPTED),
+            int(SolveStatus.INTERRUPTED_SAT),
+            int(SolveStatus.UNSAT),
+            int(SolveStatus.OPTIMUM),
+            int(SolveStatus.ERROR),
+            int(SolveStatus.UNKNOWN),
+        }:
             self._status = SolveStatus.ERROR
             self._last_error = "invalid worker status"
             if raise_on_abnormal:
                 raise RuntimeError(self._last_error)
             return False
+        self._status = SolveStatus(status_i)
 
         self._last_signature = str(resp.get("signature") or self._last_signature)
         if resp.get("model") is not None:

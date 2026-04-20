@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 from typing import Dict, List, Optional
 
 from pysat.formula import WCNF
@@ -19,20 +20,15 @@ class NuWLSCIBRSolver(IPAMIRSolver):
 
     @classmethod
     def is_available(cls) -> bool:
-        try:
-            mod = importlib.import_module("hermax.core.nuwls_c_ibr")
-            return hasattr(mod, "NuWLSCIBR")
-        except Exception:
-            return False
+        return importlib.util.find_spec("hermax.core.nuwls_c_ibr") is not None
 
     def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
         formula = normalize_wcnf_formula(formula)
         super().__init__(formula, *args, **kwargs)
-        try:
-            nuwls_native = importlib.import_module("hermax.core.nuwls_c_ibr")
-            self._backend_ctor = nuwls_native.NuWLSCIBR
-        except Exception as exc:
-            raise RuntimeError("NuWLS-c-IBR native module is not available in this build.") from exc
+        if not self.is_available():
+            raise RuntimeError("NuWLS-c-IBR native module is not available in this build.")
+        nuwls_native = importlib.import_module("hermax.core.nuwls_c_ibr")
+        self._backend_ctor = nuwls_native.NuWLSCIBR
         self.solver = self._backend_ctor()
 
         self._model: Optional[List[int]] = None
@@ -154,15 +150,7 @@ class NuWLSCIBRSolver(IPAMIRSolver):
         for lit in temp_hard_assumptions:
             self.solver.addClause([int(lit)], None)
 
-        try:
-            res = bool(self.solver.solve(None))
-        except Exception:
-            self._status = SolveStatus.ERROR
-            self._model = None
-            self._last_cost = None
-            if raise_on_abnormal:
-                raise
-            return False
+        res = bool(self.solver.solve(None))
 
         if res:
             self._status = SolveStatus.INTERRUPTED_SAT

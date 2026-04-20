@@ -1,4 +1,5 @@
 import importlib
+import importlib.util
 from typing import List, Optional
 
 from pysat.formula import WCNF
@@ -10,20 +11,15 @@ from hermax.core.utils import normalize_wcnf_formula
 class TTOpenWBOIncSolver(IPAMIRSolver):
     @classmethod
     def is_available(cls) -> bool:
-        try:
-            mod = importlib.import_module("hermax.core.tt_openwbo_inc")
-            return hasattr(mod, "TTOpenWBOInc")
-        except Exception:
-            return False
+        return importlib.util.find_spec("hermax.core.tt_openwbo_inc") is not None
 
     def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
         formula = normalize_wcnf_formula(formula)
         super().__init__(formula, *args, **kwargs)
-        try:
-            native = importlib.import_module("hermax.core.tt_openwbo_inc")
-            self.solver = native.TTOpenWBOInc()
-        except Exception as exc:
-            raise RuntimeError("TT-Open-WBO-Inc native module is not available in this build.") from exc
+        if not self.is_available():
+            raise RuntimeError("TT-Open-WBO-Inc native module is not available in this build.")
+        native = importlib.import_module("hermax.core.tt_openwbo_inc")
+        self.solver = native.TTOpenWBOInc()
         self._model: Optional[List[int]] = None
         self.num_vars = 0
 

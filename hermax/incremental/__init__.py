@@ -8,6 +8,7 @@ from hermax.core.uwrmaxsat_py import UWrMaxSATSolver
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
 from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestSolver
 from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrSolver
+from hermax.core.imaxhs_wrapper_py import IMaxHSSolver
 
 class UWrMaxSAT(UWrMaxSATSolver):
     """
@@ -52,6 +53,17 @@ class EvalMaxSATIncremental(EvalMaxSATIncrSolver):
     pass
 
 
+class IMaxHS(IMaxHSSolver):
+    """
+    iMaxHS: optional IPAMIR-style incremental solver backed by MaxHS+CPLEX.
+
+    Notes:
+        This backend is only available when Hermax is compiled with CPLEX
+        headers/libraries present.
+    """
+    pass
+
+
 # Compatible aliases for historical public names.
 UWrMaxSATComp = UWrMaxSATCompetition
 EvalMaxSATIncr = EvalMaxSATIncremental
@@ -61,6 +73,7 @@ __all__ = [
     "UWrMaxSATCompetition",
     "EvalMaxSAT",
     "EvalMaxSATIncremental",
+    "IMaxHS",
     # "UWrMaxSATComp",
     # "EvalMaxSATIncr",
 ]

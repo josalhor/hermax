@@ -13,6 +13,7 @@ from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
 from hermax.core.cgss_py import CGSSSolver, CGSSPMRESSolver
 from hermax.core.openwbo_py import OLLSolver, PartMSU3Solver, AutoOpenWBOSolver
 from hermax.core.wmaxcdcl_py import WMaxCDCLReentrant
+from hermax.core.maxhs_wrapper_py import MaxHSSolver
 
 class RC2(RC2Reentrant):
     """
@@ -36,6 +37,17 @@ class EvalMaxSAT(EvalMaxSATLatestReentrant):
     """
     EvalMaxSAT: Latest version of EvalMaxSAT, wrapped for 
     reentrant incremental use.
+    """
+    pass
+
+
+class MaxHS(MaxHSSolver):
+    """
+    MaxHS: optional re-encoding wrapper around the MaxHS backend.
+
+    Notes:
+        This backend is only available when Hermax is compiled with CPLEX
+        headers/libraries present.
     """
     pass
 
@@ -109,6 +121,7 @@ __all__ = [
     "RC2",
     # "UWrMaxSATCompetition",
     "EvalMaxSAT",
+    "MaxHS",
     "EvalMaxSATIncrSolver",
     "CASHWMaxSAT",
     # "CASHWMaxSATNoSCIP",
