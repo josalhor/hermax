@@ -97,7 +97,7 @@ Hermax documentation set:
 * Tobias Paxian, Armin Biere.
   *MaxSAT Fuzzing and Delta Debugging*. Journal of Artificial Intelligence
   Research, 85, 2026.
-
-
+* Andreas Niskanen, Jeremias Berg, Matti Järvisalo. *Enabling Incrementality in the Implicit Hitting Set Approach to MaxSAT Under Changing Weights*. CP 2021.
+* Jessica Davies. *Solving MaxSAT by Decoupling Optimization and Satisfaction*. Doctoral dissertation, 2014.
 
 
