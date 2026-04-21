@@ -2,7 +2,7 @@ from .uwrmaxsat_py import UWrMaxSATSolver
 from .uwrmaxsat_comp_py import UWrMaxSATCompSolver, UWrMaxSATCompReentrant
 from .cashwmaxsat_py import CASHWMaxSATSolver
 from .evalmaxsat_latest_py import EvalMaxSATLatestSolver, EvalMaxSATLatestReentrant
-from .evalmaxsat_incr_py import EvalMaxSATIncrSolver
+from .evalmaxsat_incr_py import EvalMaxSATIncrSolver, EvalMaxSATIncrReentrant
 from .imaxhs_wrapper_py import IMaxHSSolver
 from .maxhs_wrapper_py import MaxHSSolver
 # from .openwbo_py import OLLSolver, PartMSU3Solver, AutoOpenWBOSolver

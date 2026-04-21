@@ -78,6 +78,11 @@ class TestPBEagerLearning(unittest.TestCase):
             use_delay_cost=True,
             use_slack_tripwire=True,
             min_mean_term_len_for_merge=0.0,
+            safe_min_cluster_size_for_merge=2,
+            safe_min_shared_support_ratio=0.0,
+            safe_max_union_ratio=2.0,
+            safe_max_amo_easy_fraction=1.0,
+            safe_min_mean_term_len_floor=0.0,
         )
 
         with patch("hermax.encoder.pb.partition_constraints") as mock_partition, \
@@ -111,6 +116,11 @@ class TestPBEagerLearning(unittest.TestCase):
             selector_bitplane_min_weight=8,
             selector_non_power_two_ratio_min=0.5,
             min_mean_term_len_for_merge=0.0,
+            safe_min_cluster_size_for_merge=2,
+            safe_min_shared_support_ratio=0.0,
+            safe_max_union_ratio=2.0,
+            safe_max_amo_easy_fraction=1.0,
+            safe_min_mean_term_len_floor=0.0,
         )
 
         with patch("hermax.encoder.pb.partition_constraints") as mock_partition, \

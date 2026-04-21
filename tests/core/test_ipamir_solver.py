@@ -281,7 +281,7 @@ from hermax.non_incremental import CGSS, CGSSPMRES
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
 from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
 from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestSolver
-from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrSolver
+from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrSolver, EvalMaxSATIncrReentrant
 from hermax.core.openwbo_py import OLLSolver, PartMSU3Solver, AutoOpenWBOSolver
 from hermax.non_incremental.incomplete import SPBMaxSATCFPS, OpenWBOInc, TTOpenWBOInc, NuWLSCIBR, Loandra
 from hermax.core import WMaxCDCLSolver
@@ -424,6 +424,16 @@ class TestEvalMaxSATIncrSolverTerminationCallback(TestIPAMIRSolver):
 
     def test_solve_raise_on_abnormal(self):
         self.skipTest("EvalMaxSATIncr does not support Interrupted status handling.")
+
+
+class TestEvalMaxSATIncrReentrantTerminationCallback(TestIPAMIRSolver):
+    SOLVER_CLASS = EvalMaxSATIncrReentrant
+
+    def test_termination_callback(self):
+        self.skipTest("EvalMaxSATIncrReentrant does not support termination callbacks.")
+
+    def test_solve_raise_on_abnormal(self):
+        self.skipTest("EvalMaxSATIncrReentrant does not support Interrupted status handling.")
 
 
 class TestIMaxHSSolverTerminationCallback(TestIPAMIRSolver):

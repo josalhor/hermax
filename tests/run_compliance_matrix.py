@@ -91,6 +91,14 @@ CASES: list[SolverCase] = [
         ],
     ),
     SolverCase(
+        "EvalMaxSATIncrReentrant",
+        [
+            "core/test_ipamir_solver.py::TestEvalMaxSATIncrReentrantTerminationCallback",
+            "core/test_ipamir_solver_hardcore.py::TestEvalMaxSATIncrReentrantTerminationCallback",
+            "test_evalmaxsat_incr_reentrant.py",
+        ],
+    ),
+    SolverCase(
         "IMaxHS",
         [
             "core/test_ipamir_solver.py::TestIMaxHSSolverTerminationCallback",
@@ -440,7 +448,7 @@ def _collect_crash_diagnostics(case: SolverCase, log_dir: Path, safe: str) -> No
         )
     )
 
-    if case.name in {"EvalMaxSAT", "EvalMaxSATLatest", "EvalMaxSATIncr"}:
+    if case.name in {"EvalMaxSAT", "EvalMaxSATLatest", "EvalMaxSATIncr", "EvalMaxSATIncrReentrant"}:
         diag.append(
             _run_diag(
                 [

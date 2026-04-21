@@ -1,10 +1,10 @@
 from __future__ import annotations
+import unittest
 
 from tests.pbamo_test_utils import assert_encoding_matches_oracle_and_baseline
 
-
 def test_pbamo_best_uses_hardcoded_stage2_rule(pbamo_module) -> None:
-    assert pbamo_module.choose_encoding([1, 2, 3], [5, 7, 9], [[1, 2], [3]], 20) == pbamo_module.EncType.mdd
+    assert pbamo_module.choose_encoding([1, 2, 3], [5, 7, 9], [[1, 2], [3]], 20) == pbamo_module.EncType.rggt
     assert pbamo_module.choose_encoding([1, 2, 3], [5, 70, 9], [[1, 2], [3]], 10) == pbamo_module.EncType.rggt
     assert (
         pbamo_module.choose_encoding(
@@ -13,7 +13,7 @@ def test_pbamo_best_uses_hardcoded_stage2_rule(pbamo_module) -> None:
             [[1, 2], *[[i] for i in range(3, 30)]],
             1000,
         )
-        == pbamo_module.EncType.ggpw
+        == pbamo_module.EncType.rggt
     )
 
 

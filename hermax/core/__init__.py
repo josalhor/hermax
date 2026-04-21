@@ -62,6 +62,7 @@ _EXPORTS = {
     "EvalMaxSATLatestSolver": (".evalmaxsat_latest_py", "EvalMaxSATLatestSolver"),
     "EvalMaxSATLatestReentrant": (".evalmaxsat_latest_py", "EvalMaxSATLatestReentrant"),
     "EvalMaxSATIncrSolver": (".evalmaxsat_incr_py", "EvalMaxSATIncrSolver"),
+    "EvalMaxSATIncrReentrant": (".evalmaxsat_incr_py", "EvalMaxSATIncrReentrant"),
     "WMaxCDCLSolver": (".wmaxcdcl_py", "WMaxCDCLSolver"),
     "WMaxCDCLReentrant": (".wmaxcdcl_py", "WMaxCDCLReentrant"),
     "SPBMaxSATCFPSSolver": (".spb_maxsat_c_fps_py", "SPBMaxSATCFPSSolver"),
