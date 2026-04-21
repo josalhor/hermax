@@ -69,8 +69,14 @@ class LoandraSolver(IPAMIRSolver):
     def set_soft(self, lit: int, weight: int) -> None:
         if not isinstance(lit, int) or lit == 0:
             raise ValueError("Soft literal must be a non-zero integer.")
-        if not isinstance(weight, int) or weight <= 0:
-            raise ValueError("Weight must be a positive integer.")
+        if not isinstance(weight, int):
+            raise ValueError("Weight must be an integer.")
+        if weight < 0:
+            raise ValueError("Weight must be a non-negative integer.")
+        if weight == 0:
+            raise NotImplementedError(
+                "set_soft(lit, 0) is not supported by this native incremental backend."
+            )
         self.add_clause([lit], weight)
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
@@ -111,7 +117,7 @@ class LoandraSolver(IPAMIRSolver):
     def get_model(self) -> Optional[List[int]]:
         if not is_feasible(self._status):
             raise RuntimeError("Model is only available for SAT or OPTIMUM status.")
-        return self._model
+        return list(self._model) if self._model is not None else None
 
     def signature(self) -> str:
         return "Loandra (OLL path)"

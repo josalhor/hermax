@@ -1,13 +1,13 @@
-import sys
-import os
-from pysat.formula import WCNF
 from typing import List, Optional, Callable
-from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
-from hermax.core.utils import normalize_wcnf_formula
+
 import hermax.core.urmaxsat_py as _urmaxsat
+from pysat.formula import WCNF
+
+from hermax.core.ipamir_native_incremental_base import NativeIncrementalSolverBase
+from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible
 
 
-class UWrMaxSATSolver(IPAMIRSolver):
+class UWrMaxSATSolver(NativeIncrementalSolverBase):
     """
     UWrMaxSAT: an efficient MaxSAT solver based on the UWrMaxSAT 1.8 solver.
     This solver provides native incremental support through the IPAMIR interface.
@@ -16,125 +16,50 @@ class UWrMaxSATSolver(IPAMIRSolver):
     combining modern SAT solving techniques with effective MaxSAT algorithms.
     """
     def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
-        formula = normalize_wcnf_formula(formula)
-        super().__init__(formula, *args, **kwargs)
         self.solver = _urmaxsat.UWrMaxSAT()
-        self._model: Optional[List[int]] = None
-        self._status: SolveStatus = SolveStatus.UNKNOWN
         self._last_solve_result: Optional[int] = None
-        self.num_vars = 0
         # Track softs so we can compute cost from the exposed model
         self._anon_soft_by_lit: dict[int, int] = {}   # literal -> weight (last-wins)
-        self._id_soft_b_weight: dict[int, int] = {}   # relax var b -> weight (for id-based softs)
-        self._soft_ids: dict[str, int] = {}           # id -> relax var b
-
-        # Preload clauses if formula is provided
-        if formula is not None:
-            # Track the maximum variable id first to provision new_var
-            max_var = 0
-            all_cls = list(getattr(formula, "hard", []))
-            soft_attr = getattr(formula, "soft", [])
-            for item in soft_attr:
-                # PySAT WCNF uses list-of-clauses + wght, but other sources may provide (clause, weight)
-                if isinstance(item, tuple) and len(item) >= 2:
-                    cl = item[0]
-                else:
-                    cl = item
-                if isinstance(cl, list):
-                    all_cls.append(cl)
-            for cl in all_cls:
-                for lit in cl:
-                    if lit == 0:
-                        raise ValueError("CNF contains literal 0.")
-                    max_var = max(max_var, abs(lit))
-            while self.num_vars < max_var:
-                self.new_var()
-
-            # Load hards
-            for clause in getattr(formula, "hard", []):
-                self.add_clause(clause)
-
-            # Load softs
-            softs = getattr(formula, "soft", [])
-            wghts = getattr(formula, "wght", None)
-            if wghts is not None and len(wghts) == len(softs) and (not softs or not isinstance(softs[0], tuple)):
-                # PySAT style: softs is list of clauses, weights in wght
-                for cl, w in zip(softs, wghts):
-                    if not cl or int(w) <= 0:
-                        raise ValueError("Invalid soft in WCNF.")
-                    if len(cl) == 1:
-                        self.add_soft_unit(int(cl[0]), int(w))
-                    else:
-                        b = self.new_var()
-                        self.add_soft_relaxed([int(x) for x in cl], int(w), relax_var=b)
-            else:
-                # Tuple/list pairs
-                for item in softs:
-                    if isinstance(item, tuple) and len(item) >= 2:
-                        cl, w = item[0], int(item[1])
-                    else:
-                        cl, w = item, 1
-                    if not isinstance(cl, list) or not cl or w <= 0:
-                        raise ValueError("Invalid soft in WCNF.")
-                    if len(cl) == 1:
-                        self.add_soft_unit(int(cl[0]), int(w))
-                    else:
-                        b = self.new_var()
-                        self.add_soft_relaxed([int(x) for x in cl], int(w), relax_var=b)
+        super().__init__(formula=formula, *args, **kwargs)
 
     
     def add_clause(self, clause: List[int]) -> None:
-        # Back-compat signature; allow empty hard [].
-        if not isinstance(clause, list):
-            raise ValueError("Clause must be a list.")
-        for lit in clause:
-            if lit == 0:
-                raise ValueError("Clause literals cannot be 0.")
-            v = abs(lit)
-            while v > self.num_vars:
-                self.new_var()
-
-        # hard; [] allowed (forces UNSAT)
-        self.solver.addClause(clause, None)
+        self._require_open()
+        cl = self._normalize_clause(clause)
+        self.solver.addClause([int(x) for x in cl], None)
+        self._invalidate_solution()
 
 
     def set_soft(self, lit: int, weight: int) -> None:
-        if lit == 0:
-            raise ValueError("Literal 0 is invalid.")
-        if not isinstance(weight, int) or weight != int(weight):
-            raise ValueError("Weight must be an integer.")
-        if weight < 0:
-            raise ValueError("Weight must be a non-negative integer.")
-        v = abs(lit)
-        while v > self.num_vars:
-            self.new_var()
+        self._require_open()
+        ilit = self._normalize_lit(lit)
+        w = self._normalize_nonnegative_weight(weight)
+        self._ensure_var(abs(ilit))
+        if w == 0:
+            raise NotImplementedError(
+                "set_soft(lit, 0) is not supported by this native incremental backend."
+            )
 
-        if weight == 0:
-            self._anon_soft_by_lit.pop(int(lit), None)
-            return
-
-        # Anonymous soft literal, last-wins by literal
-        self.solver.addClause([int(lit)], int(weight))
-        self._anon_soft_by_lit[int(lit)] = int(weight)
+        self.solver.addClause([int(ilit)], int(w))
+        self._anon_soft_by_lit[int(ilit)] = int(w)
+        self._invalidate_solution()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
-        if not isinstance(weight, int) or int(weight) <= 0:
-            raise ValueError("Weight must be a positive integer.")
-        self.set_soft(lit, weight)
+        self.set_soft(int(lit), self._normalize_positive_weight(weight))
 
     # ---------- Solve ----------
 
     def solve(self, assumptions=None, raise_on_abnormal=False) -> bool:
-        assumps = list(assumptions) if assumptions else []
+        self._require_open()
+        self._invalidate_solution()
+        assumps = self._normalize_assumptions(assumptions)
         if assumps:
-            self.solver.assume(assumps)
+            self.solver.assume([int(x) for x in assumps])
 
-        r = self.solver.solve()
+        r = int(self.solver.solve())
         self._last_solve_result = r
 
-        if r == 30:
-            self._status = SolveStatus.OPTIMUM
-
+        if r == int(SolveStatus.OPTIMUM):
             model = []
             for i in range(1, self.num_vars + 1):
                 v = self.solver.getValue(i)
@@ -154,45 +79,29 @@ class UWrMaxSATSolver(IPAMIRSolver):
             # Force assumptions in exposed model; some backends may return
             # partial/relaxed values even when assumptions were used for solve.
             for a in assumps:
-                vi = abs(a)
+                vi = abs(int(a))
                 if 1 <= vi <= self.num_vars:
                     model[vi - 1] = vi if a > 0 else -vi
 
-            self._model = model
-            # Compute objective from exposed model + Python soft map.
-            # Some backend versions return cost values that do not account for
-            # assumption-forced violations of unit soft clauses.
-            self._last_cost = self._compute_cost_from_model(model)
-            return True
-        elif self._last_solve_result == 20:
-            self._status = SolveStatus.UNSAT
-            self._model = None
-            self._last_cost = None
-        elif self._last_solve_result == 10:
-            self._status = SolveStatus.INTERRUPTED_SAT
-            self._model = None
-            self._last_cost = None
-        elif self._last_solve_result == 0:
-            self._status = SolveStatus.INTERRUPTED
-            self._model = None
-            self._last_cost = None
+            self._set_feasible_result(
+                model=model,
+                cost=self._compute_cost_from_model(model),
+                status=SolveStatus.OPTIMUM,
+            )
+        elif r == int(SolveStatus.UNSAT):
+            self._set_infeasible_result(status=SolveStatus.UNSAT)
+        elif r == int(SolveStatus.INTERRUPTED_SAT):
+            self._set_infeasible_result(status=SolveStatus.INTERRUPTED_SAT)
+        elif r == int(SolveStatus.INTERRUPTED):
+            self._set_infeasible_result(status=SolveStatus.INTERRUPTED)
         else:
-            self._status = SolveStatus.ERROR
-            self._model = None
-            self._last_cost = None
+            self._set_infeasible_result(status=SolveStatus.ERROR)
 
-        if raise_on_abnormal and self._status in {SolveStatus.INTERRUPTED, SolveStatus.UNKNOWN, SolveStatus.ERROR}:
-            raise RuntimeError(f"Solver terminated with abnormal status: {self._status.name}")
-
+        self._maybe_raise_on_abnormal(raise_on_abnormal)
         return is_feasible(self._status)
 
 
     # ---------- Accessors ----------
-
-    def get_cost(self) -> int:
-        if not is_feasible(self._status):
-            raise RuntimeError("Cost is only available for SAT or OPTIMUM status.")
-        return int(self._last_cost)  # or int(self.solver.getCost()) if you prefer
 
     def _compute_cost_from_model(self, model: List[int]) -> int:
         assign_true = {lit for lit in model if lit > 0}
@@ -214,35 +123,7 @@ class UWrMaxSATSolver(IPAMIRSolver):
             s = self.solver
             self.solver = None
             del s
-
-    def get_status(self) -> SolveStatus:
-        return self._status
-
-    def get_model(self) -> Optional[List[int]]:
-        if not is_feasible(self._status):
-            raise RuntimeError("Model is only available for SAT or OPTIMUM status.")
-        return self._model
-
-    def val(self, lit: int) -> int:
-        if not is_feasible(self._status):
-            raise RuntimeError("val() is only available for SAT or OPTIMUM status.")
-        if lit == 0:
-            raise ValueError("Literal 0 is invalid.")
-        v = abs(lit)
-        if self._model is None or v > self.num_vars:
-            raise ValueError("Invalid literal for val().")
-        m = self._model[v - 1]  # signed assignment for var v
-        if lit > 0:
-            return 1 if m == v else -1
-        else:
-            return 1 if m == -v else -1
-
-
-    # Optional helpers
-
-    def new_var(self) -> int:
-        self.num_vars += 1
-        return self.num_vars
+        super().close()
 
     def set_terminate(self, callback: Optional[Callable[[], int]]) -> None:
         self.solver.set_terminate(callback)

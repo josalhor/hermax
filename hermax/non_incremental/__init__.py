@@ -8,11 +8,12 @@ scenarios.
 from hermax.core.rc2 import RC2Reentrant
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompReentrant
 from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestReentrant
-from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrSolver
+from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrReentrant as _EvalMaxSATIncrReentrantCore
 from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
 from hermax.core.cgss_py import CGSSSolver, CGSSPMRESSolver
 from hermax.core.openwbo_py import OLLSolver, PartMSU3Solver, AutoOpenWBOSolver
 from hermax.core.wmaxcdcl_py import WMaxCDCLReentrant
+from hermax.core.maxhs_wrapper_py import MaxHSSolver
 
 class RC2(RC2Reentrant):
     """
@@ -36,6 +37,24 @@ class EvalMaxSAT(EvalMaxSATLatestReentrant):
     """
     EvalMaxSAT: Latest version of EvalMaxSAT, wrapped for 
     reentrant incremental use.
+    """
+    pass
+
+
+class EvalMaxSATIncrReentrant(_EvalMaxSATIncrReentrantCore):
+    """
+    EvalMaxSAT-Incr backend exposed as a rebuild-on-solve reentrant wrapper.
+    """
+    pass
+
+
+class MaxHS(MaxHSSolver):
+    """
+    MaxHS: optional re-encoding wrapper around the MaxHS backend.
+
+    Notes:
+        This backend is only available when Hermax is compiled with CPLEX
+        headers/libraries present.
     """
     pass
 
@@ -104,11 +123,14 @@ class OpenWBO(AutoOpenWBOSolver):
 
 UWrMaxSATComp = UWrMaxSATCompetition
 OpenWBOAuto = OpenWBO
+EvalMaxSATIncrSolver = EvalMaxSATIncrReentrant
 
 __all__ = [
     "RC2",
     # "UWrMaxSATCompetition",
     "EvalMaxSAT",
+    "EvalMaxSATIncrReentrant",
+    "MaxHS",
     "EvalMaxSATIncrSolver",
     "CASHWMaxSAT",
     # "CASHWMaxSATNoSCIP",

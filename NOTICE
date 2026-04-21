@@ -18,6 +18,8 @@ Latest available papers (selection)
 - Niskanen, Berg, Jarvisalo. Incremental Maximum Satisfiability. SAT 2022.
 - Niskanen, Berg, Jarvisalo. Enabling Incrementality in the Implicit Hitting
   Set Approach to MaxSAT Under Changing Weights. CP 2021.
+- Davies. Solving MaxSAT by Decoupling Optimization and Satisfaction.
+  Doctoral dissertation, 2014.
 - Ignatiev, Morgado, Marques-Silva. RC2: An Efficient MaxSAT Solver. JSAT 2019.
 - Ignatiev, Morgado, Marques-Silva. PySAT: A Python Toolkit for Prototyping
   with SAT Oracles. SAT 2018.

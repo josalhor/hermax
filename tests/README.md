@@ -14,7 +14,7 @@ This directory is the centralized test entrypoint for Hermax.
 
 ## Solver Scope
 
-Current compliance matrix includes all active solvers except MaxHS/IMaxHS (intentionally excluded/commented out for now).
+Current compliance matrix includes optional MaxHS/IMaxHS entries. They auto-skip when unavailable (for example, builds without CPLEX).
 
 ## Main Runner
 

@@ -40,6 +40,41 @@ Alternatively, for a more iterative workflow, you can install from the source:
 
 This will trigger the CMake build process for all the bundled solvers.
 
+Optional CPLEX-backed MaxHS / iMaxHS
+------------------------------------
+
+MaxHS and iMaxHS are optional and controlled by build environment variables.
+
+Default behavior is auto-detect:
+
+* if CPLEX headers + libraries are found, extensions are built
+* otherwise they are skipped
+
+Relevant variables:
+
+* ``CPLEX_INC_DIR``
+* ``CPLEX_LIB_DIR``
+* ``HERMAX_ENABLE_MAXHS`` (``auto`` | ``on`` | ``off``)
+* ``HERMAX_ENABLE_IMAXHS`` (``auto`` | ``on`` | ``off``)
+
+Example forcing both on:
+
+.. code-block:: bash
+
+    export CPLEX_INC_DIR=/path/to/cplex/include
+    export CPLEX_LIB_DIR=/path/to/cplex/lib-or-bin
+    export HERMAX_ENABLE_MAXHS=on
+    export HERMAX_ENABLE_IMAXHS=on
+    pip install .
+
+Example forcing both off (recommended for generic wheel builds):
+
+.. code-block:: bash
+
+    export HERMAX_ENABLE_MAXHS=off
+    export HERMAX_ENABLE_IMAXHS=off
+    pip install .
+
 Optional OptiLog Formula Support
 --------------------------------
 

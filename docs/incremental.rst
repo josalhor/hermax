@@ -11,6 +11,7 @@ List of Classes
    hermax.incremental.UWrMaxSATCompetition
    hermax.incremental.EvalMaxSAT
    hermax.incremental.EvalMaxSATIncremental
+   hermax.incremental.IMaxHS
 
 Module Description
 ------------------
@@ -29,6 +30,8 @@ The classes map to the following backends:
   ``hermax.core.evalmaxsat_latest_py.EvalMaxSATLatestSolver`` (EvalMaxSAT family [3]_).
 * :class:`hermax.incremental.EvalMaxSATIncremental`:
   ``hermax.core.evalmaxsat_incr_py.EvalMaxSATIncrSolver`` (incremental EvalMaxSAT backend [3]_).
+* :class:`hermax.incremental.IMaxHS`:
+  ``hermax.core.imaxhs_wrapper_py.IMaxHSSolver`` (optional CPLEX-backed iMaxHS backend [4]_).
 
 .. warning::
    In Hermax package builds, both ``UWrMaxSAT`` and ``UWrMaxSATCompetition``
@@ -82,9 +85,17 @@ API Details
    :show-inheritance:
    :special-members: __init__
 
+.. autoclass:: hermax.incremental.IMaxHS
+   :members:
+   :inherited-members:
+   :undoc-members:
+   :show-inheritance:
+   :special-members: __init__
+
 References
 ----------
 
 .. [1] Andreas Niskanen, Jeremias Berg, Matti Järvisalo. *Incremental Maximum Satisfiability*. SAT 2022.
 .. [2] Marek Piotrów. *UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems*. ICTAI 2020.
 .. [3] Florent Avellaneda. *EvalMaxSAT*. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
+.. [4] Andreas Niskanen, Jeremias Berg, Matti Järvisalo. *Enabling Incrementality in the Implicit Hitting Set Approach to MaxSAT Under Changing Weights*. CP 2021.

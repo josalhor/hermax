@@ -24,6 +24,8 @@ test-command = "python tests/cibw_test_entrypoint.py"
 [tool.cibuildwheel.environment]
 SKIP_IMAXHS = "1"
 SKIP_MAXHS = "1"
+HERMAX_ENABLE_IMAXHS = "off"
+HERMAX_ENABLE_MAXHS = "off"
 PIP_NO_BUILD_ISOLATION = "1"
 HERMAX_CIBW_TEST_PROFILE = "full"
 HERMAX_CIBW_ALLOW_TEST_FAILURE = "0"

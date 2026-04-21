@@ -29,6 +29,22 @@ references:
         given-names: "Matti"
     title: "Incremental Maximum Satisfiability"
     year: 2022
+  - type: conference-paper
+    authors:
+      - family-names: "Niskanen"
+        given-names: "Andreas"
+      - family-names: "Berg"
+        given-names: "Jeremias"
+      - family-names: "Jarvisalo"
+        given-names: "Matti"
+    title: "Enabling Incrementality in the Implicit Hitting Set Approach to MaxSAT Under Changing Weights"
+    year: 2021
+  - type: thesis
+    authors:
+      - family-names: "Davies"
+        given-names: "Jessica"
+    title: "Solving MaxSAT by Decoupling Optimization and Satisfaction"
+    year: 2014
   - type: article
     authors:
       - family-names: "Ignatiev"

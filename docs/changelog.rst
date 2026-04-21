@@ -10,6 +10,8 @@ Highlights
 * Reimplementesd GMTO to follow original PB(AMO) paper closely.
 * Safer and more efficient PB(AMO) default auto-routing.
 * More efficient constraint merging in Model, specially when PB(AMO) auto-routing is involved.
+* Added MaxHS and iMaxHS support.
+* Heavily simplified all solver wrappers with inheritance.
 
 Version 1.1.1
 -------------

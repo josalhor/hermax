@@ -1,4 +1,5 @@
 import importlib
+import importlib.util
 from typing import List, Optional
 
 from pysat.formula import WCNF
@@ -10,20 +11,15 @@ from hermax.core.utils import normalize_wcnf_formula
 class TTOpenWBOIncSolver(IPAMIRSolver):
     @classmethod
     def is_available(cls) -> bool:
-        try:
-            mod = importlib.import_module("hermax.core.tt_openwbo_inc")
-            return hasattr(mod, "TTOpenWBOInc")
-        except Exception:
-            return False
+        return importlib.util.find_spec("hermax.core.tt_openwbo_inc") is not None
 
     def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
         formula = normalize_wcnf_formula(formula)
         super().__init__(formula, *args, **kwargs)
-        try:
-            native = importlib.import_module("hermax.core.tt_openwbo_inc")
-            self.solver = native.TTOpenWBOInc()
-        except Exception as exc:
-            raise RuntimeError("TT-Open-WBO-Inc native module is not available in this build.") from exc
+        if not self.is_available():
+            raise RuntimeError("TT-Open-WBO-Inc native module is not available in this build.")
+        native = importlib.import_module("hermax.core.tt_openwbo_inc")
+        self.solver = native.TTOpenWBOInc()
         self._model: Optional[List[int]] = None
         self.num_vars = 0
 
@@ -67,8 +63,14 @@ class TTOpenWBOIncSolver(IPAMIRSolver):
     def set_soft(self, lit: int, weight: int) -> None:
         if not isinstance(lit, int) or lit == 0:
             raise ValueError("Soft literal must be a non-zero integer.")
-        if not isinstance(weight, int) or weight <= 0:
-            raise ValueError("Weight must be a positive integer.")
+        if not isinstance(weight, int):
+            raise ValueError("Weight must be an integer.")
+        if weight < 0:
+            raise ValueError("Weight must be a non-negative integer.")
+        if weight == 0:
+            raise NotImplementedError(
+                "set_soft(lit, 0) is not supported by this native incremental backend."
+            )
         self.add_clause([lit], weight)
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
@@ -109,7 +111,7 @@ class TTOpenWBOIncSolver(IPAMIRSolver):
     def get_model(self) -> Optional[List[int]]:
         if not is_feasible(self._status):
             raise RuntimeError("Model is only available for SAT or OPTIMUM status.")
-        return self._model
+        return list(self._model) if self._model is not None else None
 
     def signature(self) -> str:
         return "TT-Open-WBO-Inc"

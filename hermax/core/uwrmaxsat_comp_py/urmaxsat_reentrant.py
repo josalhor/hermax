@@ -1,111 +1,42 @@
 from __future__ import annotations
 
-import os
 import sys
-from typing import List, Optional, Callable, Dict, Tuple, Iterable, Set
+from typing import List, Optional
 
 from pysat.formula import WCNF
-from hermax.core.ipamir_solver_interface import IPAMIRSolver, is_feasible, SolveStatus
-from hermax.core.utils import normalize_wcnf_formula
+
 import hermax.core.urmaxsat_comp_py as _urmaxsat
+from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult
+from hermax.core.ipamir_solver_interface import SolveStatus
 
-class UWrMaxSATCompReentrant(IPAMIRSolver):
-    """
-    UWrMaxSAT: A re-encoding wrapper around the competition version of UWrMaxSAT.
-    This solver is NOT natively incremental; it mimics the IPAMIR interface 
-    by rebuilding a fresh solver instance and replaying the problem for each solve call.
 
-    This is useful for environments where native incrementality is not required 
-    or as a baseline for comparison with truly incremental solvers.
-    """
+class UWrMaxSATCompReentrant(ReplayFormulaSolverBase):
+    """Replay wrapper around UWrMaxSAT competition backend."""
 
-    def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
-        formula = normalize_wcnf_formula(formula)
-        super().__init__(formula, *args, **kwargs)
-        self._closed: bool = False
+    nonunit_soft_policy = "store"
 
-        # Stored problem state
-        self._hard_clauses: List[List[int]] = []
-        self._soft_unit_by_lit: Dict[int, int] = {}
-        self._soft_nonunit: List[Tuple[List[int], int]] = []
+    def _normalize_nonnegative_weight(self, weight: int) -> int:
+        w = ReplayFormulaSolverBase._normalize_nonnegative_weight(weight)
+        if sys.platform in {"win32", "darwin"} and w >= (1 << 63) - 1:
+            raise ValueError("Weight exceeds platform-safe range for UWrMaxSATComp backend.")
+        return w
 
-        self._max_var: int = 0
-
-        # Last solution
-        self._last_status: SolveStatus = SolveStatus.UNKNOWN
-        self._last_model: Optional[List[int]] = None
-        self._last_cost: Optional[int] = None
-
-        if formula is not None:
-            self._load_initial_formula(formula)
-
-    # -------------- IPAMIR-like API --------------
-
-    def add_clause(self, clause: List[int]) -> None:
-        self._require_open()
-        cl = list(clause)
-        self._hard_clauses.append(cl)
-        for l in cl:
-            self._max_var = max(self._max_var, abs(l))
-        self._invalidate_last_solution()
-
-    def set_soft(self, lit: int, weight: int) -> None:
-        self._require_open()
-        ilit = int(lit)
-        if ilit == 0:
-            raise ValueError("Literal 0 is invalid.")
-        if not isinstance(weight, int) or weight != int(weight):
-            raise ValueError("Weight must be an integer.")
-        iweight = int(weight)
-        if iweight < 0:
-            raise ValueError("Weight must be a non-negative integer.")
-        if sys.platform in {"win32", "darwin"} and iweight >= (1 << 63) - 1:
-            raise ValueError(
-                "Weight exceeds platform-safe range for UWrMaxSATComp backend."
-            )
-
-        if iweight == 0:
-            self._soft_unit_by_lit.pop(ilit, None)
-            self._invalidate_last_solution()
-            return
-
-        self._soft_unit_by_lit[ilit] = iweight
-        self._max_var = max(self._max_var, abs(ilit))
-        self._invalidate_last_solution()
-
-    def add_soft_unit(self, lit: int, weight: int) -> None:
-        self.set_soft(lit, weight)
-
-    def solve(self, assumptions: Optional[List[int]] = None, raise_on_abnormal: bool = False) -> bool:
-        self._require_open()
-        self._invalidate_last_solution()
-
-        # Instantiate fresh backend
+    def _run_replay_solve(self, assumptions: List[int]) -> ReplaySolveResult:
         solver = _urmaxsat.UWrMaxSAT()
-        
-        # Determine max var needed
-        current_max = self._max_var
-        if assumptions:
-            for a in assumptions:
-                current_max = max(current_max, abs(a))
-        
-        # Pre-size variables (if needed by backend, though UWr usually handles it)
-        # Assuming backend behaves like other IPAMIR wrappers here
+
+        current_max = self._num_vars
+        for a in assumptions:
+            current_max = max(current_max, abs(int(a)))
+
         for _ in range(current_max):
             solver.newVar()
 
-        # Replay hard clauses
         for cl in self._hard_clauses:
-            solver.addClause(cl, None)
+            solver.addClause([int(x) for x in cl], None)
 
-        # Replay assumptions as temporary hard unit clauses
-        if assumptions:
-            for a in assumptions:
-                solver.addClause([a], None)
+        for a in assumptions:
+            solver.addClause([int(a)], None)
 
-        # Work around a backend crash path on hard-only instances.
-        # Inject a single neutral soft unit [b] with weight 1.
-        # The backend can satisfy it by setting b=true, preserving objective 0.
         if not self._soft_unit_by_lit and not self._soft_nonunit:
             guard_var = current_max + 1
             while current_max < guard_var:
@@ -113,18 +44,15 @@ class UWrMaxSATCompReentrant(IPAMIRSolver):
                 current_max += 1
             solver.addClause([guard_var], 1)
 
-        # Replay unit softs
         for lit, w in self._soft_unit_by_lit.items():
-            solver.addClause([lit], w)
+            solver.addClause([int(lit)], int(w))
 
-        # Replay non-unit softs
         for cl, w in self._soft_nonunit:
-            solver.addClause(cl, w)
+            solver.addClause([int(x) for x in cl], int(w))
 
         try:
-            r = solver.solve()
-            if r == 30: # OPTIMUM
-                self._last_status = SolveStatus.OPTIMUM
+            r = int(solver.solve())
+            if r == int(SolveStatus.OPTIMUM):
                 model = []
                 for i in range(1, current_max + 1):
                     v = solver.getValue(i)
@@ -134,105 +62,15 @@ class UWrMaxSATCompReentrant(IPAMIRSolver):
                         model.append(-i)
                     else:
                         model.append(-i)
-                self._last_model = model
-                if not self._soft_unit_by_lit and not self._soft_nonunit:
-                    self._last_cost = 0
-                else:
-                    self._last_cost = int(solver.getCost())
-                return True
-            elif r == 20: # UNSAT
-                self._last_status = SolveStatus.UNSAT
-                self._last_model = None
-                self._last_cost = None
-                return False
-            else:
-                self._last_status = SolveStatus.ERROR
-                self._last_model = None
-                self._last_cost = None
-                return False
+                cost = 0 if (not self._soft_unit_by_lit and not self._soft_nonunit) else int(solver.getCost())
+                return ReplaySolveResult(status=SolveStatus.OPTIMUM, model=model, cost=cost)
+
+            if r == int(SolveStatus.UNSAT):
+                return ReplaySolveResult(status=SolveStatus.UNSAT, model=None, cost=None)
+
+            return ReplaySolveResult(status=SolveStatus.ERROR, model=None, cost=None)
         except Exception:
-            self._last_status = SolveStatus.ERROR
-            if raise_on_abnormal:
-                raise
-            return False
-
-    def get_status(self) -> SolveStatus:
-        return self._last_status
-
-    def get_cost(self) -> int:
-        if not is_feasible(self._last_status):
-            raise RuntimeError("Objective not available; last status is not SAT/OPTIMUM")
-        return int(self._last_cost)
-
-    def val(self, lit: int) -> int:
-        if not is_feasible(self._last_status):
-            raise RuntimeError("No model available; last status is not SAT/OPTIMUM")
-        v = abs(lit)
-        if self._last_model is None or v > len(self._last_model):
-             return 0
-        m = self._last_model[v - 1]
-        if lit > 0:
-            return 1 if m == v else -1
-        else:
-            return 1 if m == -v else -1
-
-    def get_model(self) -> Optional[List[int]]:
-        if not is_feasible(self._last_status):
-            raise RuntimeError("No model available; last status is not SAT/OPTIMUM")
-        return list(self._last_model)
+            return ReplaySolveResult(status=SolveStatus.ERROR, model=None, cost=None)
 
     def signature(self) -> str:
         return "urmaxsat-comp-reentrant-ipamir"
-
-    def close(self) -> None:
-        self._closed = True
-        self._hard_clauses.clear()
-        self._soft_unit_by_lit.clear()
-        self._soft_nonunit.clear()
-        self._last_model = None
-        self._last_cost = None
-        self._last_status = SolveStatus.UNKNOWN
-
-    def new_var(self) -> int:
-        self._require_open()
-        self._max_var += 1
-        return self._max_var
-
-    # -------------- Internal helpers --------------
-
-    def _require_open(self) -> None:
-        if self._closed:
-            raise RuntimeError("Solver is closed")
-
-    def _invalidate_last_solution(self) -> None:
-        self._last_status = SolveStatus.UNKNOWN
-        self._last_model = None
-        self._last_cost = None
-
-    def _load_initial_formula(self, formula: WCNF) -> None:
-        self._hard_clauses = []
-        self._soft_unit_by_lit = {}
-        self._soft_nonunit = []
-        for cl in getattr(formula, "hard", []):
-            self.add_clause(cl)
-        
-        soft_attr = getattr(formula, "soft", [])
-        wghts = getattr(formula, "wght", None)
-        if wghts is not None and len(wghts) == len(soft_attr) and (not soft_attr or not isinstance(soft_attr[0], tuple)):
-            for cl, w in zip(soft_attr, wghts):
-                if len(cl) == 1:
-                    self.add_soft_unit(cl[0], w)
-                else:
-                    self._soft_nonunit.append((list(cl), int(w)))
-                    for l in cl: self._max_var = max(self._max_var, abs(l))
-        else:
-            for item in soft_attr:
-                if isinstance(item, tuple) and len(item) >= 2:
-                    cl, w = item[0], int(item[1])
-                else:
-                    cl, w = item, 1
-                if len(cl) == 1:
-                    self.add_soft_unit(cl[0], w)
-                else:
-                    self._soft_nonunit.append((list(cl), int(w)))
-                    for l in cl: self._max_var = max(self._max_var, abs(l))

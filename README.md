@@ -55,6 +55,38 @@ pip install hermax
 ```
 - User and API docs: https://hermax.readthedocs.io
 
+Optional CPLEX-backed backends (MaxHS / iMaxHS)
+-----------------------------------------------
+
+Hermax auto-detects CPLEX during build. If headers/libs are not detected,
+MaxHS and iMaxHS are skipped automatically.
+
+Environment knobs:
+
+* `CPLEX_INC_DIR`, `CPLEX_LIB_DIR`: explicit CPLEX include/library paths.
+* `HERMAX_ENABLE_MAXHS`, `HERMAX_ENABLE_IMAXHS`:
+  * `auto` (default): include only when CPLEX is detected
+  * `on`: require inclusion (fails fast if CPLEX is missing)
+  * `off`: disable backend build
+
+Build from source with optional CPLEX backends:
+
+```bash
+export CPLEX_INC_DIR=/path/to/cplex/include
+export CPLEX_LIB_DIR=/path/to/cplex/lib-or-bin
+export HERMAX_ENABLE_MAXHS=on
+export HERMAX_ENABLE_IMAXHS=on
+pip install .
+```
+
+For standard wheel workflows, keep both disabled:
+
+```bash
+export HERMAX_ENABLE_MAXHS=off
+export HERMAX_ENABLE_IMAXHS=off
+pip install hermax
+```
+
 
 ## Modeling Example
 

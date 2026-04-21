@@ -1,0 +1,2 @@
+from .imaxhs import IMaxHSSolver
+
