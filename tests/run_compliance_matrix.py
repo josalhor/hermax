@@ -95,7 +95,6 @@ CASES: list[SolverCase] = [
         [
             "core/test_ipamir_solver.py::TestEvalMaxSATIncrReentrantTerminationCallback",
             "core/test_ipamir_solver_hardcore.py::TestEvalMaxSATIncrReentrantTerminationCallback",
-            "test_evalmaxsat_incr_reentrant.py",
         ],
     ),
     SolverCase(

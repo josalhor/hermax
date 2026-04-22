@@ -5,6 +5,7 @@ from typing import Optional
 
 from pysat.formula import WCNF
 
+from hermax.core.ipamir_solver_interface import SolveStatus
 from hermax.core.ipamir_subprocess_replay_base import OneShotSubprocessReplaySolverBase
 
 
@@ -13,6 +14,15 @@ class TTOpenWBOInc(OneShotSubprocessReplaySolverBase):
 
     pass_assumptions_to_worker = False
     nonunit_soft_policy = "store"
+    # TT OpenWBO-Inc may terminate the worker process with SAT-style exit codes
+    # (not IPAMIR status codes), so we must remap fallback code 10 to OPTIMUM.
+    compat_exit_code_status_map = {
+        10: SolveStatus.OPTIMUM,
+        20: SolveStatus.UNSAT,
+        30: SolveStatus.OPTIMUM,
+        40: SolveStatus.ERROR,
+        50: SolveStatus.UNKNOWN,
+    }
 
     @property
     def worker_solver_class_path(self) -> str:
