@@ -16,6 +16,13 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
 
     # If False, assumptions are emulated as temporary hard units in snapshot.
     pass_assumptions_to_worker: bool = True
+    compat_exit_code_status_map: dict[int, SolveStatus] = {
+        10: SolveStatus.INTERRUPTED_SAT,
+        20: SolveStatus.UNSAT,
+        30: SolveStatus.OPTIMUM,
+        40: SolveStatus.ERROR,
+        50: SolveStatus.UNKNOWN,
+    }
 
     @property
     @abc.abstractmethod
@@ -141,14 +148,7 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
         if exit_code is None:
             return None
 
-        code_to_status = {
-            10: SolveStatus.INTERRUPTED_SAT,
-            20: SolveStatus.UNSAT,
-            30: SolveStatus.OPTIMUM,
-            40: SolveStatus.ERROR,
-            50: SolveStatus.UNKNOWN,
-        }
-        st = code_to_status.get(int(exit_code))
+        st = self.compat_exit_code_status_map.get(int(exit_code))
         if st is None:
             return None
 

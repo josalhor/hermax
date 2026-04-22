@@ -183,6 +183,4 @@ class MaxHSSolver(ReplayFormulaSolverBase):
         return "maxhs-reentrant-ipamir"
 
     def set_terminate(self, callback) -> None:
-        self._terminate_cb = callback
-        if callback is not None:
-            int(callback())
+        raise NotImplementedError("MaxHS wrapper does not support set_terminate.")
