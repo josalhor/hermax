@@ -1256,31 +1256,51 @@ class _EncoderDispatch:
             if aa == 0 or bb == 0:
                 return None
 
-            # Iterate all boundary cuts needed to reconstruct every exact value
-            # via monotone implications. Boundary cuts constant-fold away.
+            # Map each distinct consequent (limit) to the weakest possible antecedent.
+            # For aa > 0, we want the SMALLEST k such that x >= k implies the limit.
+            # For aa < 0, we want the LARGEST k such that x < k (or ~x >= k) implies the limit.
+            limit_to_weakest_k: dict[tuple[str, int], int] = {}
+
             for k in range(xx.lb, xx.ub + 2):
+                # Calculate the limit for this threshold k.
+                if aa > 0:
+                    V = c1 - aa * k
+                else:
+                    V = c1 - aa * (k - 1)
+
+                if bb > 0:
+                    limit_val = V // bb
+                    consequent_key = ("<=", limit_val)
+                else:
+                    limit_val = -((-V) // bb)
+                    consequent_key = (">=", limit_val)
+
+                if consequent_key not in limit_to_weakest_k:
+                    limit_to_weakest_k[consequent_key] = k
+                else:
+                    # If aa > 0, we want to minimize k (weaker antecedent x >= k).
+                    # If aa < 0, we want to maximize k (weaker antecedent ~x >= k).
+                    if aa > 0:
+                        if k < limit_to_weakest_k[consequent_key]:
+                            limit_to_weakest_k[consequent_key] = k
+                    else:
+                        if k > limit_to_weakest_k[consequent_key]:
+                            limit_to_weakest_k[consequent_key] = k
+
+            for (op_y, lim), k in limit_to_weakest_k.items():
                 if k <= xx.lb:
                     x_ge_k: bool | Literal = True
                 elif k > xx.ub:
                     x_ge_k = False
                 else:
                     x_ge_k = xx.__ge__(k)
-                # Branch condition and conservative substitution on xx for the <= obligation.
+                
                 if aa > 0:
-                    antecedent: bool | Literal = x_ge_k
-                    V = c1 - aa * k
+                    antecedent = x_ge_k
                 else:
                     antecedent = _EncoderDispatch._negate_bool_or_lit(x_ge_k)
-                    V = c1 - aa * (k - 1)
 
-                # Solve b*y <= V into a y-comparator.
-                if bb > 0:
-                    limit = V // bb
-                    consequent = _EncoderDispatch._int_cmp_constraint(yy, "<=", limit)
-                else:
-                    limit = -((-V) // bb)  # ceil(V / bb), works for negative bb too
-                    consequent = _EncoderDispatch._int_cmp_constraint(yy, ">=", limit)
-
+                consequent = _EncoderDispatch._int_cmp_constraint(yy, op_y, lim)
                 _EncoderDispatch._lit_implies(clauses, model, antecedent, consequent)
         return ClauseGroup(model, clauses)
 

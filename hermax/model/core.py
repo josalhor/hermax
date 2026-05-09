@@ -1442,13 +1442,26 @@ class Model:
         def ceil_div_pos(n: int, d: int) -> int:
             return -((-n) // d)
 
-        for q_val in range(out.lb + 1, out.ub + 1):
-            q_lit = out.__ge__(q_val)
-            x_cut = ceil_div_pos(q_val, factor)
-            x_lit = x.__ge__(x_cut)
-            group = self._equiv_literals_group(q_lit, x_lit)
-            if not group.is_empty():
-                self._register_literal_definition(q_lit, group)
+        for k in range(x.lb + 1, x.ub + 1):
+            xk = x.__ge__(k)
+
+            # Upward: x >= k  =>  out >= factor*k
+            up_q = factor * k
+            if out.lb < up_q <= out.ub:
+                out_up = out.__ge__(up_q)
+                self._register_literal_definition(
+                    out_up,
+                    ClauseGroup(self, [Clause(self, [~xk, out_up])])
+                )
+
+            # Gap-forbidding: out >= factor*(k-1)+1  =>  x >= k
+            gap_q = factor * (k - 1) + 1
+            if out.lb < gap_q <= out.ub:
+                out_gap = out.__ge__(gap_q)
+                self._register_literal_definition(
+                    out_gap,
+                    ClauseGroup(self, [Clause(self, [~out_gap, xk])])
+                )
         return out
 
     def _build_int_aggregate_extreme(self, items: Sequence[IntVar], kind: str, name: Optional[str] = None) -> IntVar:
