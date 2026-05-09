@@ -115,7 +115,7 @@ of that baseline:
   * more future compatibility for remaining literals
   * larger reusable groups
 
-The paper baseline basically says: "place literals in order and use the first group that works"; our policy says: "place the hardest literal next, and put it where it fits best without harming future placements"
+The paper baseline is: "place literals in order and use the first group that works"; our policy is: "place the hardest literal next, and put it where it fits best without harming future placements"
 
 References
 ----------

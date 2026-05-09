@@ -716,10 +716,10 @@ Code
 
 .. warning::
 
-   Hermax also provides broader portfolio presets, including incomplete
+   Hermax provides broader portfolio presets, including incomplete
    solvers. Those can be useful for speed, but they need more care: incomplete
-   backends and looser finishing policies do not carry the exactness
-   guarantees as the complete preset used in this example.
+   backends do not carry the exactness guarantees as
+   the complete preset used in this example.
 
 For the full portfolio API, preset classes, and selection policies, see
 :doc:`portfolio`.

@@ -30,8 +30,7 @@ This module groups wrappers and re-entrant adapters used when a backend is
 invoked in a non-native-incremental workflow,
 while exposing the common Hermax interface.
 
-For incomplete / subprocess-isolated wrappers (e.g. ``SPB``, ``NuWLS-c-IBR``,
-``Loandra``, ``OpenWBOInc`` in their incomplete namespace placement), see
+For incomplete / subprocess-isolated wrappers see
 :doc:`non_incremental_incomplete` and the developer note :doc:`incomplete_subprocess`.
 
 Backend mapping:
@@ -53,11 +52,11 @@ Backend mapping:
 * :class:`hermax.non_incremental.CGSS`:
   ``hermax.core.cgss_py.CGSSSolver`` (vendored RC2WCE/CGSS wrapper [7]_ [8]_).
 * :class:`hermax.non_incremental.CGSSPMRES`:
-  ``hermax.core.cgss_py.CGSSPMRESSolver`` (vendored PMRES variant [7]_ [8]_).
+  ``hermax.core.cgss_py.CGSSPMRESSolver`` (vendored PMRES variant [7]_ [8]_ [10_]).
 * :class:`hermax.non_incremental.OpenWBOOLL`:
   ``hermax.core.openwbo_py.OLLSolver`` (Open-WBO OLL backend [8]_).
 * :class:`hermax.non_incremental.OpenWBOPartMSU3`:
-  ``hermax.core.openwbo_py.PartMSU3Solver`` (Open-WBO PartMSU3 backend).
+  ``hermax.core.openwbo_py.PartMSU3Solver`` (Open-WBO PartMSU3 backend [11_] [12_]).
 * :class:`hermax.non_incremental.OpenWBO`:
   ``hermax.core.openwbo_py.AutoOpenWBOSolver`` (Open-WBO auto routing: OLL/PartMSU3/MSU3).
 
@@ -163,6 +162,8 @@ References
 .. [5] Florent Avellaneda. *EvalMaxSAT*. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
 .. [6] Shiwei Pan, Yiyuan Wang, Shaowei Cai. *An Efficient Core-Guided Solver for Weighted Partial MaxSAT*. IJCAI 2025.
 .. [7] Hannes Ihalainen, Jeremias Berg, Matti Jarvisalo. *Refined Core Relaxation for Core-Guided MaxSAT Solving*. CP 2021.
-
 .. [8] Benjamin Andres, Benjamin Kaufmann, Oliver Matheis, Torsten Schaub. *Unsatisfiability-based Optimization in clasp*. ICLP 2012 Technical Communications.
-.. [9] Jessica Davies. *Solving MaxSAT by Decoupling Optimization and Satisfaction*. Doctoral dissertation, 2014.
+.. [9] Jessica Davies, Fahiem Bacchus. *Exploiting the power of MIP solvers in MAXSAT*. International Conference on Theory and Applications of Satisfiability Testing, 2013.
+.. [10] Nina Narodytska, Fahiem Bacchus. *Maximum satisfiability using core-guided MaxSAT resolution*. Proceedings of the AAAI Conference on Artificial Intelligence 28(1), 2014.
+.. [11] Antonio Morgado, Mark Liffiton, Joao Marques-Silva. *MaxSAT-based MCS enumeration*. Haifa Verification Conference, 2012.
+.. [12] Joao Marques-Silva, Jordi Planes. *Algorithms for maximum satisfiability using unsatisfiable cores*. Proceedings of the Conference on Design, Automation and Test in Europe, 2008.
