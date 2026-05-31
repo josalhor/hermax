@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from .encoders import *
     from .core import *
 
+FLOAT_ZERO_TOL = 1e-12
+
 
 def _detection_error() -> TypeError:
     return TypeError(
@@ -95,9 +97,6 @@ def sum_expr(iterable, start=0):
     else:
         numeric_total = 0
         expr = PBExpr.from_item(start)
-        # `start` may be model-bound but represented as a neutral PBExpr.
-        if expr._model is None:
-            expr = PBExpr(model, [], expr.constant)
 
     for item in iterable:
         item_model = _item_model(item)
@@ -210,7 +209,6 @@ class ClauseGroup:
 
     def implies(self, target):
         """Reject ClauseGroup-as-condition usage in this modeling API."""
-        # Using a ClauseGroup as a condition is a detection circuit in this API.
         raise _detection_error()
 
     def __and__(self, other):
@@ -876,7 +874,7 @@ class PBExpr:
             t0 = terms[0]
             c0 = t0.coefficient
             if isinstance(c0, float):
-                return [] if abs(c0) <= 1e-12 else terms
+                return [] if abs(c0) <= FLOAT_ZERO_TOL else terms
             return [] if c0 == 0 else terms
         # Very common fast path: no duplicate literals and no zero coefficients.
         # In this case we can keep the original term objects as-is.
@@ -891,7 +889,7 @@ class PBExpr:
             seen.add(key)
             coeff = t.coefficient
             if isinstance(coeff, float):
-                if abs(coeff) <= 1e-12:
+                if abs(coeff) <= FLOAT_ZERO_TOL:
                     all_nonzero = False
                     break
             elif coeff == 0:
@@ -942,7 +940,7 @@ class PBExpr:
         for key in order:
             coeff = acc[key]
             if isinstance(coeff, float):
-                if abs(coeff) <= 1e-12:
+                if abs(coeff) <= FLOAT_ZERO_TOL:
                     continue
                 out.append(Term._unsafe_new(coeff, lit_ref[key]))
             elif coeff != 0:
@@ -1172,6 +1170,12 @@ class PBExpr:
         except TypeError:
             return False
 
+    def __ne__(self, rhs):  # type: ignore[override]
+        try:
+            return self._finalize_compare("!=", rhs)
+        except TypeError:
+            return True
+
     def __repr__(self) -> str:
         return f"PBExpr(terms={self.terms!r}, int_terms={self.int_terms!r}, c={self.constant})"
 
@@ -1225,6 +1229,8 @@ class PBConstraint:
                 PBConstraint(self._model, self._lhs, "<", self._rhs),
                 PBConstraint(self._model, self._lhs, ">", self._rhs),
             )
+        if self._op == "!=":
+            return PBConstraint(self._model, self._lhs, "==", self._rhs)
         raise ValueError(f"Unsupported comparator {self._op!r}")
 
     def implies(self, target):

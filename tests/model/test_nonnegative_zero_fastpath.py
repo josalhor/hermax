@@ -70,5 +70,5 @@ def test_nonnegative_zero_fastpath_does_not_claim_nonzero_bound(monkeypatch):
     c = m.bool("c")
     m &= (2 * a + 3 * b + 5 * c <= 1)
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
     assert called["auto"] >= 1

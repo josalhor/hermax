@@ -22,6 +22,8 @@ def _cmp(lhs: int, op: str, rhs: int) -> bool:
         return lhs > rhs
     if op == "==":
         return lhs == rhs
+    if op == "!=":
+        return lhs != rhs
     raise ValueError(op)
 
 
@@ -44,11 +46,13 @@ def _post_rel(m: Model, lhs, op: str, rhs) -> None:
         m &= (lhs > rhs)
     elif op == "==":
         m &= (lhs == rhs)
+    elif op == "!=":
+        m &= (lhs != rhs)
     else:
         raise ValueError(op)
 
 
-@pytest.mark.parametrize("op", ["<=", "<", ">=", ">", "=="])
+@pytest.mark.parametrize("op", ["<=", "<", ">=", ">", "==", "!="])
 @pytest.mark.parametrize("a,b,w,k", [
     (1, 1, 5, 4),
     (2, -1, 7, 3),
@@ -87,7 +91,18 @@ def test_bivariate_bool_fastpath_bypasses_pb_and_card_encoders(monkeypatch):
     b = m.bool("b")
     m &= (2 * x - y + 100 * b <= 97)
     r = m.solve()
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
+
+
+def test_bivariate_bool_not_equal_fastpath_behavior():
+    # '!=' now uses the bivariate+bool gated fast path.
+    m = Model()
+    x = m.int("x", 0, 4)
+    y = m.int("y", 0, 4)
+    b = m.bool("b")
+    m &= (2 * x - y + 3 * b != 2)
+    r = m.solve()
+    assert r.ok
 
 
 def test_dispatch_attempts_bivariate_bool_fastpath(monkeypatch):

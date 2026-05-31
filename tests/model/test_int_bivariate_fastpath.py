@@ -67,6 +67,18 @@ def test_bivariate_int_fastpath_matches_bruteforce_shifted_domains(op: str):
         assert (r.ok if expected else r.status == "unsat"), (op, c)
 
 
+def test_bivariate_int_not_equal_fallback_semantics():
+    # '!=' is intentionally excluded from bivariate fast path; fallback must be sound.
+    dom = range(-2, 3)
+    expected = any((2 * xv - 3 * yv) != 1 for xv, yv in itertools.product(dom, dom))
+    m = Model()
+    x = m.int("x", -2, 2)
+    y = m.int("y", -2, 2)
+    m &= (2 * x - 3 * y != 1)
+    r = _solve(m)
+    assert (r.ok if expected else r.status == "unsat")
+
+
 def test_bivariate_int_fastpath_bypasses_pb_and_card_encoders(monkeypatch):
     def fail_card(*args, **kwargs):
         raise AssertionError("CardEnc should not be called for bivariate Int fast path")

@@ -287,6 +287,8 @@ class _EncoderDispatch:
             return "<"
         if op == "==":
             return "=="
+        if op == "!=":
+            return "!="
         raise ValueError(f"Unsupported comparator {op!r}")
 
     @staticmethod
@@ -543,6 +545,10 @@ class _EncoderDispatch:
             if rhs_val % b != 0:
                 return False
             return ("==", rhs_val // b)
+        if op == "!=":
+            if rhs_val % b != 0:
+                return True
+            return ("!=", rhs_val // b)
         raise ValueError(f"Unsupported comparator {op!r}")
 
     @staticmethod
@@ -567,6 +573,13 @@ class _EncoderDispatch:
             lt_lit = _EncoderDispatch._int_cmp_constraint(x, "<", k + 1)
             _EncoderDispatch._lit_implies(clauses, model, antecedent, ge_lit)
             _EncoderDispatch._lit_implies(clauses, model, antecedent, lt_lit)
+            return True
+        if x_op == "!=":
+            if k < x.lb or k > x.ub:
+                _EncoderDispatch._lit_implies(clauses, model, antecedent, True)
+                return True
+            neq_lit = _EncoderDispatch._negate_bool_or_lit(_EncoderDispatch._int_cmp_constraint(x, "==", k))
+            _EncoderDispatch._lit_implies(clauses, model, antecedent, neq_lit)
             return True
 
         lit = _EncoderDispatch._int_cmp_constraint(x, x_op, k)
@@ -890,9 +903,6 @@ class _EncoderDispatch:
                 if cmp_op == "<=":
                     _EncoderDispatch._emit_sum_le_gated(clauses, model, True, lits, k, ge_cache)
                     return ClauseGroup(model, clauses)
-                if cmp_op == ">=":
-                    _EncoderDispatch._emit_sum_ge_gated(clauses, model, True, lits, k, ge_cache)
-                    return ClauseGroup(model, clauses)
                 return None
 
             ext_aff = _EncoderDispatch._extract_single_weighted_bool_affine(model, affine_expr)
@@ -1209,8 +1219,6 @@ class _EncoderDispatch:
         ``IntVar`` operands in the affine difference ``lhs - rhs`` (no extra
         boolean literals). Supported comparators: ``<=, <, >=, >, ==``.
         """
-        if op == "!=":
-            return None
         left = _EncoderDispatch._extract_multi_int_affine(model, lhs)
         right = _EncoderDispatch._extract_multi_int_affine(model, rhs)
         if left is None or right is None:
@@ -1399,8 +1407,6 @@ class _EncoderDispatch:
 
         Introduces zero auxiliary variables. Unsupported comparators/shapes return ``None``.
         """
-        if op == "!=":
-            return None
         left = _EncoderDispatch._extract_multi_int_affine(model, lhs)
         right = _EncoderDispatch._extract_multi_int_affine(model, rhs)
         if left is None or right is None:
@@ -1435,8 +1441,6 @@ class _EncoderDispatch:
     @staticmethod
     def _try_univariate_with_bool_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
         """Detect and compile ``a*x + w*b_lit OP c`` with gated univariate branches."""
-        if op == "!=":
-            return None
         diff = lhs - rhs
         ext = _EncoderDispatch._extract_univariate_with_bool_affine(model, diff)
         if ext is None:
@@ -1454,8 +1458,6 @@ class _EncoderDispatch:
     @staticmethod
     def _try_bivariate_with_bool_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
         """Detect and compile ``a*x + b*y + w*bit OP c`` via gated bivariate branches."""
-        if op == "!=":
-            return None
         diff = lhs - rhs
         ext = _EncoderDispatch._extract_bivariate_with_bool_affine(model, diff)
         if ext is None:

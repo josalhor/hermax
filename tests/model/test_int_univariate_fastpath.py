@@ -10,7 +10,7 @@ from hermax.internal.pb import PBEnc
 from hermax.model import Model
 
 
-OPS = ("<=", "<", ">=", ">", "==")
+OPS = ("<=", "<", ">=", ">", "==", "!=")
 
 
 def _cmp(a: int, op: str, b: int) -> bool:
@@ -24,6 +24,8 @@ def _cmp(a: int, op: str, b: int) -> bool:
         return a > b
     if op == "==":
         return a == b
+    if op == "!=":
+        return a != b
     raise ValueError(op)
 
 
@@ -43,6 +45,8 @@ def _constrain_expr(m: Model, x, a: int, op: str, c: int):
         m &= (lhs > c)
     elif op == "==":
         m &= (lhs == c)
+    elif op == "!=":
+        m &= (lhs != c)
     else:
         raise ValueError(op)
 
@@ -84,6 +88,7 @@ def test_univariate_fastpath_matches_bruteforce_shifted_domains(op: str, a: int)
     lambda x: (3 * x < 8),
     lambda x: (-2 * x >= -1),
     lambda x: (5 * x == 15),
+    lambda x: (4 * x != 10),
     lambda x: (-3 * x > -9),
 ])
 def test_univariate_fastpath_bypasses_pb_and_card(monkeypatch, expr_builder):
@@ -104,7 +109,7 @@ def test_univariate_fastpath_bypasses_pb_and_card(monkeypatch, expr_builder):
     x = m.int("x", 0, 10)
     m &= expr_builder(x)
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
 
 
 @pytest.mark.parametrize("expr_builder", [
@@ -112,6 +117,7 @@ def test_univariate_fastpath_bypasses_pb_and_card(monkeypatch, expr_builder):
     lambda x: (3 * x < 8),
     lambda x: (-2 * x >= -1),
     lambda x: (5 * x == 15),
+    lambda x: (4 * x != 10),
     lambda x: (-3 * x > -9),
 ])
 def test_univariate_fastpath_allocates_no_helper_variables(expr_builder):
@@ -184,3 +190,25 @@ def test_univariate_fastpath_fallback_for_non_affine_mixed_boolean_uses_pb(monke
     m &= (2 * x + a + b <= 7)
     _solve(m)
     assert called["pb"] >= 1
+
+
+@pytest.mark.parametrize("a,c", [
+    (2, 3),   # not divisible -> trivially true for all integer x
+    (3, 9),   # divisible -> excludes exactly x=3
+    (-4, 8),  # divisible with negative scale -> excludes x=-2
+])
+def test_univariate_fastpath_not_equal_matches_bruteforce_and_bypasses_pb(monkeypatch, a: int, c: int):
+    def fail_pb(*args, **kwargs):
+        raise AssertionError("PBEnc should not be called for univariate '!=' fast path")
+
+    monkeypatch.setattr(PBEnc, "leq", staticmethod(fail_pb))
+    monkeypatch.setattr(PBEnc, "geq", staticmethod(fail_pb))
+    monkeypatch.setattr(PBEnc, "equals", staticmethod(fail_pb))
+
+    dom = range(-4, 5)
+    expected = any((a * xv) != c for xv in dom)
+    m = Model()
+    x = m.int("x", -4, 4)
+    m &= (a * x != c)
+    r = _solve(m)
+    assert (r.ok if expected else r.status == "unsat")

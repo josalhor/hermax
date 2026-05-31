@@ -103,7 +103,7 @@ def test_upper_gated_bound_no_pb_no_card(monkeypatch, n: int, k: int, mcoef: int
     y = m.bool("y")
     m &= (_boolsum(xs) <= (k + mcoef * y))
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
 
 
 @pytest.mark.parametrize("n,k,mcoef", [
@@ -130,7 +130,7 @@ def test_lower_gated_bound_no_pb_no_card(monkeypatch, n: int, k: int, mcoef: int
     y = m.bool("y")
     m &= (_boolsum(xs) >= ((k - mcoef) + mcoef * y))
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
 
 
 @pytest.mark.parametrize("n,k,mcoef", [
@@ -231,7 +231,7 @@ def test_swapped_orientation_upper_supported_no_pb_no_card(monkeypatch, n: int, 
     y = m.bool("y")
     m &= ((k + mcoef * y) >= _boolsum(xs))
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
 
 
 @pytest.mark.parametrize("n,k,mcoef", [
@@ -257,4 +257,4 @@ def test_swapped_orientation_lower_supported_no_pb_no_card(monkeypatch, n: int, 
     y = m.bool("y")
     m &= (((k - mcoef) + mcoef * y) <= _boolsum(xs))
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok

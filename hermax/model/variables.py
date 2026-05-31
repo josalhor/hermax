@@ -451,19 +451,14 @@ class _MultiplexerInt:
 
     @staticmethod
     def _cmp_int(lhs: int, op: str, rhs: int) -> bool:
-        if op == "<=":
-            return lhs <= rhs
-        if op == "<":
-            return lhs < rhs
-        if op == ">=":
-            return lhs >= rhs
-        if op == ">":
-            return lhs > rhs
-        if op == "==":
-            return lhs == rhs
-        if op == "!=":
-            return lhs != rhs
-        raise ValueError(f"Unsupported comparator {op!r}")
+        return {
+            "<=": lhs <= rhs,
+            "<": lhs < rhs,
+            ">=": lhs >= rhs,
+            ">": lhs > rhs,
+            "==": lhs == rhs,
+            "!=": lhs != rhs,
+        }[op]
 
     def _rhs_constraint(self, op: str, rhs, array_val: int):
         if isinstance(rhs, int):
@@ -551,34 +546,24 @@ class _VectorElementInt:
 
     def _rhs_constraint(self, op: str, rhs, item: "IntVar"):
         if isinstance(rhs, int):
-            if op == "<=":
-                return item <= rhs
-            if op == "<":
-                return item < rhs
-            if op == ">=":
-                return item >= rhs
-            if op == ">":
-                return item > rhs
-            if op == "==":
-                return item == rhs
-            if op == "!=":
-                return item != rhs
-            raise ValueError(f"Unsupported comparator {op!r}")
+            return {
+                "<=": item <= rhs,
+                "<": item < rhs,
+                ">=": item >= rhs,
+                ">": item > rhs,
+                "==": item == rhs,
+                "!=": item != rhs,
+            }[op]
         if isinstance(rhs, IntVar):
             _ensure_same_model_pair_fast(self, rhs)
-            if op == "<=":
-                return item <= rhs
-            if op == "<":
-                return item < rhs
-            if op == ">=":
-                return item >= rhs
-            if op == ">":
-                return item > rhs
-            if op == "==":
-                return item == rhs
-            if op == "!=":
-                return item != rhs
-            raise ValueError(f"Unsupported comparator {op!r}")
+            return {
+                "<=": item <= rhs,
+                "<": item < rhs,
+                ">=": item >= rhs,
+                ">": item > rhs,
+                "==": item == rhs,
+                "!=": item != rhs,
+            }[op]
         raise TypeError(f"Vector element comparison does not support RHS {type(rhs)!r}")
 
     def _evaluate_comparator(self, op: str, rhs) -> ClauseGroup:
@@ -1090,10 +1075,6 @@ class IntVar:
         if op == ">":
             # self + offset > other  <=>  self + (offset - 1) >= other
             return IntRelation(self._model, list(self._relop_intvar(other, ">=", offset - 1)), self, other, ">", offset)
-        if op == "==":
-            le = self._relop_intvar(other, "<=", offset)
-            ge = self._relop_intvar(other, ">=", offset)
-            return IntRelation(m, [*le, *ge], self, other, "==", offset)
         if op == "!=":
             if offset != 0:
                 raise ValueError("IntVar '!=' with offset is not supported")
@@ -1116,18 +1097,6 @@ class IntVar:
                 self._model._register_literal_definition(e, ClauseGroup(self._model, clauses))
             self._cmp_cache[key] = e
         return self._cmp_cache[key]
-
-    def _pattern_for_value(self, value: int) -> list[Literal]:
-        if value < self.lb or value > self.ub:
-            raise ValueError(f"value {value} is outside domain [{self.lb}, {self.ub}]")
-        k = value - self.lb
-        ts = self._threshold_lits
-        return [*ts[:k], *(~t for t in ts[k:])]
-
-    @staticmethod
-    def _forbid_conjunction(model: "Model", left: list[Literal], right: list[Literal]) -> Clause:
-        # Forbid all literals in both conjunction patterns from being true together.
-        return Clause(model, [*(~lit for lit in left), *(~lit for lit in right)])
 
     def __le__(self, value: int):
         if isinstance(value, IntVar):

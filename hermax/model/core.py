@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from .core import *
 
 from .expressions import *
-from .expressions import _detection_error, _nonlinear_error, _ensure_same_model, _ensure_same_model_pair_fast, _LazyIntExpr
+from .expressions import _detection_error, _nonlinear_error, _ensure_same_model, _ensure_same_model_pair_fast, _LazyIntExpr, FLOAT_ZERO_TOL
 from .variables import *
 from .variables import _BaseVector, _BaseDict, _BaseMatrixView, _MultiplexerInt, _VectorElementInt
 from .encoders import *
@@ -64,7 +64,7 @@ class _ObjectiveProxy:
             coeff_raw = t.coefficient
             coeff_abs: int | float
             if isinstance(coeff_raw, float):
-                if abs(coeff_raw) <= 1e-12:
+                if abs(coeff_raw) <= FLOAT_ZERO_TOL:
                     continue
                 coeff_abs = abs(coeff_raw)
             else:
@@ -91,13 +91,13 @@ class _ObjectiveProxy:
         # Route positive constants to a native always-violated soft unit on
         # __false so solver-reported cost includes the offset directly.
         offset = 0
-        if float(offset_raw) > 1e-12:
+        if float(offset_raw) > FLOAT_ZERO_TOL:
             pos_w = int(offset_raw) if isinstance(offset_raw, int) else float(offset_raw)
             pos_off, _ = self._model._coerce_soft_weight(pos_w, allow_zero=False)
             false_lit = self._model._get_bool_constant_literal(False)
             dim_false = self._model._lit_to_dimacs(false_lit)
             lit_weights[dim_false] = lit_weights.get(dim_false, 0) + int(pos_off)
-        elif float(offset_raw) < -1e-12:
+        elif float(offset_raw) < -FLOAT_ZERO_TOL:
             neg_abs = -offset_raw
             neg_w = int(neg_abs) if isinstance(neg_abs, int) else float(neg_abs)
             neg_off, _ = self._model._coerce_soft_weight(neg_w, allow_zero=False)
@@ -286,7 +286,7 @@ class _TierObjectiveProxy:
         for t in expr.terms:
             coeff_raw = t.coefficient
             if isinstance(coeff_raw, float):
-                if abs(coeff_raw) <= 1e-12:
+                if abs(coeff_raw) <= FLOAT_ZERO_TOL:
                     continue
                 coeff_abs = abs(coeff_raw)
             else:
@@ -308,13 +308,13 @@ class _TierObjectiveProxy:
             raise ValueError("Negative objective offsets are not supported by current model policy.")
 
         offset = 0
-        if float(offset_raw) > 1e-12:
+        if float(offset_raw) > FLOAT_ZERO_TOL:
             pos_w = int(offset_raw) if isinstance(offset_raw, int) else float(offset_raw)
             pos_off, _ = self._model._coerce_soft_weight(pos_w, allow_zero=False)
             false_lit = self._model._get_bool_constant_literal(False)
             dim_false = self._model._lit_to_dimacs(false_lit)
             lit_weights[dim_false] = lit_weights.get(dim_false, 0) + int(pos_off)
-        elif float(offset_raw) < -1e-12:
+        elif float(offset_raw) < -FLOAT_ZERO_TOL:
             neg_abs = -offset_raw
             neg_w = int(neg_abs) if isinstance(neg_abs, int) else float(neg_abs)
             neg_off, _ = self._model._coerce_soft_weight(neg_w, allow_zero=False)
@@ -830,7 +830,7 @@ class Model:
     ALLOW_NEGATIVE_OBJECTIVE_OFFSETS = True
     SOFT_DEDUP_ENABLED = True
     SOFT_GCD_OPTIMIZATION_ENABLED = True
-    MERGE_PB_OPTIMIZATION_ENABLED = True
+    MERGE_PB_OPTIMIZATION_ENABLED = False
     DEBUG_NONE = 0
     DEBUG_DELTA = 1
     DEBUG_COMPILE = 2
@@ -2255,6 +2255,12 @@ class Model:
             rhs_r = rhs._realize_int_terms(self)
             self._validate_integral_pbexpr(lhs_r)
             self._validate_integral_pbexpr(rhs_r)
+            if op == "!=":
+                # Encode A != B as (A < B) OR (A > B) via a branch selector.
+                sel = self.bool()
+                g_lt = self._compile_pb_compare(lhs_r, "<", rhs_r).only_if(sel)
+                g_gt = self._compile_pb_compare(lhs_r, ">", rhs_r).only_if(~sel)
+                return g_lt & g_gt
             pairs, const = _EncoderDispatch._normalize_pb(lhs_r, rhs_r)
             cmp_op, bound = _EncoderDispatch._bound_from_zero_compare(op, const)
             if self._debug_level >= self.DEBUG_COMPILE:
@@ -2386,20 +2392,30 @@ class Model:
             self._validate_integral_pbexpr(lhs_r)
             self._validate_integral_pbexpr(rhs_r)
 
-            eager_fast = (
-                _EncoderDispatch._try_unary_adder_eq_fastpath(self, lhs_r, constraint._op, rhs_r)
-                or _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath(self, lhs_r, constraint._op, rhs_r)
-                or _EncoderDispatch._try_boolsum_bigm_fastpath(self, lhs_r, constraint._op, rhs_r)
-                or _EncoderDispatch._try_mixed_int_boolsum_bigm_fastpath(self, lhs_r, constraint._op, rhs_r)
-                or _EncoderDispatch._try_univariate_int_fastpath(self, lhs_r, constraint._op, rhs_r)
-                or _EncoderDispatch._try_univariate_with_bool_fastpath(self, lhs_r, constraint._op, rhs_r)
-                or _EncoderDispatch._try_nonnegative_zero_leq_fastpath(self, lhs_r, constraint._op, rhs_r)
-                or _EncoderDispatch._try_bivariate_with_bool_fastpath(self, lhs_r, constraint._op, rhs_r)
-                or _EncoderDispatch._try_trivariate_int_fastpath(self, lhs_r, constraint._op, rhs_r)
-                or _EncoderDispatch._try_bivariate_int_fastpath(self, lhs_r, constraint._op, rhs_r)
-            )
+            eager_fast = None
+            for fast_try in (
+                _EncoderDispatch._try_unary_adder_eq_fastpath,
+                _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath,
+                _EncoderDispatch._try_boolsum_bigm_fastpath,
+                _EncoderDispatch._try_mixed_int_boolsum_bigm_fastpath,
+                _EncoderDispatch._try_univariate_int_fastpath,
+                _EncoderDispatch._try_univariate_with_bool_fastpath,
+                _EncoderDispatch._try_nonnegative_zero_leq_fastpath,
+                _EncoderDispatch._try_bivariate_with_bool_fastpath,
+                _EncoderDispatch._try_trivariate_int_fastpath,
+                _EncoderDispatch._try_bivariate_int_fastpath,
+            ):
+                out = fast_try(self, lhs_r, constraint._op, rhs_r)
+                if out is not None:
+                    eager_fast = out
+                    break
             if eager_fast is not None:
                 group = eager_fast
+                for cond in constraint._conditions:
+                    group = group.only_if(cond)
+                return group
+            if constraint._op == "!=":
+                group = self._compile_pb_compare(lhs_r, constraint._op, rhs_r)
                 for cond in constraint._conditions:
                     group = group.only_if(cond)
                 return group

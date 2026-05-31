@@ -89,7 +89,8 @@ def test_mixed_int_boolsum_swapped_orientation_supported(a: int, k: int, mcoef: 
     y = m.bool("y")
     m &= ((k + mcoef * y) >= (a * x + _boolsum(bs)))
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, "<=")
+    assert (r.ok if expected else r.status == "unsat")
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -117,7 +118,8 @@ def test_mixed_int_boolsum_no_pb_no_card(monkeypatch, a: int, k: int, mcoef: int
     y = m.bool("y")
     m &= (a * x + _boolsum(bs) <= (k + mcoef * y))
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, "<=")
+    assert (r.ok if expected else r.status == "unsat")
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -145,7 +147,8 @@ def test_mixed_int_boolsum_swapped_no_pb_no_card(monkeypatch, a: int, k: int, mc
     y = m.bool("y")
     m &= ((k + mcoef * y) >= (a * x + _boolsum(bs)))
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, "<=")
+    assert (r.ok if expected else r.status == "unsat")
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -165,5 +168,5 @@ def test_mixed_int_boolsum_y_false_tighter_branch(a: int, k: int, mcoef: int):
     m &= bs[0]
     m &= bs[1]
     r = _solve(m)
-    assert r.status in {"sat", "unsat"}  # semantic guard: must not crash / fallback errors
-
+    expected = any((a * 3 + (2 + b2)) <= k for b2 in (0, 1))
+    assert (r.ok if expected else r.status == "unsat")

@@ -82,7 +82,7 @@ def test_sum_le_m_times_y_no_pb_no_card(monkeypatch, n: int, mcoef: int):
     y = m.bool("y")
     m &= (_boolsum(xs) <= mcoef * y)
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
 
 
 @pytest.mark.parametrize("n", [2, 3, 5])
@@ -161,7 +161,7 @@ def test_swapped_orientation_m_times_y_ge_sum_supported(n: int, mcoef: int):
     y = m.bool("y")
     m &= (mcoef * y >= _boolsum(xs))
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
 
 
 @pytest.mark.parametrize("n,mcoef", [
@@ -188,4 +188,4 @@ def test_swapped_orientation_uses_no_pb_no_card(monkeypatch, n: int, mcoef: int)
     y = m.bool("y")
     m &= (mcoef * y >= _boolsum(xs))
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok

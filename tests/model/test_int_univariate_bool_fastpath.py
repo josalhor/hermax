@@ -11,7 +11,7 @@ from hermax.internal.pb import PBEnc
 from hermax.model import Model
 
 
-OPS = ("<=", "<", ">=", ">", "==")
+OPS = ("<=", "<", ">=", ">", "==", "!=")
 
 
 def _cmp(a: int, op: str, b: int) -> bool:
@@ -25,6 +25,8 @@ def _cmp(a: int, op: str, b: int) -> bool:
         return a > b
     if op == "==":
         return a == b
+    if op == "!=":
+        return a != b
     raise ValueError(op)
 
 
@@ -45,6 +47,8 @@ def _build_expr(x, b, a: int, w: int, op: str, c: int, *, neg_lit: bool = False)
         return lhs > c
     if op == "==":
         return lhs == c
+    if op == "!=":
+        return lhs != c
     raise ValueError(op)
 
 
@@ -122,7 +126,7 @@ def test_univariate_bool_fastpath_bypasses_pb_and_card(monkeypatch, expr_builder
     b = m.bool("b")
     m &= expr_builder(x, b)
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
 
 
 @pytest.mark.parametrize("expr_builder", [
@@ -179,7 +183,7 @@ def test_univariate_bool_fastpath_does_not_claim_unsupported_shapes(monkeypatch,
         b2 = m.bool("b2")
         m &= expr_builder(x, b1, b2)
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
     assert seen["uni_calls"] >= 1
     assert seen["uni_hits"] == 0
     if expr_builder.__code__.co_argcount == 3:
@@ -205,6 +209,16 @@ def test_univariate_bool_fastpath_impossible_cases_without_pb(monkeypatch, a, w,
     m &= _build_expr(x, b, a, w, op, c)
     r = _solve(m)
     assert r.status == "unsat"
+
+
+def test_univariate_bool_not_equal_fastpath_behavior():
+    # '!=' now follows the same gated-branch fast path as other comparators.
+    m = Model()
+    x = m.int("x", 0, 6)
+    b = m.bool("b")
+    m &= (2 * x + 5 * b != 7)
+    r = _solve(m)
+    assert r.ok
 
 
 @pytest.mark.parametrize("const_x", [1, 3, 7, 11])

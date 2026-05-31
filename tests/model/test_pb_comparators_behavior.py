@@ -11,7 +11,7 @@ def _solve_ok(m: Model):
     return r
 
 
-def test_cardinality_atmost_semantics():
+def test_cardinality_atmost_behavior():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
@@ -23,7 +23,7 @@ def test_cardinality_atmost_semantics():
     assert r[b] is False
 
 
-def test_cardinality_strict_less_semantics_off_by_one():
+def test_cardinality_strict_less_off_by_one():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
@@ -35,7 +35,7 @@ def test_cardinality_strict_less_semantics_off_by_one():
     assert r[b] is False
 
 
-def test_cardinality_atleast_semantics():
+def test_cardinality_atleast_behavior():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
@@ -47,7 +47,7 @@ def test_cardinality_atleast_semantics():
     assert r[b] is True
 
 
-def test_cardinality_strict_greater_semantics():
+def test_cardinality_strict_greater_behavior():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
@@ -60,7 +60,7 @@ def test_cardinality_strict_greater_semantics():
     assert r[b] is True
 
 
-def test_cardinality_equals_semantics():
+def test_cardinality_equals_behavior():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
@@ -72,7 +72,7 @@ def test_cardinality_equals_semantics():
     assert r[b] is False
 
 
-def test_weighted_pb_leq_and_geq_semantics():
+def test_weighted_pb_leq_and_geq_behavior():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
@@ -85,7 +85,7 @@ def test_weighted_pb_leq_and_geq_semantics():
     assert r[b] is True
 
 
-def test_weighted_pb_strict_greater_semantics():
+def test_weighted_pb_strict_greater_behavior():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
@@ -97,7 +97,7 @@ def test_weighted_pb_strict_greater_semantics():
     assert r[b] is True
 
 
-def test_weighted_pb_equals_semantics():
+def test_weighted_pb_equals_behavior():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
@@ -109,7 +109,7 @@ def test_weighted_pb_equals_semantics():
     assert r[b] is False
 
 
-def test_pbexpr_vs_pbexpr_geq_semantics():
+def test_pbexpr_vs_pbexpr_geq_behavior():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
@@ -125,7 +125,7 @@ def test_pbexpr_vs_pbexpr_geq_semantics():
     assert r[b] is True
 
 
-def test_pbexpr_vs_pbexpr_equals_semantics_sat_case():
+def test_pbexpr_vs_pbexpr_equals_sat_case():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")

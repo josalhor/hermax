@@ -6,10 +6,7 @@ from collections.abc import Iterable
 
 from pysat.formula import CNFPlus
 
-try:
-    from hermax.internal import _pbamo as _native_pbamo
-except ImportError:  # pragma: no cover - compatibility with older local builds
-    from hermax.internal import _structuredpb as _native_pbamo
+from hermax.internal import _pbamo as _native_pbamo
 from hermax.encoder.card import CardEnc, EncType as CardEncType
 
 

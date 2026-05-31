@@ -185,7 +185,7 @@ def test_bool_sum_intvar_equality_bypasses_pb_and_card(monkeypatch):
     b = [m.bool(f"b{i}") for i in range(5)]
     m &= (x == sum(b))
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
 
 
 def test_bool_sum_intvar_equality_with_offsets_bypasses_pb_and_card(monkeypatch):
@@ -208,7 +208,7 @@ def test_bool_sum_intvar_equality_with_offsets_bypasses_pb_and_card(monkeypatch)
     b = [m.bool(f"b{i}") for i in range(6)]
     m &= (x + 3 == sum(b) - 1)
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    assert r.ok
 
 
 @pytest.mark.parametrize("expr_builder", [
@@ -422,7 +422,8 @@ def test_bool_sum_intvar_inequalities_bypass_pb_and_card(monkeypatch, op):
     b = [m.bool(f"b{i}") for i in range(6)]
     m &= _constraint_builder_op(x, b, op=op, offset_x=3, offset_s=-1)
     r = _solve(m)
-    assert r.status in {"sat", "optimum", "unsat"}
+    expected = _bruteforce_sat_op(-2, 8, 6, op, 3, -1)
+    assert (r.ok if expected else r.status == "unsat")
 
 
 @pytest.mark.parametrize("seed", [7, 8, 9, 10, 2026])
