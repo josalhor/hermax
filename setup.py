@@ -5,6 +5,7 @@ import sys
 import platform
 import subprocess
 import shutil
+import contextlib
 from pathlib import Path
 import pybind11
 import sysconfig
@@ -636,6 +637,8 @@ if %errorlevel%==0 (
                     full = os.path.join(path, entry)
                     if not os.path.isfile(full):
                         continue
+                    if not self._is_shell_entry(full):
+                        continue
                     self._normalize_script_line_endings(full)
                     st = os.stat(full).st_mode
                     os.chmod(full, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -643,6 +646,58 @@ if %errorlevel%==0 (
             self._normalize_script_line_endings(path)
             st = os.stat(path).st_mode
             os.chmod(path, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    def _is_shell_entry(self, path: str) -> bool:
+        name = os.path.basename(path)
+        return name == "configure" or name.endswith(".sh") or name.endswith(".bash")
+
+    def _capture_file_state(self, path: str):
+        if not os.path.exists(path):
+            return {"path": path, "exists": False}
+        with open(path, "rb") as f:
+            data = f.read()
+        return {
+            "path": path,
+            "exists": True,
+            "data": data,
+            "mode": stat.S_IMODE(os.stat(path).st_mode),
+        }
+
+    def _restore_file_state(self, state) -> None:
+        path = state["path"]
+        if not state["exists"]:
+            if os.path.exists(path):
+                os.remove(path)
+            return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(state["data"])
+        os.chmod(path, state["mode"])
+
+    @contextlib.contextmanager
+    def _preserve_files(self, *paths):
+        states = []
+        seen = set()
+        for path in paths:
+            if not path:
+                continue
+            if os.path.isdir(path):
+                for entry in os.listdir(path):
+                    full = os.path.join(path, entry)
+                    if not os.path.isfile(full) or not self._is_shell_entry(full):
+                        continue
+                    if full not in seen:
+                        states.append(self._capture_file_state(full))
+                        seen.add(full)
+                continue
+            if path not in seen:
+                states.append(self._capture_file_state(path))
+                seen.add(path)
+        try:
+            yield
+        finally:
+            for state in reversed(states):
+                self._restore_file_state(state)
 
     def _make(self, make_args, *, cwd, env):
         """
@@ -933,10 +988,10 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         eval_src_dir = os.path.abspath("EvalMaxSAT2022")
         
         cfg = os.path.join(eval_src_dir, "build_lib.sh")
-        st = os.stat(cfg).st_mode
-        os.chmod(cfg, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-        self._bash(["./build_lib.sh"], cwd=eval_src_dir, env=env)
+        with self._preserve_files(cfg):
+            st = os.stat(cfg).st_mode
+            os.chmod(cfg, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            self._bash(["./build_lib.sh"], cwd=eval_src_dir, env=env)
         eval_lib = os.path.join(eval_src_dir, "libipamirEvalMaxSAT2022.a")
         self._ranlib(eval_lib, env=env)
         cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DEVALMAXSAT_INCR_LIB_ABS={eval_lib}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
@@ -990,67 +1045,69 @@ class CMakeBuildURMaxSAT(CMakeBuild):
             self._make(["clean"], cwd=cadical_dir, env=env)
         
         cfg = os.path.join(cadical_dir, "configure")
-        self._prepare_shell_scripts(cfg, os.path.join(cadical_dir, "scripts"))
+        with self._preserve_files(cfg, os.path.join(cadical_dir, "scripts"), os.path.join(uwr_dir, "config.mk")):
+            self._prepare_shell_scripts(cfg, os.path.join(cadical_dir, "scripts"))
 
-        print('configure')
-        self._bash(["sh", "./configure"], cwd=cadical_dir, env=env)
-        def _materialize_cadical_sources(cadical_dir: str):
-            if platform.system() != "Windows":
-                return
+            print('configure')
+            self._bash(["sh", "./configure"], cwd=cadical_dir, env=env)
+            def _materialize_cadical_sources(cadical_dir: str):
+                if platform.system() != "Windows":
+                    return
 
-            src = os.path.join(cadical_dir, "src")
-            build = os.path.join(cadical_dir, "build")
-            build_src = os.path.join(build, "src")
+                src = os.path.join(cadical_dir, "src")
+                build = os.path.join(cadical_dir, "build")
+                build_src = os.path.join(build, "src")
 
-            # If build/src is missing (common on Windows symlink failure), copy it.
-            if not os.path.isdir(build_src):
-                shutil.copytree(src, build_src)
+                # If build/src is missing (common on Windows symlink failure), copy it.
+                if not os.path.isdir(build_src):
+                    shutil.copytree(src, build_src)
 
-            # Extra sanity: ensure at least one expected file exists
-            # (pick a file that exists in your cadical version)
-            if not any(os.path.exists(os.path.join(build_src, fn)) for fn in ["cadical.cpp", "cadical.cc", "cadical.cxx"]):
-                # fallback: copy again, but if this still fails, you need to list src dir
-                shutil.rmtree(build_src, ignore_errors=True)
-                shutil.copytree(src, build_src)
-        print('materialize')
-        _materialize_cadical_sources(cadical_dir)
-        print('cadical -j')
-        # self._make(["cadical", "-j"], cwd=cadical_dir, env=env)
-        build_dir = os.path.join(cadical_dir, "build")
-        self._make(["-j", "libcadical.a"], cwd=build_dir, env=env)
+                # Extra sanity: ensure at least one expected file exists
+                # (pick a file that exists in your cadical version)
+                if not any(os.path.exists(os.path.join(build_src, fn)) for fn in ["cadical.cpp", "cadical.cc", "cadical.cxx"]):
+                    # fallback: copy again, but if this still fails, you need to list src dir
+                    shutil.rmtree(build_src, ignore_errors=True)
+                    shutil.copytree(src, build_src)
 
-        cadical_a = os.path.join(cadical_dir, "build", "libcadical.a")
-        self._ranlib(cadical_a, env=env)
-        self._macos_rebuild_archive_if_gnu(cadical_a)
-        if os.path.exists(os.path.join(uwr_dir, "config.mk")):
-            os.remove(os.path.join(uwr_dir, "config.mk"))
-        print('cp')
-        self._bash(["cp", "config.cadical", "config.mk"], cwd=uwr_dir, env=env)
-        env_uwr = env.copy()
-        env_uwr["MAXPRE"] = ""
-        env_uwr["USESCIP"] = "" 
-        print('make clean')
-        self._make(["clean"], cwd=uwr_dir, env=env_uwr)
-        # print('make r')
-        self._make(["build/release/lib/libuwrmaxsat.a", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env_uwr)
-        uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
-        print ('ranlib')
-        self._ranlib(uwr_a, env=env_uwr)
-        self._macos_rebuild_archive_if_gnu(uwr_a)
-        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+            print('materialize')
+            _materialize_cadical_sources(cadical_dir)
+            print('cadical -j')
+            # self._make(["cadical", "-j"], cwd=cadical_dir, env=env)
+            build_dir = os.path.join(cadical_dir, "build")
+            self._make(["-j", "libcadical.a"], cwd=build_dir, env=env)
+
+            cadical_a = os.path.join(cadical_dir, "build", "libcadical.a")
+            self._ranlib(cadical_a, env=env)
+            self._macos_rebuild_archive_if_gnu(cadical_a)
+            if os.path.exists(os.path.join(uwr_dir, "config.mk")):
+                os.remove(os.path.join(uwr_dir, "config.mk"))
+            print('cp')
+            self._bash(["cp", "config.cadical", "config.mk"], cwd=uwr_dir, env=env)
+            env_uwr = env.copy()
+            env_uwr["MAXPRE"] = ""
+            env_uwr["USESCIP"] = "" 
+            print('make clean')
+            self._make(["clean"], cwd=uwr_dir, env=env_uwr)
+            # print('make r')
+            self._make(["build/release/lib/libuwrmaxsat.a", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env_uwr)
+            uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
+            print ('ranlib')
+            self._ranlib(uwr_a, env=env_uwr)
+            self._macos_rebuild_archive_if_gnu(uwr_a)
+            cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
 
 
-        # project_root = 'C:\\Users\\joshs\\Desktop\\'
-        # log_dir = os.path.join(project_root, "_cibw_logs")
-        # os.makedirs(log_dir, exist_ok=True)
+            # project_root = 'C:\\Users\\joshs\\Desktop\\'
+            # log_dir = os.path.join(project_root, "_cibw_logs")
+            # os.makedirs(log_dir, exist_ok=True)
 
-        # cfg_log   = os.path.join(log_dir, f"cmake_config_{abi_tag}.log")
-        # build_log = os.path.join(log_dir, f"cmake_build_{abi_tag}.log")
-        
-        print('cmake1')
-        subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
-        print('cmake2')
-        subprocess.check_call(["cmake", "--build", ".", "--verbose"], cwd=build_temp_path, env=env)
+            # cfg_log   = os.path.join(log_dir, f"cmake_config_{abi_tag}.log")
+            # build_log = os.path.join(log_dir, f"cmake_build_{abi_tag}.log")
+            
+            print('cmake1')
+            subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
+            print('cmake2')
+            subprocess.check_call(["cmake", "--build", ".", "--verbose"], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
 
     def build_urmaxsat_comp(self, ext):
@@ -1087,76 +1144,80 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         if "CFLAGS" in env_sat and "-std=gnu11" in env_sat["CFLAGS"]:
             env_sat["CFLAGS"] = env_sat["CFLAGS"].replace("-std=gnu11", "")
 
-        try:
-            self._bash(["bash", "-lc", "echo PATH=$PATH; which g++; g++ -dumpmachine; g++ --version | head -n 2"], cwd=cominisatps_simp_dir, env=env_sat)
-            self._bash(
-                ["bash", "-lc", "rm -f -- *.or lib_release.a lib.a depend.mk 2>/dev/null || true"],
-                cwd=cominisatps_simp_dir,
-                env=env_sat
-            )
+        with self._preserve_files(
+            os.path.join(cominisatps_simp_dir, "depend.mk"),
+            os.path.join(uwr_dir, "config.mk"),
+        ):
+            try:
+                self._bash(["bash", "-lc", "echo PATH=$PATH; which g++; g++ -dumpmachine; g++ --version | head -n 2"], cwd=cominisatps_simp_dir, env=env_sat)
+                self._bash(
+                    ["bash", "-lc", "rm -f -- *.or lib_release.a lib.a depend.mk 2>/dev/null || true"],
+                    cwd=cominisatps_simp_dir,
+                    env=env_sat
+                )
 
-            self._make(["clean"], cwd=cominisatps_simp_dir, env=env_sat)
-            self._make(["libr"], cwd=cominisatps_simp_dir, env=env_sat)
-        except Exception as e:
-            print(e)
-            raise
-        cominisatps_a = os.path.join(cominisatps_simp_dir, "lib_release.a")
-        self._ranlib(cominisatps_a, env=env_sat)
-        # Critical: must happen BEFORE CMake tries to link this archive.
-        self._macos_rebuild_archive_if_gnu(cominisatps_a)
-        def posix(p): return p.replace("\\", "/")
+                self._make(["clean"], cwd=cominisatps_simp_dir, env=env_sat)
+                self._make(["libr"], cwd=cominisatps_simp_dir, env=env_sat)
+            except Exception as e:
+                print(e)
+                raise
+            cominisatps_a = os.path.join(cominisatps_simp_dir, "lib_release.a")
+            self._ranlib(cominisatps_a, env=env_sat)
+            # Critical: must happen BEFORE CMake tries to link this archive.
+            self._macos_rebuild_archive_if_gnu(cominisatps_a)
+            def posix(p): return p.replace("\\", "/")
 
-        with open(os.path.join(uwr_dir, "config.mk"), "w") as f:
-            f.write("BUILD_DIR=build\nMAXPRE=\nUSESCIP=\nBIGWEIGHTS=\n")
-            f.write(f"MINISATP_REL={env.get('CXXFLAGS','-std=gnu++17')} -O3 -D NDEBUG -Wno-strict-aliasing -D COMINISATPS -U_ISOC23_SOURCE -D_DEFAULT_SOURCE -D_GNU_SOURCE\n")
-            f.write("MINISATP_FPIC=-fPIC\n")
+            with open(os.path.join(uwr_dir, "config.mk"), "w") as f:
+                f.write("BUILD_DIR=build\nMAXPRE=\nUSESCIP=\nBIGWEIGHTS=\n")
+                f.write(f"MINISATP_REL={env.get('CXXFLAGS','-std=gnu++17')} -O3 -D NDEBUG -Wno-strict-aliasing -D COMINISATPS -U_ISOC23_SOURCE -D_DEFAULT_SOURCE -D_GNU_SOURCE\n")
+                f.write("MINISATP_FPIC=-fPIC\n")
 
-            f.write(
-                "MINISAT_INCLUDE="
-                f"-I{posix(cominisatps_dir)} "
-                f"-I{posix(os.path.join(cominisatps_dir,'minisat'))} "
-                f"-I{posix(os.path.join(uwr_dir,'cadical','src'))}\n"
-            )
+                f.write(
+                    "MINISAT_INCLUDE="
+                    f"-I{posix(cominisatps_dir)} "
+                    f"-I{posix(os.path.join(cominisatps_dir,'minisat'))} "
+                    f"-I{posix(os.path.join(uwr_dir,'cadical','src'))}\n"
+                )
 
-            # cominisatps/simp contains lib_release.a
-            f.write(f"MINISAT_LIB=-L{posix(cominisatps_simp_dir)} -l_release\n")
+                # cominisatps/simp contains lib_release.a
+                f.write(f"MINISAT_LIB=-L{posix(cominisatps_simp_dir)} -l_release\n")
 
-        self._make(["clean"], cwd=uwr_dir, env=env)
-        self._bash(["pwd"], cwd=uwr_dir, env=env)
-        self._bash(["cat", "config.mk"], cwd=uwr_dir, env=env)
-        self._bash(["ls", "-la", "cominisatps"], cwd=uwr_dir, env=env)
-        self._bash(["ls", "-la", "cominisatps/minisat"], cwd=uwr_dir, env=env)
-        self._bash(["file", "cominisatps/minisat"], cwd=uwr_dir, env=env)  # MSYS2 has `file`
-        def materialize_minisat_tree(cominisatps_dir: str):
-            if platform.system() != "Windows":
-                return
-            minisat_root = os.path.join(cominisatps_dir, "minisat")
-            if not os.path.isdir(minisat_root):
-                raise RuntimeError(f"Expected directory: {minisat_root}")
+            self._make(["clean"], cwd=uwr_dir, env=env)
+            self._bash(["pwd"], cwd=uwr_dir, env=env)
+            self._bash(["cat", "config.mk"], cwd=uwr_dir, env=env)
+            self._bash(["ls", "-la", "cominisatps"], cwd=uwr_dir, env=env)
+            self._bash(["ls", "-la", "cominisatps/minisat"], cwd=uwr_dir, env=env)
+            self._bash(["file", "cominisatps/minisat"], cwd=uwr_dir, env=env)  # MSYS2 has `file`
+            def materialize_minisat_tree(cominisatps_dir: str):
+                if platform.system() != "Windows":
+                    return
+                minisat_root = os.path.join(cominisatps_dir, "minisat")
+                if not os.path.isdir(minisat_root):
+                    raise RuntimeError(f"Expected directory: {minisat_root}")
 
-            for name in ["core", "mtl", "simp", "utils"]:
-                src = os.path.join(cominisatps_dir, name)
-                dst = os.path.join(minisat_root, name)
+                for name in ["core", "mtl", "simp", "utils"]:
+                    src = os.path.join(cominisatps_dir, name)
+                    dst = os.path.join(minisat_root, name)
 
-                if not os.path.isdir(src):
-                    raise RuntimeError(f"Missing expected source dir: {src}")
+                    if not os.path.isdir(src):
+                        raise RuntimeError(f"Missing expected source dir: {src}")
 
-                # If dst is a file (zip-flattened symlink), remove it.
-                if os.path.exists(dst) and not os.path.isdir(dst):
-                    os.remove(dst)
+                    # If dst is a file (zip-flattened symlink), remove it.
+                    if os.path.exists(dst) and not os.path.isdir(dst):
+                        os.remove(dst)
 
-                # If dst is missing, create it by copying the real directory.
-                if not os.path.isdir(dst):
-                    shutil.copytree(src, dst)
+                    # If dst is missing, create it by copying the real directory.
+                    if not os.path.isdir(dst):
+                        shutil.copytree(src, dst)
 
-        materialize_minisat_tree(cominisatps_dir)
-    
+            materialize_minisat_tree(cominisatps_dir)
+        
 
-        self._make(["lr", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env)
-        uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
-        self._ranlib(uwr_a, env=env)
-        self._macos_rebuild_archive_if_gnu(uwr_a)
-        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+            self._make(["lr", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env)
+            uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
+            self._ranlib(uwr_a, env=env)
+            self._macos_rebuild_archive_if_gnu(uwr_a)
+            cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
         # project_root = 'C:\\Users\\joshs\\Desktop\\'
         # log_dir = os.path.join(project_root, "_cibw_logs")
         # os.makedirs(log_dir, exist_ok=True)
@@ -1197,34 +1258,39 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         source_root = os.path.abspath(ext.sourcedir)
         cadical_dir = os.path.join(source_root, "cadical")
         uwr_dir = os.path.join(source_root, "uwrmaxsat")
-        if os.path.exists(os.path.join(cadical_dir, "Makefile")):
-            self._make(["clean"], cwd=cadical_dir, env=env)
-        self._prepare_shell_scripts(os.path.join(cadical_dir, "configure"), os.path.join(cadical_dir, "scripts"))
-        self._bash(["sh", "./configure"], cwd=cadical_dir, env=env)
+        with self._preserve_files(
+            os.path.join(cadical_dir, "configure"),
+            os.path.join(cadical_dir, "scripts"),
+            os.path.join(uwr_dir, "config.mk"),
+        ):
+            if os.path.exists(os.path.join(cadical_dir, "Makefile")):
+                self._make(["clean"], cwd=cadical_dir, env=env)
+            self._prepare_shell_scripts(os.path.join(cadical_dir, "configure"), os.path.join(cadical_dir, "scripts"))
+            self._bash(["sh", "./configure"], cwd=cadical_dir, env=env)
 
-        self._make(["cadical", "-j"], cwd=cadical_dir, env=env)
-        cadical_a = os.path.join(cadical_dir, "build", "libcadical.a")
-        self._ranlib(cadical_a, env=env)
-        self._bash(["cp", "config.cadical", "config.mk"], cwd=uwr_dir, env=env)
-        env2 = env.copy()
-        env2["MAXPRE"] = ""
-        env2["USESCIP"] = "" 
+            self._make(["cadical", "-j"], cwd=cadical_dir, env=env)
+            cadical_a = os.path.join(cadical_dir, "build", "libcadical.a")
+            self._ranlib(cadical_a, env=env)
+            self._bash(["cp", "config.cadical", "config.mk"], cwd=uwr_dir, env=env)
+            env2 = env.copy()
+            env2["MAXPRE"] = ""
+            env2["USESCIP"] = "" 
 
-        self._make(["clean"], cwd=uwr_dir, env=env2)
-        self._bash(["pwd"], cwd=uwr_dir, env=env2)
-        self._bash(["ls", "-la"], cwd=uwr_dir, env=env2)
+            self._make(["clean"], cwd=uwr_dir, env=env2)
+            self._bash(["pwd"], cwd=uwr_dir, env=env2)
+            self._bash(["ls", "-la"], cwd=uwr_dir, env=env2)
 
-        # Show what Make thinks the key vars are
-        # self._bash(["make", "-pn"], cwd=uwr_dir, env=env2)
+            # Show what Make thinks the key vars are
+            # self._bash(["make", "-pn"], cwd=uwr_dir, env=env2)
 
-        # Targeted grep (less spam)
-        # subprocess.check_call([r"mingw32-make -pn | egrep '^(CXX|CXXFLAGS|MINISAT_INCLUDE|includedir|prefix)[[:space:]]*[:?]?='"], cwd=uwr_dir, env=env2)
-        self._make(["r", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env2)
-        uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
-        self._ranlib(uwr_a, env=env2)
-        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
-        self._bash(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
-        self._bash(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
+            # Targeted grep (less spam)
+            # subprocess.check_call([r"mingw32-make -pn | egrep '^(CXX|CXXFLAGS|MINISAT_INCLUDE|includedir|prefix)[[:space:]]*[:?]?='"], cwd=uwr_dir, env=env2)
+            self._make(["r", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env2)
+            uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
+            self._ranlib(uwr_a, env=env2)
+            cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+            self._bash(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
+            self._bash(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
 
 ROOT = Path(__file__).resolve().parent
@@ -1476,7 +1542,7 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
 
 setup(
     name="hermax",
-    version="1.2.0",
+    version="1.2.1",
     author="Josep Maria Salvia Hornos",
     author_email="josh.salvia@gmail.com",
     description="A Python library of incremental MaxSAT solvers",
