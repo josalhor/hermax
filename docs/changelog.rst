@@ -1,6 +1,18 @@
 Changelog
 =========
 
+Version 1.2.1
+-------------
+
+Highlights
+~~~~~~~~~~
+
+* Disabled preprocessing for UWrMaxSATCompetition due to crashes.
+* Disabled CGSS PMRES due to soudnness issues.
+* Started incorporating MaxSATRegressionSuite: https://github.com/tobipaxe/MaxSATRegressionSuite/tree/main
+
+
+
 Version 1.2.0
 -------------
 

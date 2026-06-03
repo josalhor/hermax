@@ -277,7 +277,7 @@ class TestIPAMIRSolver(unittest.TestCase):
 
 from hermax.core import UWrMaxSATSolver, EvalMaxSATLatestSolver, RC2Reentrant
 from hermax.core import IMaxHSSolver, MaxHSSolver
-from hermax.non_incremental import CGSS, CGSSPMRES
+from hermax.non_incremental import CGSS
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
 from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
 from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestSolver
@@ -510,19 +510,8 @@ class TestCGSSTerminationCallback(TestIPAMIRSolver):
         self.skipTest("CGSS rebuild wrapper does not support Interrupted status handling.")
 
 
-class TestCGSSPMRESTerminationCallback(TestIPAMIRSolver):
-    SOLVER_CLASS = CGSSPMRES
-
-    def setUp(self):
-        if not self.SOLVER_CLASS.is_available():
-            self.skipTest("CGSSPMRES backend is not available in this build.")
-        super().setUp()
-
-    def test_termination_callback(self):
-        self.skipTest("CGSSPMRES rebuild wrapper does not support termination callbacks.")
-
-    def test_solve_raise_on_abnormal(self):
-        self.skipTest("CGSSPMRES rebuild wrapper does not support Interrupted status handling.")
+# class TestCGSSPMRESTerminationCallback(TestIPAMIRSolver):
+#     SOLVER_CLASS = CGSSPMRES
 
 
 class TestWMaxCDCLSolverTerminationCallback(TestIPAMIRSolver):

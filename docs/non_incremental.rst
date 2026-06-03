@@ -13,7 +13,7 @@ List of Classes
    hermax.non_incremental.MaxHS
    hermax.non_incremental.CASHWMaxSAT
    hermax.non_incremental.CGSS
-   hermax.non_incremental.CGSSPMRES
+   .. hermax.non_incremental.CGSSPMRES
    hermax.non_incremental.OpenWBOOLL
    hermax.non_incremental.OpenWBOPartMSU3
    hermax.non_incremental.OpenWBO
@@ -21,10 +21,6 @@ List of Classes
 
 Module Description
 ------------------
-
-.. warning::
-   The non-incremental and portfolio modules are experimental/beta and 
-   may be subject to significant interface changes.
 
 This module groups wrappers and re-entrant adapters used when a backend is
 invoked in a non-native-incremental workflow,
@@ -50,9 +46,9 @@ Backend mapping:
 ..   same backend as CASHWMaxSAT with SCIP disabled (adapter mode).
 
 * :class:`hermax.non_incremental.CGSS`:
-  ``hermax.core.cgss_py.CGSSSolver`` (vendored RC2WCE/CGSS wrapper [7]_ [8]_).
-* :class:`hermax.non_incremental.CGSSPMRES`:
-  ``hermax.core.cgss_py.CGSSPMRESSolver`` (vendored PMRES variant [7]_ [8]_ [10_]).
+  ``hermax.core.cgss_py.CGSSSolver`` (RC2WCE/CGSS wrapper [7]_ [8]_).
+.. * :class:`hermax.non_incremental.CGSSPMRES`:
+..   ``hermax.core.cgss_py.CGSSPMRESSolver`` (PMRES variant [7]_ [8]_ [10_]).
 * :class:`hermax.non_incremental.OpenWBOOLL`:
   ``hermax.core.openwbo_py.OLLSolver`` (Open-WBO OLL backend [8]_).
 * :class:`hermax.non_incremental.OpenWBOPartMSU3`:
@@ -65,9 +61,8 @@ Backend mapping:
    disabled.
 
 .. warning::
-   On Windows and macOS, preprocessing is disabled for
-   ``UWrMaxSATCompetition`` due to undefined behavior (UB) that can
-   cause native crashes.
+   Preprocessing is disabled for ``UWrMaxSATCompetition`` due to
+   undefined behavior (UB) that can cause native crashes.
 
 .. warning::
    On macOS, preprocessing is disabled for EvalMaxSAT backends due to
@@ -125,12 +120,12 @@ API Details
    :show-inheritance:
    :special-members: __init__
 
-.. autoclass:: hermax.non_incremental.CGSSPMRES
-   :members:
-   :inherited-members:
-   :undoc-members:
-   :show-inheritance:
-   :special-members: __init__
+.. .. autoclass:: hermax.non_incremental.CGSSPMRES
+..    :members:
+..    :inherited-members:
+..    :undoc-members:
+..    :show-inheritance:
+..    :special-members: __init__
 
 .. autoclass:: hermax.non_incremental.OpenWBOOLL
    :members:

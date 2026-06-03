@@ -55,6 +55,11 @@ struct MySolver {
         opt_scip_cpu = opt_scip_cpu_default; // = 400s
 #endif
         setOptions(0, NULL, false); // read UWrMaxSat options from the UWRFLAGS env variable
+        // Force-disable all preprocessing paths for stability in the
+        // embedded iPAMIR usage mode across platforms.
+        opt_preprocess = false;   // equivalent to -no-pre
+        opt_maxsat_prepr = false; // equivalent to -no-ms-pre
+        opt_use_maxpre = false;   // keep MaxPre disabled as well
     }
 
     MsSolver* solver;

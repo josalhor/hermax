@@ -79,7 +79,18 @@ public:
            resetSolverWithoutAssumps = false;
        }
 
-       maxSATnoAssumed->solve();
+       bool base_result = maxSATnoAssumed->solve();
+
+       // Fast path: no assumptions. Reuse base solve/model directly and avoid
+       // cloning + second solve, which is a major overhead in benchmark loops.
+       if (assumptions.empty()) {
+           maxSATwithAssump = maxSATnoAssumed;
+           if (!base_result) {
+               return 20;
+           }
+           objective_value = maxSATnoAssumed->getCost();
+           return 30;
+       }
 
        maxSATwithAssump = std::make_shared<EvalMaxSAT>(*maxSATnoAssumed);
 

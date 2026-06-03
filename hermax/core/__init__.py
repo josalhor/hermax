@@ -73,7 +73,7 @@ _EXPORTS = {
     "MaxHSSolver": (".maxhs_wrapper_py", "MaxHSSolver"),
     "RC2Reentrant": (".rc2", "RC2Reentrant"),
     "CGSSSolver": (".cgss_py", "CGSSSolver"),
-    "CGSSPMRESSolver": (".cgss_py", "CGSSPMRESSolver"),
+    # "CGSSPMRESSolver": (".cgss_py", "CGSSPMRESSolver"),  # disabled from public exports
 }
 
 __all__ = list(_EXPORTS.keys())

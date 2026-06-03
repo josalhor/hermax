@@ -17,7 +17,7 @@ skip = "*-musllinux_* cp*-win32"
 build-verbosity = 1
 
 # Test settings - pure import smoke test from /tmp
-test-requires = ["pytest", "python-sat"]
+test-requires = ["pytest", "python-sat", "psutil"]
 test-sources = ["tests"]
 test-command = "python tests/cibw_test_entrypoint.py"
 

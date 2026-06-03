@@ -31,10 +31,10 @@ def _exercise_solver(solver):
 
 
 def test_rc2_and_cgss_work_in_wasm_build():
-    from hermax.core import RC2Reentrant, CGSSSolver, CGSSPMRESSolver
-    from hermax.non_incremental import RC2, CGSS, CGSSPMRES
+    from hermax.core import RC2Reentrant, CGSSSolver
+    from hermax.non_incremental import RC2, CGSS
 
-    for cls in (RC2Reentrant, CGSSSolver, CGSSPMRESSolver, RC2, CGSS, CGSSPMRES):
+    for cls in (RC2Reentrant, CGSSSolver, RC2, CGSS):
         solver = cls()
         _exercise_solver(solver)
         solver.close()

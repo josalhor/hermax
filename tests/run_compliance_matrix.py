@@ -127,13 +127,6 @@ CASES: list[SolverCase] = [
         ],
     ),
     SolverCase(
-        "CGSSPMRES",
-        [
-            "core/test_ipamir_solver.py::TestCGSSPMRESTerminationCallback",
-            "core/test_ipamir_solver_hardcore.py::TestCGSSPMRESTerminationCallback",
-        ],
-    ),
-    SolverCase(
         "OpenWBO-OLL",
         [
             "core/test_ipamir_solver.py::TestOLLSolverTerminationCallback",

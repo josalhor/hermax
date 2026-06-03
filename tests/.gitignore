@@ -2,3 +2,5 @@
 /_fuzzing_*
 /_fuzzing
 /_random
+/MaxSATRegressionSuite
+/test_maxsat_regression_suite.py

@@ -10,7 +10,8 @@ from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompReentrant
 from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestReentrant
 from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrReentrant as _EvalMaxSATIncrReentrantCore
 from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
-from hermax.core.cgss_py import CGSSSolver, CGSSPMRESSolver
+from hermax.core.cgss_py import CGSSSolver
+# from hermax.core.cgss_py import CGSSPMRESSolver
 from hermax.core.openwbo_py import OLLSolver, PartMSU3Solver, AutoOpenWBOSolver
 from hermax.core.wmaxcdcl_py import WMaxCDCLReentrant
 from hermax.core.maxhs_wrapper_py import MaxHSSolver
@@ -94,11 +95,11 @@ class CGSS(CGSSSolver):
     pass
 
 
-class CGSSPMRES(CGSSPMRESSolver):
-    """
-    CGSS PMRES variant, rebuild wrapper.
-    """
-    pass
+# class CGSSPMRES(CGSSPMRESSolver):
+#     """
+#     CGSS PMRES variant, rebuild wrapper.
+#     """
+#     pass
 
 
 class OpenWBOOLL(OLLSolver):
@@ -136,7 +137,7 @@ __all__ = [
     # "CASHWMaxSATNoSCIP",
     "WMaxCDCL",
     "CGSS",
-    "CGSSPMRES",
+    # "CGSSPMRES",
     "OpenWBOOLL",
     "OpenWBOPartMSU3",
     "OpenWBO",
