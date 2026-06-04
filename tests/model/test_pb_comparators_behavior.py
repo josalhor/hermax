@@ -1,3 +1,5 @@
+import pytest
+
 from hermax.model import Model
 
 
@@ -194,3 +196,53 @@ def test_constant_only_pb_comparator_uses_internal_boolean_constants_in_export()
     # False constant definition and use should be present as unit clauses.
     assert (-f.id,) in hard
     assert sum(1 for cl in cnf.clauses if cl == [f.id]) >= 1
+
+
+@pytest.mark.parametrize("op", ["<=", "<", ">=", ">", "==", "!="])
+def test_pb_constraint_implies_matches_truth_table_for_each_comparator(op):
+    def antecedent_value(a: bool, b: bool, c: bool) -> bool:
+        lhs = int(a) + 2 * int(b) - int(c)
+        rhs = 1
+        if op == "<=":
+            return lhs <= rhs
+        if op == "<":
+            return lhs < rhs
+        if op == ">=":
+            return lhs >= rhs
+        if op == ">":
+            return lhs > rhs
+        if op == "==":
+            return lhs == rhs
+        if op == "!=":
+            return lhs != rhs
+        raise AssertionError(op)
+
+    for aval in [False, True]:
+        for bval in [False, True]:
+            for cval in [False, True]:
+                for tval in [False, True]:
+                    m = Model()
+                    a = m.bool("a")
+                    b = m.bool("b")
+                    c = m.bool("c")
+                    t = m.bool("t")
+                    m &= (a if aval else ~a)
+                    m &= (b if bval else ~b)
+                    m &= (c if cval else ~c)
+                    m &= (t if tval else ~t)
+                    expr = a + 2 * b - c
+                    if op == "<=":
+                        constraint = expr <= 1
+                    elif op == "<":
+                        constraint = expr < 1
+                    elif op == ">=":
+                        constraint = expr >= 1
+                    elif op == ">":
+                        constraint = expr > 1
+                    elif op == "==":
+                        constraint = expr == 1
+                    else:
+                        constraint = expr != 1
+                    m &= constraint.implies(t)
+                    expected = (not antecedent_value(aval, bval, cval)) or tval
+                    assert (m.solve().status != "unsat") is expected

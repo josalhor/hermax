@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from hermax.model import ClauseGroup, IntSetDict, IntSetVar, IntSetVector, Literal, Model
@@ -97,6 +99,15 @@ def test_int_set_inequality_semantics_with_set_and_constant_rhs():
     assert m2.solve().status == "unsat"
 
 
+def test_int_set_inequality_with_outside_value_is_always_satisfied():
+    m = Model()
+    s = m.int_set("s", lb=1, ub=3)
+    m &= (s == {2})
+    m &= (s != {2, 5})
+    r = _solve_ok(m)
+    assert r[s] == {2}
+
+
 def test_int_set_cardinality_expr_and_card_helper_variable():
     m = Model()
     s = m.int_set("s", lb=1, ub=4)
@@ -191,6 +202,60 @@ def test_int_set_algebra_union_intersection_difference_symdiff():
     assert r[i] == {2}
     assert r[d] == {1}
     assert r[x] == {1, 3}
+
+
+def test_int_set_randomized_set_ops_cardinality_and_inequality():
+    rng = random.Random(0)
+
+    for case in range(20):
+        universe = tuple(range(1, rng.randint(3, 6)))
+        lhs_vals = {v for v in universe if rng.randrange(2)}
+        rhs_vals = {v for v in universe if rng.randrange(2)}
+        outside = max(universe) + 1
+
+        m = Model()
+        a = m.int_set(f"a_{case}", values=universe)
+        b = m.int_set(f"b_{case}", values=universe)
+        u = a | b
+        i = a & b
+        d = a - b
+        x = a ^ b
+        k = a.card(name=f"k_{case}")
+
+        m &= (a == lhs_vals)
+        m &= (b == rhs_vals)
+        m &= (u == (lhs_vals | rhs_vals))
+        m &= (i == (lhs_vals & rhs_vals))
+        m &= (d == (lhs_vals - rhs_vals))
+        m &= (x == (lhs_vals ^ rhs_vals))
+        m &= (k == len(lhs_vals))
+        m &= (a != {outside})
+        if lhs_vals != rhs_vals:
+            m &= (a != b)
+            m &= (a != rhs_vals)
+
+        r = _solve_ok(m)
+        assert r[a] == lhs_vals
+        assert r[b] == rhs_vals
+        assert r[u] == (lhs_vals | rhs_vals)
+        assert r[i] == (lhs_vals & rhs_vals)
+        assert r[d] == (lhs_vals - rhs_vals)
+        assert r[x] == (lhs_vals ^ rhs_vals)
+        assert r[k] == len(lhs_vals)
+
+        m_eq = Model()
+        a_eq = m_eq.int_set(f"a_eq_{case}", values=universe)
+        b_eq = m_eq.int_set(f"b_eq_{case}", values=universe)
+        m_eq &= (a_eq == lhs_vals)
+        m_eq &= (b_eq == rhs_vals)
+        m_eq &= (a_eq != b_eq)
+        assert m_eq.solve().status == ("unsat" if lhs_vals == rhs_vals else "sat")
+
+        m_const = Model()
+        a_const = m_const.int_set(f"a_const_{case}", values=universe)
+        m_const &= (a_const == lhs_vals)
+        m_const &= (a_const != rhs_vals)
+        assert m_const.solve().status == ("unsat" if lhs_vals == rhs_vals else "sat")
 
 
 def test_int_set_vector_and_dict_typed_construction_and_decode():

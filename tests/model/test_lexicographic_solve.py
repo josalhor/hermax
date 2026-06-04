@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import itertools
+import random
+
 import pytest
 
 from hermax.model import Model
@@ -9,6 +12,10 @@ def _solve_ok(m: Model, **kwargs):
     r = m.solve(**kwargs)
     assert r.ok, f"expected satisfiable/optimal model, got status={r.status}"
     return r
+
+
+def _eval_linear_expr(coeffs, bits, constant):
+    return constant + sum(c * int(b) for c, b in zip(coeffs, bits))
 
 
 def _build_two_tier_conflict_model() -> tuple[Model, object]:
@@ -257,6 +264,45 @@ def test_lex_incremental_unsat_hard_constraints_short_circuit():
     r = m.solve(lex_strategy="incremental")
     assert r.status == "unsat"
     assert r.tier_costs is None or all(c is None for c in r.tier_costs)
+
+
+def test_lex_randomized_two_tier_pb_objectives_match_bruteforce():
+    rng = random.Random(1)
+
+    for case in range(12):
+        coeffs0 = [rng.choice([-2, -1, 1, 2]) for _ in range(3)]
+        coeffs1 = [rng.choice([-2, -1, 1, 2]) for _ in range(3)]
+        const0 = sum(max(0, -c) for c in coeffs0) + rng.randint(0, 2)
+        const1 = sum(max(0, -c) for c in coeffs1) + rng.randint(0, 2)
+
+        best_bits = None
+        best_costs = None
+        for bits in itertools.product([False, True], repeat=3):
+            tier0 = _eval_linear_expr(coeffs0, bits, const0)
+            tier1 = _eval_linear_expr(coeffs1, bits, const1)
+            costs = (tier0, tier1)
+            if best_costs is None or costs < best_costs:
+                best_costs = costs
+                best_bits = bits
+
+        assert best_bits is not None
+        assert best_costs is not None
+
+        for strategy in ("incremental", "stratified"):
+            m = Model()
+            xs = m.bool_vector(f"x_{case}_{strategy}", length=3)
+            expr0 = const0 + sum(c * x for c, x in zip(coeffs0, xs))
+            expr1 = const1 + sum(c * x for c, x in zip(coeffs1, xs))
+            m.tier_obj[0, 1] += expr0
+            m.tier_obj[1, 1] += expr1
+            r = _solve_ok(m, lex_strategy=strategy)
+
+            got_bits = tuple(bool(r[x]) for x in xs)
+            got_costs = tuple(int(v) for v in r.tier_costs or [])
+
+            assert got_costs == best_costs
+            assert _eval_linear_expr(coeffs0, got_bits, const0) == best_costs[0]
+            assert _eval_linear_expr(coeffs1, got_bits, const1) == best_costs[1]
 
 
 def test_lex_stratified_unsat_hard_constraints_short_circuit():

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from hermax.model import Model
@@ -97,3 +99,32 @@ def test_profile_summaries_aggregate_by_kind_and_label():
     by_label = profile.summary_by_label()
     assert by_label["batch"]["count"] == 1
     assert by_label["<none>"]["count"] >= 4
+
+
+def test_profile_summary_tracks_multiple_scopes_and_clause_deltas():
+    rng = random.Random(4)
+    m = Model()
+    m.enable_profiling()
+    xs = m.bool_vector("x", length=4)
+
+    expected_hard = 0
+    for i in range(6):
+        with m.profile_scope("batch", label=f"group-{i % 2}"):
+            chosen = [x for x in xs if rng.randrange(2)]
+            if not chosen:
+                chosen = [xs[i % len(xs)]]
+            for lit in chosen:
+                m &= lit
+                expected_hard += 1
+
+    profile = m.get_encoding_profile()
+    assert profile is not None
+
+    by_kind = profile.summary_by_kind()
+    by_label = profile.summary_by_label()
+
+    assert by_kind["batch"]["count"] == 6
+    assert by_kind["add_hard"]["count"] == expected_hard
+    assert by_kind["add_hard"]["hard_clause_delta"] == expected_hard
+    assert by_label["group-0"]["count"] == 3
+    assert by_label["group-1"]["count"] == 3

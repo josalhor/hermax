@@ -1,4 +1,5 @@
 import pytest
+import random
 
 from hermax.model import Model
 
@@ -257,6 +258,47 @@ def test_pbexpr_unary_negation_is_supported_and_semantic():
     m2 &= (-(x + 2 * y + 3) <= -5)
     r2 = _solve_ok(m2)
     assert r2[y] is True
+
+
+def test_pbexpr_randomized_subtraction_matches_fixed_assignment_value():
+    rng = random.Random(2)
+
+    for case in range(15):
+        coeffs_lhs = [rng.choice([-2, -1, 0, 1, 2]) for _ in range(3)]
+        coeffs_rhs = [rng.choice([-2, -1, 0, 1, 2]) for _ in range(3)]
+        const_lhs = rng.randint(-2, 3)
+        const_rhs = rng.randint(-2, 3)
+
+        for aval in [False, True]:
+            for bval in [False, True]:
+                for cval in [False, True]:
+                    lhs_val = const_lhs + coeffs_lhs[0] * int(aval) + coeffs_lhs[1] * int(bval) + coeffs_lhs[2] * int(cval)
+                    rhs_val = const_rhs + coeffs_rhs[0] * int(aval) + coeffs_rhs[1] * int(bval) + coeffs_rhs[2] * int(cval)
+                    expect = lhs_val - rhs_val
+
+                    m = Model()
+                    a = m.bool(f"a_{case}")
+                    b = m.bool(f"b_{case}")
+                    c = m.bool(f"c_{case}")
+                    lhs = const_lhs + coeffs_lhs[0] * a + coeffs_lhs[1] * b + coeffs_lhs[2] * c
+                    rhs = const_rhs + coeffs_rhs[0] * a + coeffs_rhs[1] * b + coeffs_rhs[2] * c
+                    m &= (a if aval else ~a)
+                    m &= (b if bval else ~b)
+                    m &= (c if cval else ~c)
+                    m &= (lhs - rhs == expect)
+                    assert m.solve().status != "unsat"
+
+                    m_bad = Model()
+                    a_bad = m_bad.bool(f"a_bad_{case}")
+                    b_bad = m_bad.bool(f"b_bad_{case}")
+                    c_bad = m_bad.bool(f"c_bad_{case}")
+                    lhs_bad = const_lhs + coeffs_lhs[0] * a_bad + coeffs_lhs[1] * b_bad + coeffs_lhs[2] * c_bad
+                    rhs_bad = const_rhs + coeffs_rhs[0] * a_bad + coeffs_rhs[1] * b_bad + coeffs_rhs[2] * c_bad
+                    m_bad &= (a_bad if aval else ~a_bad)
+                    m_bad &= (b_bad if bval else ~b_bad)
+                    m_bad &= (c_bad if cval else ~c_bad)
+                    m_bad &= (lhs_bad - rhs_bad == expect + 1)
+                    assert m_bad.solve().status == "unsat"
 
 
 def test_pbexpr_double_negation_roundtrips_semantics():
