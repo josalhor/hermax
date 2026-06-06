@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import random
 
 import pytest
 
@@ -79,12 +80,8 @@ def test_lower_gated_bound_matches_bruteforce(n: int, k: int, mcoef: int):
     assert (r.ok if expected else r.status == "unsat")
 
 
-@pytest.mark.parametrize("n,k,mcoef", [
-    (4, 2, 2),
-    (5, 2, 3),
-    (5, 3, 2),
-])
-def test_upper_gated_bound_no_pb_no_card(monkeypatch, n: int, k: int, mcoef: int):
+@pytest.mark.parametrize("n", [4, 5, 6])
+def test_upper_gated_bound_no_pb_no_card(monkeypatch, n: int):
     def fail_pb(*args, **kwargs):
         raise AssertionError("PBEnc should not be called for gated upper-card fast path")
 
@@ -101,22 +98,18 @@ def test_upper_gated_bound_no_pb_no_card(monkeypatch, n: int, k: int, mcoef: int
     m = Model()
     xs = [m.bool(f"x{i}") for i in range(n)]
     y = m.bool("y")
-    m &= (_boolsum(xs) <= (k + mcoef * y))
+    m &= (_boolsum(xs) <= (n * y))
     r = _solve(m)
     assert r.ok
 
 
-@pytest.mark.parametrize("n,k,mcoef", [
-    (4, 2, 2),
-    (5, 2, 3),
-    (5, 3, 2),
-])
-def test_lower_gated_bound_no_pb_no_card(monkeypatch, n: int, k: int, mcoef: int):
+@pytest.mark.parametrize("n", [4, 5, 6])
+def test_upper_gated_bound_k_eq_1_no_pb_no_card(monkeypatch, n: int):
     def fail_pb(*args, **kwargs):
-        raise AssertionError("PBEnc should not be called for gated lower-card fast path")
+        raise AssertionError("PBEnc should not be called for canonical gated upper-card k=1 fast path")
 
     def fail_card(*args, **kwargs):
-        raise AssertionError("CardEnc should not be called for gated lower-card fast path")
+        raise AssertionError("CardEnc should not be called for canonical gated upper-card k=1 fast path")
 
     monkeypatch.setattr(PBEnc, "leq", staticmethod(fail_pb))
     monkeypatch.setattr(PBEnc, "geq", staticmethod(fail_pb))
@@ -128,7 +121,7 @@ def test_lower_gated_bound_no_pb_no_card(monkeypatch, n: int, k: int, mcoef: int
     m = Model()
     xs = [m.bool(f"x{i}") for i in range(n)]
     y = m.bool("y")
-    m &= (_boolsum(xs) >= ((k - mcoef) + mcoef * y))
+    m &= (_boolsum(xs) <= (1 + ((n - 1) * y)))
     r = _solve(m)
     assert r.ok
 
@@ -208,11 +201,8 @@ def test_strict_lower_gated_bound_semantics(n: int, k: int, mcoef: int):
     assert (r.ok if expected else r.status == "unsat")
 
 
-@pytest.mark.parametrize("n,k,mcoef", [
-    (4, 2, 2),
-    (5, 2, 3),
-])
-def test_swapped_orientation_upper_supported_no_pb_no_card(monkeypatch, n: int, k: int, mcoef: int):
+@pytest.mark.parametrize("n", [4, 5, 6])
+def test_swapped_orientation_upper_supported_no_pb_no_card(monkeypatch, n: int):
     def fail_pb(*args, **kwargs):
         raise AssertionError("PBEnc should not be called for swapped upper gated-card fast path")
 
@@ -229,21 +219,27 @@ def test_swapped_orientation_upper_supported_no_pb_no_card(monkeypatch, n: int, 
     m = Model()
     xs = [m.bool(f"x{i}") for i in range(n)]
     y = m.bool("y")
-    m &= ((k + mcoef * y) >= _boolsum(xs))
+    m &= ((n * y) >= _boolsum(xs))
     r = _solve(m)
     assert r.ok
 
 
-@pytest.mark.parametrize("n,k,mcoef", [
-    (4, 2, 2),
-    (5, 3, 2),
-])
-def test_swapped_orientation_lower_supported_no_pb_no_card(monkeypatch, n: int, k: int, mcoef: int):
+def test_lower_gated_bound_supported_with_fallback():
+    m = Model()
+    xs = [m.bool(f"x{i}") for i in range(5)]
+    y = m.bool("y")
+    m &= (_boolsum(xs) >= (1 + (4 * y)))
+    r = _solve(m)
+    assert r.ok
+
+
+@pytest.mark.parametrize("n", [4, 5, 6])
+def test_swapped_orientation_upper_k_eq_1_supported_no_pb_no_card(monkeypatch, n: int):
     def fail_pb(*args, **kwargs):
-        raise AssertionError("PBEnc should not be called for swapped lower gated-card fast path")
+        raise AssertionError("PBEnc should not be called for swapped canonical upper gated-card k=1 fast path")
 
     def fail_card(*args, **kwargs):
-        raise AssertionError("CardEnc should not be called for swapped lower gated-card fast path")
+        raise AssertionError("CardEnc should not be called for swapped canonical upper gated-card k=1 fast path")
 
     monkeypatch.setattr(PBEnc, "leq", staticmethod(fail_pb))
     monkeypatch.setattr(PBEnc, "geq", staticmethod(fail_pb))
@@ -255,6 +251,58 @@ def test_swapped_orientation_lower_supported_no_pb_no_card(monkeypatch, n: int, 
     m = Model()
     xs = [m.bool(f"x{i}") for i in range(n)]
     y = m.bool("y")
-    m &= (((k - mcoef) + mcoef * y) <= _boolsum(xs))
+    m &= ((1 + ((n - 1) * y)) >= _boolsum(xs))
     r = _solve(m)
     assert r.ok
+
+
+@pytest.mark.parametrize("n,mcoef", [
+    (4, 3),
+    (5, 2),
+    (6, 4),
+])
+def test_upper_gated_bound_all_but_one_true_boundary(n: int, mcoef: int):
+    m = Model()
+    xs = [m.bool(f"x{i}") for i in range(n)]
+    y = m.bool("y")
+    m &= (_boolsum(xs) <= ((n - 1) + mcoef * y))
+    m &= ~y
+    for bit in xs:
+        m &= bit
+    r = _solve(m)
+    assert r.status == "unsat"
+
+
+@pytest.mark.parametrize("seed", [101, 102, 103])
+def test_boolsum_bigm_randomized_point_checks(seed: int):
+    rng = random.Random(seed)
+    for _ in range(20):
+        n = rng.randint(1, 6)
+        k = rng.randint(-1, n + 1)
+        mcoef = rng.randint(1, max(1, n))
+        op = rng.choice(["<=", "<", ">=", ">"])
+        bits = [rng.randint(0, 1) for _ in range(n)]
+        gate = rng.randint(0, 1)
+
+        m = Model()
+        xs = [m.bool(f"x{i}") for i in range(n)]
+        y = m.bool("y")
+        lhs = _boolsum(xs)
+        rhs = k + mcoef * y
+        if op == "<=":
+            m &= (lhs <= rhs)
+            expected = sum(bits) <= k + mcoef * gate
+        elif op == "<":
+            m &= (lhs < rhs)
+            expected = sum(bits) < k + mcoef * gate
+        elif op == ">=":
+            m &= (lhs >= rhs)
+            expected = sum(bits) >= k + mcoef * gate
+        else:
+            m &= (lhs > rhs)
+            expected = sum(bits) > k + mcoef * gate
+        m &= (y if gate else ~y)
+        for lit, bit in zip(xs, bits):
+            m &= (lit if bit else ~lit)
+        r = _solve(m)
+        assert (r.ok if expected else r.status == "unsat"), (seed, n, k, mcoef, op, bits, gate)

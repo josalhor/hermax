@@ -339,6 +339,193 @@ def test_random_diff_trivariate_fastpath_shifted_domains():
     )
 
 
+def test_random_diff_boolsum_bigm_fastpath():
+    def make_case(rng: random.Random):
+        n = rng.randint(1, 6)
+        k = rng.randint(-1, n + 1)
+        mcoef = rng.randint(1, max(1, n))
+        op = rng.choice(["<=", "<", ">=", ">"])
+        gate_pin = rng.choice([None, True, False])
+        bit_pins = [rng.choice([None, True, False]) for _ in range(n)]
+
+        def build():
+            m = Model()
+            bits = [m.bool(f"b{i}") for i in range(n)]
+            gate = m.bool("gate")
+            expr = sum(bits)
+            rhs = k + mcoef * gate
+            if op == "<=":
+                m &= (expr <= rhs)
+            elif op == "<":
+                m &= (expr < rhs)
+            elif op == ">=":
+                m &= (expr >= rhs)
+            else:
+                m &= (expr > rhs)
+            if gate_pin is True:
+                m &= gate
+            elif gate_pin is False:
+                m &= ~gate
+            for bit, pin in zip(bits, bit_pins):
+                if pin is True:
+                    m &= bit
+                elif pin is False:
+                    m &= ~bit
+
+            def truth(asg):
+                total = sum(1 if bool(asg[f"b{i}"]) else 0 for i in range(n))
+                rhs_v = k + mcoef * (1 if bool(asg["gate"]) else 0)
+                ok = (
+                    (total <= rhs_v) if op == "<=" else
+                    (total < rhs_v) if op == "<" else
+                    (total >= rhs_v) if op == ">=" else
+                    (total > rhs_v)
+                )
+                if gate_pin is not None and bool(asg["gate"]) != gate_pin:
+                    return False
+                for i, pin in enumerate(bit_pins):
+                    if pin is not None and bool(asg[f"b{i}"]) != pin:
+                        return False
+                return ok
+
+            vars_bool = {"gate": gate, **{f"b{i}": bit for i, bit in enumerate(bits)}}
+            return m, {}, vars_bool, truth
+
+        return build, f"n={n},k={k},m={mcoef},op={op}"
+
+    _run_random_differential(
+        rng_seed=16,
+        cases=45,
+        fastpath_name="_try_boolsum_bigm_fastpath",
+        make_case=make_case,
+    )
+
+
+def test_random_diff_int_equals_unit_bool_sum_fastpath():
+    def make_case(rng: random.Random):
+        n = rng.randint(0, 6)
+        lb, ub = _rand_domain(rng, min_lb=-2, max_lb=3, min_span=2, max_span=8)
+        op = rng.choice(["==", "<=", ">=", "<", ">"])
+        ox = rng.randint(-2, 2)
+        os = rng.randint(-2, 2)
+        pinx = rng.choice([None, rng.randint(lb, ub - 1)])
+        bit_pins = [rng.choice([None, True, False]) for _ in range(n)]
+
+        def build():
+            m = Model()
+            x = m.int("x", lb, ub)
+            bits = [m.bool(f"b{i}") for i in range(n)]
+            lhs = x + ox
+            rhs = sum(bits) + os
+            if op == "==":
+                m &= (lhs == rhs)
+            elif op == "<=":
+                m &= (lhs <= rhs)
+            elif op == ">=":
+                m &= (lhs >= rhs)
+            elif op == "<":
+                m &= (lhs < rhs)
+            else:
+                m &= (lhs > rhs)
+            if pinx is not None:
+                m &= (x == pinx)
+            for bit, pin in zip(bits, bit_pins):
+                if pin is True:
+                    m &= bit
+                elif pin is False:
+                    m &= ~bit
+
+            def truth(asg):
+                a = int(asg["x"]) + ox
+                b = sum(1 if bool(asg[f"b{i}"]) else 0 for i in range(n)) + os
+                ok = (
+                    (a == b) if op == "==" else
+                    (a <= b) if op == "<=" else
+                    (a >= b) if op == ">=" else
+                    (a < b) if op == "<" else
+                    (a > b)
+                )
+                if pinx is not None and int(asg["x"]) != pinx:
+                    return False
+                for i, pin in enumerate(bit_pins):
+                    if pin is not None and bool(asg[f"b{i}"]) != pin:
+                        return False
+                return ok
+
+            vars_bool = {f"b{i}": bit for i, bit in enumerate(bits)}
+            return m, {"x": x}, vars_bool, truth
+
+        return build, f"n={n},op={op},ox={ox},os={os}"
+
+    _run_random_differential(
+        rng_seed=17,
+        cases=45,
+        fastpath_name="_try_int_equals_unit_bool_sum_fastpath",
+        make_case=make_case,
+    )
+
+
+def test_random_diff_mixed_int_boolsum_bigm_fastpath():
+    def make_case(rng: random.Random):
+        n = rng.randint(1, 5)
+        lb, ub = _rand_domain(rng, min_lb=-2, max_lb=2, min_span=2, max_span=6)
+        a = rng.choice([-3, -2, -1, 1, 2, 3])
+        k = rng.randint(-2, 8)
+        mcoef = rng.randint(1, 5)
+        op = rng.choice(["<=", "<"])
+        pinx = rng.choice([None, rng.randint(lb, ub - 1)])
+        gate_pin = rng.choice([None, True, False])
+        bit_pins = [rng.choice([None, True, False]) for _ in range(n)]
+
+        def build():
+            m = Model()
+            x = m.int("x", lb, ub)
+            bits = [m.bool(f"b{i}") for i in range(n)]
+            gate = m.bool("gate")
+            expr = a * x + sum(bits)
+            rhs = k + mcoef * gate
+            if op == "<=":
+                m &= (expr <= rhs)
+            else:
+                m &= (expr < rhs)
+            if pinx is not None:
+                m &= (x == pinx)
+            if gate_pin is True:
+                m &= gate
+            elif gate_pin is False:
+                m &= ~gate
+            for bit, pin in zip(bits, bit_pins):
+                if pin is True:
+                    m &= bit
+                elif pin is False:
+                    m &= ~bit
+
+            def truth(asg):
+                lhs_v = a * int(asg["x"]) + sum(1 if bool(asg[f"b{i}"]) else 0 for i in range(n))
+                rhs_v = k + mcoef * (1 if bool(asg["gate"]) else 0)
+                ok = (lhs_v <= rhs_v) if op == "<=" else (lhs_v < rhs_v)
+                if pinx is not None and int(asg["x"]) != pinx:
+                    return False
+                if gate_pin is not None and bool(asg["gate"]) != gate_pin:
+                    return False
+                for i, pin in enumerate(bit_pins):
+                    if pin is not None and bool(asg[f"b{i}"]) != pin:
+                        return False
+                return ok
+
+            vars_bool = {"gate": gate, **{f"b{i}": bit for i, bit in enumerate(bits)}}
+            return m, {"x": x}, vars_bool, truth
+
+        return build, f"n={n},a={a},k={k},m={mcoef},op={op}"
+
+    _run_random_differential(
+        rng_seed=18,
+        cases=45,
+        fastpath_name="_try_mixed_int_boolsum_bigm_fastpath",
+        make_case=make_case,
+    )
+
+
 def test_random_diff_unary_adder_eq_fastpath():
     def make_case(rng: random.Random):
         xl, xu = _rand_domain(rng, min_lb=-2, max_lb=3, min_span=2, max_span=7)

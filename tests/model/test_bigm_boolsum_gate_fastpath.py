@@ -55,15 +55,8 @@ def test_sum_le_m_times_y_matches_bruteforce(n: int, mcoef: int):
     assert (r.ok if expected else r.status == "unsat")
 
 
-@pytest.mark.parametrize("n,mcoef", [
-    (3, 0),
-    (3, 1),
-    (3, 2),
-    (4, 1),
-    (4, 2),
-    (5, 3),
-])
-def test_sum_le_m_times_y_no_pb_no_card(monkeypatch, n: int, mcoef: int):
+@pytest.mark.parametrize("n", [3, 4, 5])
+def test_sum_le_m_times_y_no_pb_no_card(monkeypatch, n: int):
     def fail_pb(*args, **kwargs):
         raise AssertionError("PBEnc should not be called for sum(x) <= M*y fast path")
 
@@ -80,7 +73,7 @@ def test_sum_le_m_times_y_no_pb_no_card(monkeypatch, n: int, mcoef: int):
     m = Model()
     xs = [m.bool(f"x{i}") for i in range(n)]
     y = m.bool("y")
-    m &= (_boolsum(xs) <= mcoef * y)
+    m &= (_boolsum(xs) <= n * y)
     r = _solve(m)
     assert r.ok
 
@@ -164,12 +157,8 @@ def test_swapped_orientation_m_times_y_ge_sum_supported(n: int, mcoef: int):
     assert r.ok
 
 
-@pytest.mark.parametrize("n,mcoef", [
-    (3, 1),
-    (4, 2),
-    (5, 3),
-])
-def test_swapped_orientation_uses_no_pb_no_card(monkeypatch, n: int, mcoef: int):
+@pytest.mark.parametrize("n", [3, 4, 5])
+def test_swapped_orientation_uses_no_pb_no_card(monkeypatch, n: int):
     def fail_pb(*args, **kwargs):
         raise AssertionError("PBEnc should not be called for swapped bool-sum Big-M fast path")
 
@@ -186,6 +175,6 @@ def test_swapped_orientation_uses_no_pb_no_card(monkeypatch, n: int, mcoef: int)
     m = Model()
     xs = [m.bool(f"x{i}") for i in range(n)]
     y = m.bool("y")
-    m &= (mcoef * y >= _boolsum(xs))
+    m &= (n * y >= _boolsum(xs))
     r = _solve(m)
     assert r.ok

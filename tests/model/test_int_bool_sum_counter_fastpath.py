@@ -4,17 +4,16 @@ from __future__ import annotations
 
 Algorithm under test (in ``hermax.model._EncoderDispatch``):
 1. Detect expressions of shape ``x + c1 == sum(unit_bools) + c2``.
-2. Build a bidirectional sequential counter over the boolean literals:
-   ``S[i,j] <-> (S[i-1,j] OR (S[i-1,j-1] AND b_i))`` where
-   ``S[i,j]`` means "among first ``i`` literals, count >= ``j``".
+2. Build a bidirectional bool-count threshold ladder over the boolean literals
+   by merging unary one-bit ladders in a balanced tree.
 3. Channel all integer threshold cuts (including implicit boundaries):
    ``(x >= k) <-> (count >= k - shift)``, with ``shift = c2 - c1``.
 
 Asymptotic note:
 - Let ``n`` be number of boolean literals and ``d = x.ub - x.lb + 1``.
-- Sequential counter construction is ``O(n^2)`` clauses/aux literals.
+- Bool-count ladder construction is subquadratic in ``n``.
 - Threshold channeling is ``O(d)`` clauses.
-- Total: ``O(n^2 + d)``.
+- Total is dominated by the count-ladder construction plus ``O(d)`` channeling.
 """
 
 import itertools

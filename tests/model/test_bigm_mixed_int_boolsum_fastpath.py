@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import random
 
 import pytest
 
@@ -170,3 +171,47 @@ def test_mixed_int_boolsum_y_false_tighter_branch(a: int, k: int, mcoef: int):
     r = _solve(m)
     expected = any((a * 3 + (2 + b2)) <= k for b2 in (0, 1))
     assert (r.ok if expected else r.status == "unsat")
+
+
+@pytest.mark.parametrize("seed", [201, 202, 203])
+def test_mixed_int_boolsum_randomized_point_checks(seed: int):
+    rng = random.Random(seed)
+    for _ in range(20):
+        a = rng.choice([-3, -2, -1, 1, 2, 3])
+        k = rng.randint(-2, 8)
+        mcoef = rng.randint(1, 5)
+        op = rng.choice(["<=", "<"])
+        lb = rng.randint(-2, 1)
+        ub = lb + rng.randint(3, 7)
+        xv = rng.randint(lb, ub)
+        gate = rng.randint(0, 1)
+        bits = [rng.randint(0, 1) for _ in range(4)]
+
+        m = Model()
+        x = m.int("x", lb, ub)
+        bs = [m.bool(f"b{i}") for i in range(4)]
+        y = m.bool("y")
+        lhs = a * x + _boolsum(bs)
+        rhs = k + mcoef * y
+        if op == "<=":
+            m &= (lhs <= rhs)
+            expected = a * xv + sum(bits) <= k + mcoef * gate
+        else:
+            m &= (lhs < rhs)
+            expected = a * xv + sum(bits) < k + mcoef * gate
+        m &= (x == xv)
+        m &= (y if gate else ~y)
+        for lit, bit in zip(bs, bits):
+            m &= (lit if bit else ~lit)
+        r = _solve(m)
+        assert (r.ok if expected else r.status == "unsat"), (
+            seed,
+            a,
+            k,
+            mcoef,
+            op,
+            (lb, ub),
+            xv,
+            bits,
+            gate,
+        )

@@ -394,8 +394,8 @@ class _EncoderDispatch:
     @staticmethod
     def _build_unary_sum_ge_ladder(
         model: "Model",
-        left_desc: Sequence[Literal],
-        right_desc: Sequence[Literal],
+        left_desc: Sequence[bool | Literal],
+        right_desc: Sequence[bool | Literal],
         *,
         network=None,
     ) -> tuple[list[Clause], list[bool | Literal]]:
@@ -848,6 +848,14 @@ class _EncoderDispatch:
             for lit in lits:
                 _EncoderDispatch._lit_implies(clauses, model, antecedent, ~lit)
             return ge_cache
+        if bound == n - 1:
+            negated = [~lit for lit in lits]
+            if isinstance(antecedent, bool):
+                if antecedent:
+                    clauses.append(Clause(model, negated))
+                return ge_cache
+            clauses.append(Clause(model, [~antecedent, *negated]))
+            return ge_cache
         if ge_cache is None:
             seq_clauses, ge_cache = _EncoderDispatch._build_sequential_ge_counter(model, lits)
             clauses.extend(seq_clauses)
@@ -894,13 +902,80 @@ class _EncoderDispatch:
         return ge_cache
 
     @staticmethod
+    def _emit_sum_ge_implies_lit(
+        clauses: list[Clause],
+        model: "Model",
+        lits: Sequence[Literal],
+        threshold: int,
+        consequent: bool | Literal,
+        ge_cache: list[bool | Literal] | None,
+    ) -> list[bool | Literal] | None:
+        """Append CNF for ``(sum(lits) >= threshold) -> consequent``."""
+        n = len(lits)
+        if threshold <= 0:
+            _EncoderDispatch._lit_implies(clauses, model, True, consequent)
+            return ge_cache
+        if threshold > n:
+            return ge_cache
+        if threshold == 1:
+            for lit in lits:
+                _EncoderDispatch._lit_implies(clauses, model, lit, consequent)
+            return ge_cache
+        if threshold == 2:
+            redundant_pairs: set[tuple[int, int]] = set()
+            for group in model._known_amo_groups.values():
+                group_list = list(group)
+                for i in range(len(group_list)):
+                    for j in range(i + 1, len(group_list)):
+                        a = int(group_list[i])
+                        b = int(group_list[j])
+                        redundant_pairs.add((a, b) if a < b else (b, a))
+            for i in range(len(lits)):
+                li = lits[i]
+                for j in range(i + 1, len(lits)):
+                    lj = lits[j]
+                    key = (li.id, lj.id) if li.id < lj.id else (lj.id, li.id)
+                    if key in redundant_pairs:
+                        continue
+                    if isinstance(consequent, bool):
+                        if not consequent:
+                            clauses.append(Clause(model, [~li, ~lj]))
+                    else:
+                        clauses.append(Clause(model, [~li, ~lj, consequent]))
+            return ge_cache
+        if threshold == n:
+            negated = [~lit for lit in lits]
+            if isinstance(consequent, bool):
+                if not consequent:
+                    clauses.append(Clause(model, negated))
+                return ge_cache
+            clauses.append(Clause(model, [*negated, consequent]))
+            return ge_cache
+        if ge_cache is None:
+            seq_clauses, ge_cache = _EncoderDispatch._build_sequential_ge_counter(model, lits)
+            clauses.extend(seq_clauses)
+        ge_lit = ge_cache[threshold]
+        _EncoderDispatch._lit_implies(clauses, model, ge_lit, consequent)
+        return ge_cache
+
+    @staticmethod
+    def _sum_le_bound_is_direct(n: int, bound: int) -> bool:
+        return bound >= n or bound < 0 or bound == 0 or bound == n - 1
+
+    @staticmethod
+    def _sum_ge_threshold_is_direct(n: int, threshold: int) -> bool:
+        return threshold <= 0 or threshold > n or threshold == n or threshold == 1
+
+    @staticmethod
     def _try_boolsum_bigm_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
-        """Detect and compile bool-sum Big-M forms without PB/Card encoders.
+        """Detect canonical upper-gated bool-sum forms with aux-free clauses.
 
         Supported oriented forms:
             * ``sum(unit_bools) <= k + m*lit``
-            * ``sum(unit_bools) >= k + m*lit``
-        plus strict variants via bound shift.
+
+        only when the loose branch is tautological and the tight branch has
+        ``k <= 1``, so the encoding can stay exact and aux-free with unary,
+        binary, or ternary clauses.
         """
         if op not in ("<=", "<", ">=", ">"):
             return None
@@ -926,8 +1001,7 @@ class _EncoderDispatch:
                     cmp_op = "<="
                     rhs_const -= 1
                 elif cmp_op == ">":
-                    cmp_op = ">="
-                    rhs_const += 1
+                    return None
                 k = rhs_const - sum_const
                 # Keep standard cardinality dispatch for generic constant bounds.
                 # Special-case only the degenerate "all must be false" bound,
@@ -950,8 +1024,7 @@ class _EncoderDispatch:
                 cmp_op = "<="
                 rhs_const -= 1
             elif cmp_op == ">":
-                cmp_op = ">="
-                rhs_const += 1
+                return None
 
             # sum(lits) + sum_const OP rhs_const + mcoef * ind_lit
             # -> sum(lits) OP (rhs_const - sum_const) + mcoef * ind_lit
@@ -963,13 +1036,30 @@ class _EncoderDispatch:
             clauses: list[Clause] = []
             ge_cache: list[bool | Literal] | None = None
             if cmp_op == "<=":
-                ge_cache = _EncoderDispatch._emit_sum_le_gated(clauses, model, ~ind_lit, lits, bound_false, ge_cache)
-                ge_cache = _EncoderDispatch._emit_sum_le_gated(clauses, model, ind_lit, lits, bound_true, ge_cache)
-                return ClauseGroup(model, clauses)
-            if cmp_op == ">=":
-                ge_cache = _EncoderDispatch._emit_sum_ge_gated(clauses, model, ~ind_lit, lits, bound_false, ge_cache)
-                ge_cache = _EncoderDispatch._emit_sum_ge_gated(clauses, model, ind_lit, lits, bound_true, ge_cache)
-                return ClauseGroup(model, clauses)
+                upper = max(bound_false, bound_true)
+                lower = min(bound_false, bound_true)
+                if upper < len(lits):
+                    return None
+                active_gate = ~ind_lit if bound_false < bound_true else ind_lit
+                if lower >= len(lits):
+                    return ClauseGroup(model, clauses)
+                if lower <= 1:
+                    ge_cache = _EncoderDispatch._emit_sum_ge_implies_lit(
+                        clauses,
+                        model,
+                        lits,
+                        lower + 1,
+                        ~active_gate,
+                        ge_cache,
+                    )
+                    return ClauseGroup(model, clauses)
+                gated_group = _EncoderDispatch._compile_structured_auto_leq(
+                    model,
+                    [model._lit_to_dimacs(lit) for lit in lits],
+                    [1] * len(lits),
+                    lower,
+                ).only_if(active_gate)
+                return gated_group
             return None
 
         # Primary orientation: sum_expr OP affine_expr
@@ -978,7 +1068,6 @@ class _EncoderDispatch:
             return out
 
         # Swapped orientation:
-        #   affine <= sum  <=> sum >= affine
         #   affine >= sum  <=> sum <= affine
         swapped = {"<=": ">=", "<": ">", ">=": "<=", ">": "<"}
         out = compile_oriented(rhs, swapped[op], lhs)
@@ -1106,66 +1195,37 @@ class _EncoderDispatch:
     def _build_sequential_ge_counter(model: "Model", lits: Sequence[Literal]) -> tuple[list[Clause], list[bool | Literal]]:
         """Build ``count >= r`` literals for a sequence of booleans.
 
+        Historical note:
+            The helper name is legacy. The implementation now uses a balanced
+            tree of unary merges rather than the old quadratic sequential table.
+
         Returns:
             ``(clauses, ge)`` where ``ge[r]`` encodes ``sum(lits) >= r`` for
             ``r in [0, len(lits)]`` and ``ge[0]`` is ``True``.
         """
         n = len(lits)
-        clauses: list[Clause] = []
         if n == 0:
-            return clauses, [True]
+            return [], [True]
+        if n == 1:
+            return [], [True, lits[0]]
 
-        # s[i][j] means: among first i literals, count >= j (1-indexed i,j).
-        s: list[list[Literal | None]] = [[None] * (n + 1) for _ in range(n + 1)]
-
-        for i in range(1, n + 1):
-            li = lits[i - 1]
-            for j in range(1, i + 1):
-                sij = model.bool()
-                s[i][j] = sij
-
-                prev_j = s[i - 1][j] if j <= i - 1 else None
-                prev_jm1 = s[i - 1][j - 1] if j > 1 else None
-
-                # Forward:
-                #   prev_j -> sij
-                if prev_j is not None:
-                    clauses.append(Clause(model, [~prev_j, sij]))
-
-                #   li & prev_{j-1} -> sij
-                if j == 1:
-                    clauses.append(Clause(model, [~li, sij]))
-                else:
-                    assert prev_jm1 is not None
-                    clauses.append(Clause(model, [~li, ~prev_jm1, sij]))
-
-                # Backward:
-                #   sij -> prev_j OR li
-                if prev_j is None:
-                    clauses.append(Clause(model, [~sij, li]))
-                else:
-                    clauses.append(Clause(model, [~sij, prev_j, li]))
-
-                #   sij -> prev_j OR prev_{j-1}
-                if j > 1:
-                    if prev_j is None:
-                        assert prev_jm1 is not None
-                        clauses.append(Clause(model, [~sij, prev_jm1]))
-                    else:
-                        assert prev_jm1 is not None
-                        clauses.append(Clause(model, [~sij, prev_j, prev_jm1]))
-                elif j == 1:
-                    # prev_{j-1} is the constant True, so this implication is tautological.
-                    pass
-
-        ge: list[bool | Literal] = [True]
-        for r in range(1, n + 1):
-            lit = s[n][r]
-            if lit is None:
-                ge.append(False)
-            else:
-                ge.append(lit)
-        return clauses, ge
+        clauses: list[Clause] = []
+        ladders: list[list[bool | Literal]] = [[lit] for lit in lits]
+        while len(ladders) > 1:
+            next_ladders: list[list[bool | Literal]] = []
+            for idx in range(0, len(ladders), 2):
+                if idx + 1 >= len(ladders):
+                    next_ladders.append(ladders[idx])
+                    continue
+                merge_clauses, ge = _EncoderDispatch._build_unary_sum_ge_ladder(
+                    model,
+                    ladders[idx],
+                    ladders[idx + 1],
+                )
+                clauses.extend(merge_clauses)
+                next_ladders.append(ge[1:])
+            ladders = next_ladders
+        return clauses, [True, *ladders[0]]
 
     @staticmethod
     def _try_int_equals_unit_bool_sum_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
@@ -1179,8 +1239,9 @@ class _EncoderDispatch:
             * ``x < sum``  ->  ``x + 1 <= sum``
             * ``x > sum``  ->  ``x >= sum + 1``
 
-        Uses a sequential counter for ``sum>=r`` states and channels these with
-        ladder thresholds. Avoids PB/Card encoders for this pattern.
+        Uses a reusable bool-count threshold ladder for ``sum>=r`` states and
+        channels these with ladder thresholds. Avoids PB/Card encoders for this
+        pattern.
         """
         if op not in ("==", "<=", ">=", "<", ">"):
             return None
