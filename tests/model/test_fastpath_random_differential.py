@@ -293,6 +293,52 @@ def test_random_diff_trivariate_fastpath():
     )
 
 
+def test_random_diff_trivariate_fastpath_shifted_domains():
+    def make_case(rng: random.Random):
+        xl, xu = _rand_domain(rng, min_lb=-3, max_lb=2, min_span=2, max_span=7)
+        yl, yu = _rand_domain(rng, min_lb=-2, max_lb=3, min_span=2, max_span=7)
+        zl, zu = _rand_domain(rng, min_lb=-4, max_lb=4, min_span=4, max_span=10)
+        shift = rng.randint(-4, 4)
+        op = rng.choice(["<=", "<"])
+        pinx = rng.choice([None, rng.randint(xl, xu - 1)])
+        piny = rng.choice([None, rng.randint(yl, yu - 1)])
+        pinz = rng.choice([None, rng.randint(zl, zu - 1)])
+
+        def build():
+            m = Model()
+            x = m.int("x", xl, xu)
+            y = m.int("y", yl, yu)
+            z = m.int("z", zl, zu)
+            if op == "<=":
+                m &= (x + y + shift <= z)
+            else:
+                m &= (x + y + shift < z)
+            if pinx is not None:
+                m &= (x == pinx)
+            if piny is not None:
+                m &= (y == piny)
+            if pinz is not None:
+                m &= (z == pinz)
+
+            def truth(asg):
+                xv = int(asg["x"])
+                yv = int(asg["y"])
+                zv = int(asg["z"])
+                ok = (xv + yv + shift <= zv) if op == "<=" else (xv + yv + shift < zv)
+                return ok and (pinx is None or xv == pinx) and (piny is None or yv == piny) and (pinz is None or zv == pinz)
+
+            return m, {"x": x, "y": y, "z": z}, {}, truth
+
+        return build, f"op={op},shift={shift}"
+
+    _run_random_differential(
+        rng_seed=1406,
+        cases=45,
+        fastpath_name="_try_trivariate_int_fastpath",
+        make_case=make_case,
+    )
+
+
 def test_random_diff_unary_adder_eq_fastpath():
     def make_case(rng: random.Random):
         xl, xu = _rand_domain(rng, min_lb=-2, max_lb=3, min_span=2, max_span=7)

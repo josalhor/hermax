@@ -142,6 +142,21 @@ def test_diff_trivariate_fastpath_soundness():
     )
 
 
+def test_diff_trivariate_fastpath_soundness_with_shift():
+    def build(v, _b):
+        return (v["x"] + v["y"] - 2 <= v["z"])
+
+    def truth(p):
+        return p["x"] + p["y"] - 2 <= p["z"]
+
+    _assert_diff_equivalent(
+        build_constraint=build,
+        domains={"x": (-2, 3), "y": (1, 5), "z": (-1, 6)},
+        disable_fastpath="_try_trivariate_int_fastpath",
+        truth_fn=truth,
+    )
+
+
 def test_diff_unary_adder_eq_fastpath_soundness():
     def build(v, _b):
         return (v["x"] + v["y"] == v["z"])

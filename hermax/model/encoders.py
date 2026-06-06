@@ -392,6 +392,61 @@ class _EncoderDispatch:
         return out
 
     @staticmethod
+    def _build_unary_sum_ge_ladder(
+        model: "Model",
+        left_desc: Sequence[Literal],
+        right_desc: Sequence[Literal],
+        *,
+        network=None,
+    ) -> tuple[list[Clause], list[bool | Literal]]:
+        """Build ``sum >= r`` literals for two descending unary ladders.
+
+        ``left_desc`` and ``right_desc`` are IntVar threshold ladders in the
+        native descending order ``[x>=lb+1, x>=lb+2, ...]``. The returned
+        ``ge[r]`` literals encode the count sum over both ladders for
+        ``r in [0, len(left_desc)+len(right_desc)]`` with ``ge[0] == True``.
+        """
+        nx = len(left_desc)
+        ny = len(right_desc)
+        total = nx + ny
+        if total == 0:
+            return [], [True]
+
+        net = batcher_odd_even_unary_add_network(nx, ny) if network is None else network
+        width = int(net.n)
+        clauses: list[Clause] = []
+
+        if nx == 0:
+            wires: list[bool | Literal] = list(reversed(right_desc))
+        elif ny == 0:
+            wires = list(reversed(left_desc))
+        else:
+            p2 = width // 2
+            if 2 * p2 != width:
+                raise AssertionError("Unary-add merge network width must be even for two non-empty inputs.")
+            wires = [
+                *([False] * (p2 - nx)),
+                *reversed(left_desc),
+                *([False] * (p2 - ny)),
+                *reversed(right_desc),
+            ]
+            if len(wires) != width:
+                raise AssertionError("Unary-add merge network width mismatch.")
+
+        for i, j in net:
+            a = wires[i]
+            b = wires[j]
+            lo = _EncoderDispatch._lit_and(clauses, model, a, b)
+            hi = _EncoderDispatch._lit_or(clauses, model, a, b)
+            wires[i] = lo
+            wires[j] = hi
+
+        ge: list[bool | Literal] = [True]
+        for r in range(1, total + 1):
+            ge.append(wires[width - r])
+        return clauses, ge
+
+    @staticmethod
     def _try_unary_adder_eq_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
         """Detect and compile ``x + y == z`` (affine-shifted) via unary merge network."""
         if op != "==":
@@ -451,31 +506,12 @@ class _EncoderDispatch:
         width = int(net.n)
         if width <= 0:
             return None
-        p2 = width // 2
-        if 2 * p2 != width:
-            return None
-
-        # Network expects each half sorted ascending; IntVar ladders are descending.
-        left_bits_asc: list[bool | Literal] = list(reversed(x._threshold_lits))
-        right_bits_asc: list[bool | Literal] = list(reversed(y._threshold_lits))
-        wires: list[bool | Literal] = [
-            *([False] * (p2 - nx)),
-            *left_bits_asc,
-            *([False] * (p2 - ny)),
-            *right_bits_asc,
-        ]
-        if len(wires) != width:
-            return None
-
-        clauses: list[Clause] = []
-        for i, j in net:
-            a = wires[i]
-            b = wires[j]
-            lo = _EncoderDispatch._lit_and(clauses, model, a, b)
-            hi = _EncoderDispatch._lit_or(clauses, model, a, b)
-            wires[i] = lo
-            wires[j] = hi
-
+        clauses, ge = _EncoderDispatch._build_unary_sum_ge_ladder(
+            model,
+            x._threshold_lits,
+            y._threshold_lits,
+            network=net,
+        )
         nsum = nx + ny
         # Channel boundary-inclusive cuts for exact equality with affine shift.
         # sum_ge(r) <-> z_count_ge(r - c_target), for r in [0, nsum+1]
@@ -485,7 +521,7 @@ class _EncoderDispatch:
             elif r > nsum:
                 sum_ge_r = False
             else:
-                sum_ge_r = wires[width - r]
+                sum_ge_r = ge[r]
 
             # S - T == delta  =>  T == S - delta
             t = r - delta
@@ -1370,10 +1406,29 @@ class _EncoderDispatch:
 
         x, y = plus_vars
         z = minus_vars[0]
-        clauses: list[Clause] = []
+        nx = len(x._threshold_lits)
+        ny = len(y._threshold_lits)
+        net = batcher_odd_even_unary_add_network(nx, ny)
+        pair_clause_upper = (nx + 1) * (ny + 1)
+        merge_clause_upper = 6 * len(net) + (nx + ny)
 
-        # For all i,j:
-        #   (x >= i) & (y >= j) -> (z >= i + j - c_target)
+        if pair_clause_upper <= merge_clause_upper:
+            return _EncoderDispatch._compile_trivariate_int_pairwise_leq(model, x, y, z, c_target)
+        return _EncoderDispatch._compile_trivariate_int_merged_leq(model, x, y, z, c_target, network=net)
+
+    @staticmethod
+    def _compile_trivariate_int_pairwise_leq(
+        model: "Model",
+        x: IntVar,
+        y: IntVar,
+        z: IntVar,
+        c_target: int,
+    ) -> ClauseGroup:
+        """Compile ``x + y - z <= c_target`` by pairwise threshold implications."""
+        if (x.ub - x.lb) > (y.ub - y.lb):
+            x, y = y, x
+
+        clauses: list[Clause] = []
         for i in range(x.lb, x.ub + 1):
             xi = _EncoderDispatch._int_cmp_constraint(x, ">=", i)
             if xi is False:
@@ -1398,6 +1453,38 @@ class _EncoderDispatch:
                         clauses.append(Clause(model, [~xi, ~yj]))
                     else:
                         clauses.append(Clause(model, [~xi, ~yj, zk]))
+        return ClauseGroup(model, clauses)
+
+    @staticmethod
+    def _compile_trivariate_int_merged_leq(
+        model: "Model",
+        x: IntVar,
+        y: IntVar,
+        z: IntVar,
+        c_target: int,
+        *,
+        network=None,
+    ) -> ClauseGroup:
+        """Compile ``x + y - z <= c_target`` via unary merged sum thresholds."""
+        clauses, sum_ge = _EncoderDispatch._build_unary_sum_ge_ladder(
+            model,
+            x._threshold_lits,
+            y._threshold_lits,
+            network=network,
+        )
+        nsum = len(sum_ge) - 1
+        delta_count = c_target - x.lb - y.lb + z.lb
+
+        for r in range(1, nsum + 1):
+            sum_ge_r = sum_ge[r]
+            z_count_ge = r - delta_count
+            if z_count_ge <= 0:
+                zk: bool | Literal = True
+            elif z_count_ge > len(z._threshold_lits):
+                zk = False
+            else:
+                zk = _EncoderDispatch._int_cmp_constraint(z, ">=", z.lb + z_count_ge)
+            _EncoderDispatch._lit_implies(clauses, model, sum_ge_r, zk)
 
         return ClauseGroup(model, clauses)
 
