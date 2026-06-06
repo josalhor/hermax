@@ -253,9 +253,9 @@ def test_incremental_maxsat_assumptions_and_raise_on_abnormal_passthrough():
     assert s.last_raise_on_abnormal is True
 
 
-def test_incremental_soft_update_unknown_id_raises():
+def test_incremental_soft_update_rejects_non_softref_target():
     m = Model()
-    with pytest.raises(KeyError):
+    with pytest.raises(TypeError, match="SoftRef"):
         m.update_soft_weight(9999, 3)
 
 
@@ -386,7 +386,7 @@ def test_assumption_cross_model_literal_rejected():
         m2.solve(assumptions=[a1])
 
 
-def test_update_soft_weight_by_group_id_updates_all_members():
+def test_update_soft_weight_by_softref_updates_all_members():
     m = Model()
     x = m.int("x", 0, 4)
     ref = m.add_soft(x, 3)  # expands into multiple soft clauses
@@ -397,38 +397,16 @@ def test_update_soft_weight_by_group_id_updates_all_members():
         assert m._soft[idx][0] == 9
 
 
-def test_update_soft_weight_by_soft_id_updates_single_member_only():
-    m = Model()
-    x = m.int("x", 0, 4)
-    ref = m.add_soft(x, 3)
-    sid0 = ref.soft_ids[0]
-    sid1 = ref.soft_ids[1]
-    m.update_soft_weight(sid0, 8)
-    assert m._soft[m._soft_id_to_index[sid0]][0] == 8
-    assert m._soft[m._soft_id_to_index[sid1]][0] == 3
-
-
-def test_update_soft_weight_by_sequence_of_soft_ids():
-    m = Model()
-    a = m.bool("a")
-    b = m.bool("b")
-    ra = m.add_soft(a, 1)
-    rb = m.add_soft(b, 2)
-    m.update_soft_weight([ra.soft_ids[0], rb.soft_ids[0]], 7)
-    assert m._soft[m._soft_id_to_index[ra.soft_ids[0]]][0] == 7
-    assert m._soft[m._soft_id_to_index[rb.soft_ids[0]]][0] == 7
-
-
-def test_update_soft_weight_unknown_soft_id_raises():
-    m = Model()
-    with pytest.raises(KeyError):
-        m.update_soft_weight(123456, 2)
-
-
 def test_update_soft_weight_invalid_target_type_raises():
     m = Model()
-    with pytest.raises(TypeError):
+    a = m.bool("a")
+    ref = m.add_soft(a, 1)
+    with pytest.raises(TypeError, match="SoftRef"):
         m.update_soft_weight(object(), 2)
+    with pytest.raises(TypeError, match="SoftRef"):
+        m.update_soft_weight(123456, 2)
+    with pytest.raises(TypeError, match="SoftRef"):
+        m.update_soft_weight(ref.soft_ids[0], 2)
 
 
 def test_update_soft_weight_rejects_non_positive_values():

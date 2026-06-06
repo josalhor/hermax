@@ -128,3 +128,30 @@ def test_profile_summary_tracks_multiple_scopes_and_clause_deltas():
     assert by_kind["add_hard"]["hard_clause_delta"] == expected_hard
     assert by_label["group-0"]["count"] == 3
     assert by_label["group-1"]["count"] == 3
+
+
+def test_profile_summary_counts_success_and_failure_by_kind_and_label():
+    m = Model()
+    m.enable_profiling()
+
+    for i in range(3):
+        with m.profile_scope("batch", label="ok-group"):
+            m &= m.bool(f"a_{i}")
+
+    for i in range(2):
+        with pytest.raises(ValueError, match="boom"):
+            with m.profile_scope("batch", label="bad-group"):
+                raise ValueError(f"boom-{i}")
+
+    profile = m.get_encoding_profile()
+    assert profile is not None
+
+    by_kind = profile.summary_by_kind()
+    by_label = profile.summary_by_label()
+
+    assert by_kind["batch"]["count"] == 5
+    assert by_kind["batch"]["failures"] == 2
+    assert by_label["ok-group"]["count"] == 3
+    assert by_label["ok-group"]["failures"] == 0
+    assert by_label["bad-group"]["count"] == 2
+    assert by_label["bad-group"]["failures"] == 2

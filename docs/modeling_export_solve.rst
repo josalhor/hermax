@@ -232,14 +232,10 @@ Weight Updates
 
 ``Model.add_soft(...)`` returns a :class:`hermax.model.SoftRef`:
 
-* ``group_id``: logical soft group identifier
-* ``soft_ids``: concrete lowered soft clause ids
+* ``group_id``: logical soft group
+* ``soft_ids``: concrete lowered soft clause
 
-Use ``update_soft_weight(target, w)`` with:
-
-* ``SoftRef`` (recommended)
-* one soft id (``int``)
-* sequence of soft ids
+Use ``update_soft_weight(ref, w)`` with the returned ``SoftRef``.
 
 Example:
 

@@ -1,3 +1,5 @@
+import random
+
 import pytest
 
 from hermax.model import ClauseGroup, Model
@@ -159,6 +161,59 @@ def test_intvector_backends_equivalent_on_feasible_partial_assignment():
 
 def test_intvector_bipartite_rejects_domain_smaller_than_vector_length():
     m = Model()
-    iv = m.int_vector("x", length=4, lb=0, ub=3)
+    iv = m.int_vector("x", length=4, lb=0, ub=2)
     with pytest.raises(ValueError, match="domain|all_different|bipartite"):
         iv.all_different(backend="bipartite")
+
+
+def test_intvector_bipartite_accepts_exact_domain_size_boundary():
+    m = Model()
+    iv = m.int_vector("x", length=4, lb=0, ub=3)
+    m &= iv.all_different(backend="bipartite")
+    m &= (iv[0] == 0)
+    m &= (iv[1] == 1)
+    m &= (iv[2] == 2)
+    m &= (iv[3] == 3)
+
+    r = _solve_ok(m)
+    assert r[iv] == [0, 1, 2, 3]
+
+
+def test_intvector_bipartite_accepts_distinct_fixed_assignments_across_random_cases():
+    rng = random.Random(29)
+
+    for case in range(12):
+        length = rng.randint(2, 5)
+        start = rng.randint(-2, 3)
+        domain = list(range(start, start + length + 1 + rng.randint(0, 2)))
+        chosen = rng.sample(domain, length)
+
+        m = Model()
+        iv = m.int_vector(f"x_{case}", length=length, lb=domain[0], ub=domain[-1])
+        m &= iv.all_different(backend="bipartite")
+        for x, value in zip(iv, chosen):
+            m &= (x == value)
+
+        r = _solve_ok(m)
+        assert r[iv] == chosen
+
+
+def test_intvector_bipartite_rejects_duplicate_fixed_assignments_across_random_cases():
+    rng = random.Random(31)
+
+    for case in range(12):
+        length = rng.randint(2, 5)
+        start = rng.randint(0, 3)
+        domain = list(range(start, start + length + 2))
+        chosen = rng.sample(domain, length)
+        dup_index = rng.randrange(length)
+        other_index = (dup_index + 1) % length
+        chosen[other_index] = chosen[dup_index]
+
+        m = Model()
+        iv = m.int_vector(f"xdup_{case}", length=length, lb=domain[0], ub=domain[-1])
+        m &= iv.all_different(backend="bipartite")
+        for x, value in zip(iv, chosen):
+            m &= (x == value)
+
+        _solve_unsat(m)

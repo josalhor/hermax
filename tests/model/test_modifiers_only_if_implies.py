@@ -200,6 +200,15 @@ def test_clausegroup_implies_is_rejected_detection_circuit_guardrail():
         _ = group.implies(c)
 
 
+def test_clausegroup_only_if_rejects_non_literal_condition_directly():
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    group = ClauseGroup(m, [a | b])
+    with pytest.raises(TypeError, match="must be a Literal"):
+        _ = group.only_if(a + b <= 1)
+
+
 def test_pb_equality_antecedent_implies_literal_supported():
     m = Model()
     a = m.bool("a")

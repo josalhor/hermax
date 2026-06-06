@@ -235,12 +235,14 @@ def test_assumptions_reject_bool_zero_and_bad_term_coeff():
 def test_update_soft_weight_rejects_unknown_targets_and_types():
     m = Model()
     a = m.bool("a")
-    m.add_soft(a, weight=2)
+    ref = m.add_soft(a, weight=2)
 
-    with pytest.raises(KeyError, match="Unknown soft target"):
+    with pytest.raises(TypeError, match="SoftRef"):
         m.update_soft_weight(999999, 3)
-    with pytest.raises(TypeError, match="target must be"):
+    with pytest.raises(TypeError, match="SoftRef"):
         m.update_soft_weight(object(), 3)
+    with pytest.raises(TypeError, match="SoftRef"):
+        m.update_soft_weight(ref.soft_ids[0], 3)
 
 
 def test_vector_element_all_comparators_with_intvar_rhs():

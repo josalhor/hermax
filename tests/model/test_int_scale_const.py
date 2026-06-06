@@ -144,6 +144,25 @@ def test_int_scale_composes_in_pb_constraint_via_lazy_realization():
     assert _solve_status(m2) == "unsat"
 
 
+def test_int_scale_factor_one_preserves_exact_value_through_lazy_path():
+    for xv in range(-3, 4):
+        m = Model()
+        x = m.int("x", -3, 4)
+        y = x.scale(1)
+        m &= (x == xv)
+        m &= (y == xv)
+        assert _solve_status(m) != "unsat", xv
+
+        wrong = xv + 1
+        if wrong <= 4:
+            m2 = Model()
+            x2 = m2.int("x", -3, 4)
+            y2 = x2.scale(1)
+            m2 &= (x2 == xv)
+            m2 &= (y2 == wrong)
+            assert _solve_status(m2) == "unsat", (xv, wrong)
+
+
 def test_model_scale_can_be_added_to_objective_and_realizes():
     m = Model()
     x = m.int("x", 0, 6)

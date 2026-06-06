@@ -182,7 +182,7 @@ def test_forbid_value_returns_clause_inside_domain():
 
 def test_forbid_value_outside_domain_is_tautological_clause():
     m = Model()
-    x = m.int("x", 0, 6)
+    x = m.int("x", 0, 5)
     c1 = x.forbid_value(-1)
     c2 = x.forbid_value(6)
     assert isinstance(c1, Clause)
@@ -192,6 +192,23 @@ def test_forbid_value_outside_domain_is_tautological_clause():
     m &= c2
     m &= (x == 4)
     _solve_ok(m)
+
+
+def test_forbid_value_rejects_bool_argument():
+    m = Model()
+    x = m.int("x", 0, 4)
+    with pytest.raises(TypeError, match="integer value"):
+        x.forbid_value(True)
+
+
+def test_forbid_value_singleton_domain_forbids_only_value_with_empty_clause():
+    m = Model()
+    x = m.int("x", 2, 2)
+    c = x.forbid_value(2)
+    assert isinstance(c, Clause)
+    assert len(c.literals) == 0
+    m &= c
+    _solve_unsat(m)
 
 
 def test_forbid_value_interior_value_unsat_when_forced():
@@ -286,6 +303,15 @@ def test_forbid_interval_no_overlap_is_tautological_clause():
     _solve_ok(m)
 
 
+def test_forbid_interval_rejects_bool_arguments():
+    m = Model()
+    x = m.int("x", 0, 10)
+    with pytest.raises(TypeError, match="integer start"):
+        x.forbid_interval(True, 3)
+    with pytest.raises(TypeError, match="integer end"):
+        x.forbid_interval(3, False)
+
+
 def test_forbid_interval_interior_gap_blocks_all_values_in_gap_and_allows_outside():
     # Forbid [3, 6] from domain [0, 10) => values 3,4,5,6 blocked
     for blocked in [3, 4, 5, 6]:
@@ -338,6 +364,19 @@ def test_forbid_interval_covering_entire_domain_is_contradiction():
     x = m.int("x", 0, 10)
     m &= x.forbid_interval(-5, 50)
     _solve_unsat(m)
+
+
+def test_forbid_interval_singleton_domain_matches_full_or_empty_clip():
+    m1 = Model()
+    x1 = m1.int("x", 2, 2)
+    m1 &= x1.forbid_interval(2, 2)
+    _solve_unsat(m1)
+
+    m2 = Model()
+    x2 = m2.int("x", 2, 2)
+    m2 &= x2.forbid_interval(3, 5)
+    m2 &= (x2 == 2)
+    _solve_ok(m2)
 
 
 def test_forbid_interval_invalid_reversed_bounds_is_tautological_noop():

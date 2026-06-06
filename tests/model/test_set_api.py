@@ -83,6 +83,47 @@ def test_int_set_subset_and_superset_semantics():
     assert m_bad.solve().status == "unsat"
 
 
+def test_int_set_subset_and_superset_reject_non_set_rhs():
+    m = Model()
+    s = m.int_set("s", lb=1, ub=3)
+
+    with pytest.raises(TypeError, match="IntSetVar"):
+        s.subset_of(object())
+
+    with pytest.raises(TypeError, match="IntSetVar"):
+        s.superset_of(object())
+
+
+def test_int_set_subset_and_superset_match_python_inclusion_on_random_universes():
+    rng = random.Random(41)
+
+    for case in range(18):
+        left_universe = sorted({rng.randint(0, 7) for _ in range(rng.randint(2, 5))})
+        right_universe = sorted({rng.randint(0, 7) for _ in range(rng.randint(2, 5))})
+        if not left_universe:
+            left_universe = [0, 1]
+        if not right_universe:
+            right_universe = [0, 1]
+        left_values = {v for v in left_universe if rng.randrange(2)}
+        right_values = {v for v in right_universe if rng.randrange(2)}
+
+        m_sub = Model()
+        a_sub = m_sub.int_set(f"a_sub_{case}", values=left_universe)
+        b_sub = m_sub.int_set(f"b_sub_{case}", values=right_universe)
+        m_sub &= (a_sub == left_values)
+        m_sub &= (b_sub == right_values)
+        m_sub &= a_sub.subset_of(b_sub)
+        assert m_sub.solve().status == ("sat" if left_values <= right_values else "unsat")
+
+        m_sup = Model()
+        a_sup = m_sup.int_set(f"a_sup_{case}", values=left_universe)
+        b_sup = m_sup.int_set(f"b_sup_{case}", values=right_universe)
+        m_sup &= (a_sup == left_values)
+        m_sup &= (b_sup == right_values)
+        m_sup &= a_sup.superset_of(b_sup)
+        assert m_sup.solve().status == ("sat" if left_values >= right_values else "unsat")
+
+
 def test_int_set_inequality_semantics_with_set_and_constant_rhs():
     m = Model()
     a = m.int_set("a", lb=1, ub=3)

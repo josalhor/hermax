@@ -138,44 +138,30 @@ def test_update_soft_weight_by_softref_updates_all_group_members():
     assert sum(1 for _lit, w in s.soft_updates if w == 9) >= len(ref.soft_ids)
 
 
-def test_update_soft_weight_by_single_soft_id_updates_only_that_member():
+def test_update_soft_weight_softref_reaches_every_lowered_member():
     m = Model()
     x = m.int("x", 0, 5)
     ref = m.add_soft(x, 3)
-    sid0, sid1 = ref.soft_ids[0], ref.soft_ids[1]
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
     before = len(s.soft_updates)
-    m.update_soft_weight(sid0, 8)
-    # single-id update issues one set_soft call
-    assert len(s.soft_updates) == before + 1
-    assert s.soft_updates[-1][1] == 8
+    m.update_soft_weight(ref, 8)
+    assert len(s.soft_updates) >= before + len(ref.soft_ids)
+    assert all(m._soft[m._soft_id_to_index[sid]][0] == 8 for sid in ref.soft_ids)
 
 
-def test_update_soft_weight_by_id_list_updates_selected_members():
+def test_update_soft_weight_rejects_non_softref_targets():
     m = Model()
     a = m.bool("a")
-    b = m.bool("b")
-    ra = m.add_soft(a, 1)
-    rb = m.add_soft(b, 2)
-    s = FakeIPSoft()
-    m.solve(backend="maxsat", solver=s)
-    before = len(s.soft_updates)
-    m.update_soft_weight([ra.soft_ids[0], rb.soft_ids[0]], 6)
-    assert len(s.soft_updates) == before + 2
-    assert s.soft_updates[-1][1] == 6
-
-
-def test_update_soft_weight_unknown_id_raises():
-    m = Model()
-    with pytest.raises(KeyError):
+    ref = m.add_soft(a, 2)
+    with pytest.raises(TypeError, match="SoftRef"):
         m.update_soft_weight(99999, 5)
-
-
-def test_update_soft_weight_invalid_target_type_raises():
-    m = Model()
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="SoftRef"):
         m.update_soft_weight(object(), 4)
+    with pytest.raises(TypeError, match="SoftRef"):
+        m.update_soft_weight(ref.soft_ids[0], 4)
+    with pytest.raises(TypeError, match="SoftRef"):
+        m.update_soft_weight([ref.soft_ids[0]], 4)
 
 
 def test_update_soft_weight_rejects_nonpositive():

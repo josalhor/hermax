@@ -2221,27 +2221,19 @@ class Model:
         return SoftRef(gid, sids)
 
     def update_soft_weight(self, target, new_weight: int) -> None:
-        """Update soft weight(s) by `SoftRef`, soft-group id, soft id, or list of soft ids.
+        """Update the weight of one logical soft object referenced by ``SoftRef``.
 
         Notes:
             This API updates existing soft terms and requires a positive weight.
             Use objective replacement/clear APIs when you need full objective
-            diffs.
+            diffs. The public grouped-update handle is the :class:`SoftRef`
+            returned by :meth:`add_soft`.
         """
         scaled_w, raw_w = self._coerce_soft_weight(new_weight, allow_zero=False)
-        ids: list[int]
         if isinstance(target, SoftRef):
             ids = list(target.soft_ids)
-        elif isinstance(target, int):
-            t = int(target)
-            if t in self._soft_id_to_index:
-                ids = [t]
-            else:
-                raise KeyError(f"Unknown soft target {target!r}")
-        elif isinstance(target, Sequence) and not isinstance(target, (str, bytes)):
-            ids = [int(x) for x in target]
         else:
-            raise TypeError("target must be SoftRef, soft-group id, soft id, or sequence of soft ids.")
+            raise TypeError("target must be a SoftRef returned by add_soft().")
         if not ids:
             return
         for sid in ids:

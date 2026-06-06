@@ -1663,7 +1663,7 @@ class IntVector(_BaseVector):
         for x in self._items[1:]:
             if x.lb != lb or x.ub != ub:
                 raise ValueError("IntVector.bipartite all_different currently requires a common domain.")
-        if (ub - lb) < len(self._items):
+        if (ub - lb + 1) < len(self._items):
             raise ValueError("IntVector.bipartite all_different requires domain size >= vector length.")
         clauses: list[Clause] = []
         amo_groups: list[list[int]] = []

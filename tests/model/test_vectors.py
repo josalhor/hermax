@@ -1,3 +1,5 @@
+import random
+
 import pytest
 
 from hermax.model import BoolVector, Clause, ClauseGroup, EnumVector, IntVector, Model
@@ -222,6 +224,32 @@ def test_intvector_lexicographic_less_than_requires_intvector_and_same_model():
 
     with pytest.raises(ValueError, match="different models"):
         _ = v1.lexicographic_less_than(v2)
+
+
+def test_intvector_lexicographic_order_matches_python_tuple_order_on_fixed_cases():
+    rng = random.Random(37)
+
+    for case in range(18):
+        length = rng.randint(2, 5)
+        left_values = [rng.randint(-2, 4) for _ in range(length)]
+        right_values = [rng.randint(-2, 4) for _ in range(length)]
+
+        m = Model()
+        left = m.int_vector(f"left_{case}", length=length, lb=-2, ub=4)
+        right = m.int_vector(f"right_{case}", length=length, lb=-2, ub=4)
+        m &= left.lexicographic_less_than(right)
+        for var, value in zip(left, left_values):
+            m &= (var == value)
+        for var, value in zip(right, right_values):
+            m &= (var == value)
+
+        r = m.solve()
+        if tuple(left_values) < tuple(right_values):
+            assert r.ok, (left_values, right_values, r.status)
+            assert r[left] == left_values
+            assert r[right] == right_values
+        else:
+            assert r.status == "unsat", (left_values, right_values, r.status)
 
 
 def test_vector_operator_bans_eq_and_le():

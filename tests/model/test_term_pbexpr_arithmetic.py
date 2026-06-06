@@ -218,6 +218,32 @@ def test_pbexpr_explicit_mutators_require_inplace_flag_and_mutate():
     assert r[b] is True
 
 
+def test_pbexpr_sub_cancels_lazy_scaled_int_terms_end_to_end():
+    m = Model()
+    x = m.int("x", 0, 4)
+    a = m.bool("a")
+
+    expr = x.scale(2) + a
+    expr.sub(x.scale(2), inplace=True)
+
+    m &= (x == 3)
+    m &= ~a
+    m &= (expr <= 0)
+    r = _solve_ok(m)
+    assert r[x] == 3
+    assert r[a] is False
+
+    m2 = Model()
+    x2 = m2.int("x", 0, 4)
+    a2 = m2.bool("a")
+    expr2 = x2.scale(2) + a2
+    expr2.sub(x2.scale(2), inplace=True)
+    m2 &= (x2 == 3)
+    m2 &= ~a2
+    m2 &= (expr2 >= 1)
+    assert _solve(m2).status == "unsat"
+
+
 def test_pbexpr_scalar_multiplication_from_grouped_expression_is_supported():
     m = Model()
     a = m.bool("a")

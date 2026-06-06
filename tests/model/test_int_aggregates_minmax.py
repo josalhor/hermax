@@ -1,3 +1,5 @@
+import random
+
 import pytest
 
 from hermax.model import IntVar, Model
@@ -239,6 +241,125 @@ def test_intvector_lower_bound_is_one_sided_and_valid():
     assert r[lbv] == 1
     vals = r[xs]
     assert all(r[lbv] <= v for v in vals)
+
+
+def test_upper_and_lower_bound_track_fixed_random_assignments():
+    rng = random.Random(11)
+
+    for case in range(12):
+        m = Model()
+        length = rng.randint(2, 5)
+        xs = []
+        fixed = []
+        for i in range(length):
+            lb = rng.randint(-3, 2)
+            ub = lb + rng.randint(1, 5)
+            x = m.int(f"x_{case}_{i}", lb=lb, ub=ub)
+            value = rng.randint(lb, ub)
+            xs.append(x)
+            fixed.append(value)
+            m &= (x == value)
+
+        ubv = m.upper_bound(xs, name=f"ub_{case}")
+        lbv = m.lower_bound(xs, name=f"lb_{case}")
+        m &= (ubv == max(fixed))
+        m &= (lbv == min(fixed))
+
+        r = _solve_ok(m)
+        assert r[xs] == fixed
+        assert r[ubv] == max(fixed)
+        assert r[lbv] == min(fixed)
+
+
+def test_intvector_upper_and_lower_bound_methods_match_fixed_random_assignments():
+    rng = random.Random(17)
+
+    for case in range(12):
+        m = Model()
+        length = rng.randint(2, 5)
+        xs = []
+        fixed = []
+        for i in range(length):
+            lb = rng.randint(-2, 1)
+            ub = lb + rng.randint(1, 5)
+            value = rng.randint(lb, ub)
+            x = m.int(f"vec_{case}_{i}", lb=lb, ub=ub)
+            xs.append(x)
+            fixed.append(value)
+            m &= (x == value)
+
+        vec = m.vector(xs, name=f"v_{case}")
+        ubv = vec.upper_bound(name=f"vec_ub_{case}")
+        lbv = vec.lower_bound(name=f"vec_lb_{case}")
+        m &= (ubv == max(fixed))
+        m &= (lbv == min(fixed))
+
+        r = _solve_ok(m)
+        assert r[vec] == fixed
+        assert r[ubv] == max(fixed)
+        assert r[lbv] == min(fixed)
+
+
+def test_upper_bound_and_lower_bound_reject_wrong_extreme_on_fixed_assignments():
+    for case in range(8):
+        m1 = Model()
+        left = m1.int(f"xu_left_{case}", lb=case, ub=case + 3)
+        right = m1.int(f"xu_right_{case}", lb=case + 2, ub=case + 6)
+        m1 &= (left == case + 1)
+        m1 &= (right == case + 4)
+        ubv = m1.upper_bound([left, right], name=f"ub_bad_{case}")
+        m1 &= (ubv == case + 3)
+        _solve_unsat(m1)
+
+        m2 = Model()
+        low = m2.int(f"xl_low_{case}", lb=case, ub=case + 3)
+        high = m2.int(f"xl_high_{case}", lb=case + 2, ub=case + 6)
+        m2 &= (low == case + 1)
+        m2 &= (high == case + 4)
+        lbv = m2.lower_bound([low, high], name=f"lb_bad_{case}")
+        m2 &= (lbv == case + 2)
+        _solve_unsat(m2)
+
+
+def test_running_aggregates_match_prefix_values_on_fixed_random_data():
+    rng = random.Random(23)
+
+    for case in range(10):
+        m = Model()
+        length = rng.randint(2, 6)
+        items = []
+        fixed = []
+        for i in range(length):
+            lb = rng.randint(-4, 1)
+            ub = lb + rng.randint(2, 6)
+            value = rng.randint(lb, ub)
+            x = m.int(f"xr_{case}_{i}", lb=lb, ub=ub)
+            items.append(x)
+            fixed.append(value)
+            m &= (x == value)
+
+        xs = m.vector(items, name=f"xrvec_{case}")
+        prefix_sum = xs.running_sum(name=f"psum_{case}")
+        prefix_max = xs.running_max(name=f"pmax_{case}")
+        prefix_min = xs.running_min(name=f"pmin_{case}")
+
+        r = _solve_ok(m)
+        expected_sum = []
+        expected_max = []
+        expected_min = []
+        total = 0
+        seen = []
+        for value in fixed:
+            total += value
+            seen.append(value)
+            expected_sum.append(total)
+            expected_max.append(max(seen))
+            expected_min.append(min(seen))
+
+        assert r[xs] == fixed
+        assert r[prefix_sum] == expected_sum
+        assert r[prefix_max] == expected_max
+        assert r[prefix_min] == expected_min
 
 
 def test_intvector_lower_bound_rejects_too_large_value():

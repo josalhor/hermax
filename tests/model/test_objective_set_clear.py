@@ -92,6 +92,28 @@ def test_obj_clear_resets_objective_constant():
     assert m._objective_constant == 0
 
 
+def test_obj_clear_resets_negative_offset_and_replacement_starts_clean():
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+
+    m.obj = a - 3
+    assert m._objective_constant == -3
+    assert sum(1 for w, _ in m._soft if w > 0) == 1
+
+    m.obj.clear()
+    assert m._objective_constant == 0
+    assert sum(1 for w, _ in m._soft if w > 0) == 0
+
+    m.obj = b
+    r = _soft_weights(m)
+    assert r.count(1) >= 1
+    solved = m.solve()
+    assert solved.ok
+    assert solved.cost == 0
+    assert solved[b] is False
+
+
 def test_obj_iadd_still_additive():
     m = Model()
     a = m.bool("a")

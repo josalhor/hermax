@@ -10,6 +10,8 @@ Highlights
 * Disabled preprocessing for UWrMaxSATCompetition due to crashes.
 * Disabled CGSS PMRES due to soudnness issues.
 * Started incorporating MaxSATRegressionSuite: https://github.com/tobipaxe/MaxSATRegressionSuite/tree/main
+* Fixed ``IntVector.all_different`` off by one error (not a soudness isseu, but could raise an error preventing a valid model from solving).
+* Simplified ``update_soft_weight(ref, ...)`` SoftRef API description.
 
 
 
