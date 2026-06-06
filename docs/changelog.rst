@@ -16,6 +16,13 @@ Highlights
 * Refined Big-M bool sum cases.
 * Improved ``IntVar == sum(unit-bools)`` with a count ladder builder.
 * Reduced formula size in ``IntVar + bool-sum`` fast path.
+* Improved ``sum_var()`` for mixed integer widths.
+* Improved ``cumulative(..., backend="auto")`` backend selection and overhead.
+* Fixed ``IntSetVar.contains(IntVar)`` on upper bounds.
+* Fixed expression decoding that could inject new vars.
+* Raise on non nullable enums with empty choice domains.
+* Fixed ``IntVector[IntVar]`` to use absolute index values.
+* Fixed routing for ``IntSetVar`` algebra operations.
 
 
 

@@ -66,6 +66,21 @@ def test_intvector_variable_index_with_int_rhs_and_relops():
     assert r[idx] == 1
 
 
+def test_intvector_variable_index_uses_absolute_index_values_for_nonzero_lb():
+    m = Model()
+    vals = m.int_vector("v", length=3, lb=0, ub=20)
+    idx = m.int("idx", 1, 2)
+
+    m &= (vals[0] == 4)
+    m &= (vals[1] == 7)
+    m &= (vals[2] == 9)
+    m &= (idx == 2)
+    m &= (vals[idx] == 9)
+
+    r = _solve_ok(m)
+    assert r[idx] == 2
+
+
 def test_intvector_variable_index_returns_clausegroup_and_bypasses_pb_card(monkeypatch):
     def fail_pb(*args, **kwargs):
         raise AssertionError("PBEnc should not be called for V[idx] == a")
@@ -107,3 +122,9 @@ def test_intvector_variable_index_rejects_out_of_coverage_or_negative_lb():
     idx_neg = m2.int("idx_neg", -1, 2)
     with pytest.raises(ValueError, match="lb >= 0"):
         _ = vals2[idx_neg]
+
+    m3 = Model()
+    vals3 = m3.int_vector("v", length=3, lb=0, ub=5)
+    idx_bad_abs = m3.int("idx_bad_abs", 1, 3)
+    with pytest.raises(ValueError, match="does not cover"):
+        _ = vals3[idx_bad_abs]

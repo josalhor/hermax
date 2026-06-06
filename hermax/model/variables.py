@@ -103,7 +103,7 @@ class IntSetVar:
             if cached is not None:
                 return cached
 
-            allowed = [value == v for v in self.universe if value.lb <= v < value.ub]
+            allowed = [value == v for v in self.universe if value.lb <= v <= value.ub]
             if not allowed:
                 lit = self._model._get_bool_constant_literal(False)
                 self._contains_cache[key] = lit
@@ -261,6 +261,8 @@ class IntSetVar:
         if not isinstance(other, IntSetVar):
             raise TypeError("set operation expects IntSetVar.")
         _ensure_same_model_pair_fast(self, other)
+        hard0 = len(self._model._hard)
+        soft0 = len(self._model._soft)
         vals = sorted(set(self.universe) | set(other.universe))
         out_name = self._model._reserve_name(None) if name is None else name
         self._model._reserve_container_name(out_name)
@@ -291,6 +293,7 @@ class IntSetVar:
             else:  # pragma: no cover - defensive
                 raise ValueError(f"Unknown set op {op!r}")
         self._model._hard.extend(clauses)
+        self._model._inc_state.route_deltas(hard0, soft0)
         return out
 
     def union(self, other: "IntSetVar", *, name: Optional[str] = None) -> "IntSetVar":
@@ -341,6 +344,8 @@ class EnumVar:
         self.name = name
         self.choices = list(choices)
         self.nullable = bool(nullable)
+        if not self.choices and not self.nullable:
+            raise ValueError("Non-nullable EnumVar requires at least one choice.")
         self._choice_lits = {c: model.bool(f"{name}::{c}") for c in self.choices}
         self._add_domain_constraints()
 
@@ -570,7 +575,7 @@ class _VectorElementInt:
         clauses: list[Clause] = []
         idx = self._index_var
         for k in range(idx.lb, idx.ub + 1):
-            item_pos = k - idx.lb
+            item_pos = k
             item = self._items[item_pos]
             branch = self._rhs_constraint(op, rhs, item)
 
@@ -1514,13 +1519,13 @@ class IntVector(_BaseVector):
         For ``vec[idx]`` with ``idx`` as :class:`IntVar`, the index domain must
         satisfy:
             * ``idx.lb >= 0``
-            * ``(idx.ub - idx.lb + 1) <= len(vec)``
+            * ``idx.ub < len(vec)``
         """
         if isinstance(i, IntVar):
             _ensure_same_model_pair_fast(self, i)
             if i.lb < 0:
                 raise ValueError("IntVector[IntVar] currently requires index.lb >= 0.")
-            if (i.ub - i.lb + 1) > len(self._items):
+            if i.ub >= len(self._items):
                 raise ValueError(
                     f"IntVector length {len(self._items)} does not cover index domain [{i.lb}, {i.ub}]."
                 )
@@ -1994,6 +1999,15 @@ class AssignmentView:
             return None
         if isinstance(obj, IntSetVar):
             return {v for v in obj.universe if self.val(obj._member_lits[v])}
+        if isinstance(obj, DivExpr):
+            return self.val(obj._src) // obj._divisor
+        if isinstance(obj, ScaleExpr):
+            return self.val(obj._src) * obj._factor
+        if isinstance(obj, MaxExpr):
+            vals = [self.val(x) for x in obj._items]
+            if obj._kind in {"max", "upper_bound"}:
+                return max(vals)
+            return min(vals)
         if isinstance(obj, _LazyIntExpr):
             obj = obj._realize()
         if isinstance(obj, IntVar):

@@ -39,6 +39,10 @@ def _exists_sat_mixed(
                     return True
                 if op == "<" and lhs < rhs:
                     return True
+                if op == ">=" and lhs >= rhs:
+                    return True
+                if op == ">" and lhs > rhs:
+                    return True
     return False
 
 
@@ -91,6 +95,38 @@ def test_mixed_int_boolsum_swapped_orientation_supported(a: int, k: int, mcoef: 
     m &= ((k + mcoef * y) >= (a * x + _boolsum(bs)))
     r = _solve(m)
     expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, "<=")
+    assert (r.ok if expected else r.status == "unsat")
+
+
+@pytest.mark.parametrize("a,k,mcoef", [
+    (1, 2, 2),
+    (2, 4, 1),
+    (-1, 2, 2),
+])
+def test_mixed_int_boolsum_bigm_ge_matches_bruteforce(a: int, k: int, mcoef: int):
+    m = Model()
+    x = m.int("x", 0, 4)
+    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
+    y = m.bool("y")
+    m &= (a * x + _boolsum(bs) >= (k + mcoef * y))
+    r = _solve(m)
+    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, ">=")
+    assert (r.ok if expected else r.status == "unsat")
+
+
+@pytest.mark.parametrize("a,k,mcoef", [
+    (1, 2, 2),
+    (2, 4, 1),
+    (-1, 2, 2),
+])
+def test_mixed_int_boolsum_bigm_gt_matches_bruteforce(a: int, k: int, mcoef: int):
+    m = Model()
+    x = m.int("x", 0, 4)
+    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
+    y = m.bool("y")
+    m &= (a * x + _boolsum(bs) > (k + mcoef * y))
+    r = _solve(m)
+    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, ">")
     assert (r.ok if expected else r.status == "unsat")
 
 
@@ -153,6 +189,35 @@ def test_mixed_int_boolsum_swapped_no_pb_no_card(monkeypatch, a: int, k: int, mc
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
+    (1, 2, 2),
+    (2, 4, 1),
+    (-1, 2, 2),
+])
+def test_mixed_int_boolsum_ge_no_pb_no_card(monkeypatch, a: int, k: int, mcoef: int):
+    def fail_pb(*args, **kwargs):
+        raise AssertionError("PBEnc should not be called for mixed int+boolsum >= Big-M fast path")
+
+    def fail_card(*args, **kwargs):
+        raise AssertionError("CardEnc should not be called for mixed int+boolsum >= Big-M fast path")
+
+    monkeypatch.setattr(PBEnc, "leq", staticmethod(fail_pb))
+    monkeypatch.setattr(PBEnc, "geq", staticmethod(fail_pb))
+    monkeypatch.setattr(PBEnc, "equals", staticmethod(fail_pb))
+    monkeypatch.setattr(CardEnc, "atmost", staticmethod(fail_card))
+    monkeypatch.setattr(CardEnc, "atleast", staticmethod(fail_card))
+    monkeypatch.setattr(CardEnc, "equals", staticmethod(fail_card))
+
+    m = Model()
+    x = m.int("x", 0, 4)
+    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
+    y = m.bool("y")
+    m &= (a * x + _boolsum(bs) >= (k + mcoef * y))
+    r = _solve(m)
+    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, ">=")
+    assert (r.ok if expected else r.status == "unsat")
+
+
+@pytest.mark.parametrize("a,k,mcoef", [
     (1, 0, 2),
     (2, 1, 2),
     (-1, 0, 2),
@@ -180,7 +245,7 @@ def test_mixed_int_boolsum_randomized_point_checks(seed: int):
         a = rng.choice([-3, -2, -1, 1, 2, 3])
         k = rng.randint(-2, 8)
         mcoef = rng.randint(1, 5)
-        op = rng.choice(["<=", "<"])
+        op = rng.choice(["<=", "<", ">=", ">"])
         lb = rng.randint(-2, 1)
         ub = lb + rng.randint(3, 7)
         xv = rng.randint(lb, ub)
@@ -196,9 +261,15 @@ def test_mixed_int_boolsum_randomized_point_checks(seed: int):
         if op == "<=":
             m &= (lhs <= rhs)
             expected = a * xv + sum(bits) <= k + mcoef * gate
-        else:
+        elif op == "<":
             m &= (lhs < rhs)
             expected = a * xv + sum(bits) < k + mcoef * gate
+        elif op == ">=":
+            m &= (lhs >= rhs)
+            expected = a * xv + sum(bits) >= k + mcoef * gate
+        else:
+            m &= (lhs > rhs)
+            expected = a * xv + sum(bits) > k + mcoef * gate
         m &= (x == xv)
         m &= (y if gate else ~y)
         for lit, bit in zip(bs, bits):

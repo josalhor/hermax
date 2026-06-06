@@ -1683,11 +1683,10 @@ class Model:
     def sum_var(self, items: Sequence[IntVar], name: Optional[str] = None) -> IntVar:
         """Materialize the sum of integer variables as a single IntVar.
 
-        Uses a balanced binary-tree reduction to keep the unary-adder graph
-        depth at ``O(log N)`` rather than the ``O(N)`` linear chain that would
-        result from a naive left-fold.  This reduces the number
-        of intermediate auxiliary variables and clauses, and improves BCP
-        propagation speed in the SAT solver.
+        Uses a binary-tree reduction: repeatedly merge the two
+        narrowest current partial sums. This keeps intermediate
+        widths smaller than a left-fold or,
+        while avoiding the ``O(N)`` linear chain.
         """
         items_list = list(items)
         if not items_list:
@@ -1698,35 +1697,35 @@ class Model:
         if len(items_list) == 1:
             return items_list[0]
 
-        # Balanced tree reduction via a deque.  We pair neighbors repeatedly
-        # until a single variable remains; each pairwise merge uses the same
-        # batcher odd-even unary adder as before, but now over a log-depth
-        # tree rather than a linear string.
-        from collections import deque
-        q: deque[IntVar] = deque(items_list)
+        from heapq import heapify, heappop, heappush
+
+        def _ladder_width(v: IntVar) -> int:
+            return len(v._threshold_lits)
+
+        heap: list[tuple[int, int, IntVar]] = [
+            (_ladder_width(v), idx, v) for idx, v in enumerate(items_list)
+        ]
+        heapify(heap)
         step = 0
-        while len(q) > 1:
-            a = q.popleft()
-            b = q.popleft()
+        next_idx = len(heap)
+        while len(heap) > 1:
+            _wa, _ia, a = heappop(heap)
+            _wb, _ib, b = heappop(heap)
             step_name: Optional[str]
             if name is not None:
                 step_name = f"{name}_step{step}"
             else:
                 step_name = None
-            # Reuse the existing pairwise-sum path that already wires up the
-            # batcher network and produces a correctly-typed IntVar.
             merged_lb = a.lb + b.lb
             merged_ub = a.ub + b.ub
             n = self._reserve_name(step_name)
             merged = self.int(n, lb=merged_lb, ub=merged_ub)
             self &= (merged == (a + b))
-            q.append(merged)
+            heappush(heap, (_ladder_width(merged), next_idx, merged))
+            next_idx += 1
             step += 1
 
-        result = q[0]
-        # If a final name was requested and the last variable is an intermediate
-        # one (anonymous), rename isn't possible post-hoc; the caller gets the
-        # logically correct variable regardless.
+        result = heap[0][2]
         return result
 
     def cumulative(
@@ -1818,8 +1817,12 @@ class Model:
         def _order_indicator(left: IntVar, shift: int, right: IntVar) -> Literal:
             rel = left._relop_intvar(right, "<=", shift)
             assert isinstance(rel, IntRelation)
+            if len(rel) == 0:
+                return true_lit
+            if any(len(clause) == 0 for clause in rel):
+                return false_lit
             out = model.bool()
-            model.__iand__(rel.reify(out))
+            model.__iand__(rel.only_if(out))
             return out
 
         active_jobs = [(s, int(d), int(r)) for s, d, r in zip(starts_list, durs_list, demands_list) if d > 0 and r > 0]
@@ -1841,9 +1844,10 @@ class Model:
         max_t_exclusive = max(s.ub + d + 1 for s, d, _ in active_jobs)
         horizon = max_t_exclusive - min_t
         n = len(active_jobs)
+        domain_work = sum((s.ub - s.lb + 1) for s, _, _ in active_jobs)
 
         if backend == "auto":
-            backend = "task" if n * n < horizon else "time"
+            backend = "task" if domain_work < horizon else "time"
 
         if backend == "time":
             # Time-indexed: one PB cut per tick.  O(N × H) constraints.

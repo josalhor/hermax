@@ -37,3 +37,14 @@ def test_sum_var_tree_reduction_semantics():
     assert r.ok
     assert r[s] == 16
     assert sum(r[v] for v in x) == 16
+
+
+def test_sum_var_width_aware_merge_is_order_robust_for_mixed_domains():
+    def stats(widths):
+        m = Model()
+        xs = [m.int(f"x_{i}", lb=0, ub=w) for i, w in enumerate(widths)]
+        m.sum_var(xs, name="total")
+        return m._top_id(), len(m._hard)
+
+    widths = [1, 2, 4, 8, 16, 32]
+    assert stats(widths) == stats(list(reversed(widths)))

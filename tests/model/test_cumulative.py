@@ -1,5 +1,6 @@
 import pytest
 import random
+import itertools
 from hermax.model import Model
 
 def _solve_ok(m: Model):
@@ -57,3 +58,61 @@ def test_cumulative_random_fixed_schedules_match_direct_capacity_check():
             m.cumulative(vars_, durations, demands, capacity, backend=backend)
             status = m.solve().status
             assert status == ("unsat" if overload else "sat")
+
+
+def test_cumulative_task_backend_exhaustive_small_overlap_cases_match_direct_check():
+    durations = [2, 2, 2]
+    demands = [1, 1, 1]
+    capacity = 1
+
+    for starts in itertools.product(range(3), repeat=3):
+        overload = False
+        horizon = max(s + d for s, d in zip(starts, durations))
+        for t in range(horizon):
+            load = sum(
+                demand
+                for start, duration, demand in zip(starts, durations, demands)
+                if start <= t < start + duration
+            )
+            if load > capacity:
+                overload = True
+                break
+
+        m = Model()
+        vars_ = [m.int(f"s_task_exh_{i}", 0, 2) for i in range(3)]
+        for v, start in zip(vars_, starts):
+            m &= (v == start)
+        m.cumulative(vars_, durations, demands, capacity, backend="task")
+        status = m.solve().status
+        assert status == ("unsat" if overload else "sat")
+
+
+def test_cumulative_auto_matches_time_when_domain_work_exceeds_horizon():
+    def stats(backend: str):
+        m = Model()
+        starts = [m.int(f"s_{backend}_{i}", 0, 49) for i in range(3)]
+        m.cumulative(starts, [2, 2, 2], [1, 1, 1], 2, backend=backend)
+        return m._top_id(), len(m._hard)
+
+    auto_stats = stats("auto")
+    time_stats = stats("time")
+    task_stats = stats("task")
+    assert auto_stats == time_stats
+    assert auto_stats != task_stats
+
+
+def test_cumulative_auto_matches_task_when_domain_work_is_smaller_than_horizon():
+    def stats(backend: str):
+        m = Model()
+        starts = [
+            m.int(f"s_{backend}_0", 0, 0),
+            m.int(f"s_{backend}_1", 100, 100),
+        ]
+        m.cumulative(starts, [2, 2], [1, 1], 2, backend=backend)
+        return m._top_id(), len(m._hard)
+
+    auto_stats = stats("auto")
+    time_stats = stats("time")
+    task_stats = stats("task")
+    assert auto_stats == task_stats
+    assert auto_stats != time_stats

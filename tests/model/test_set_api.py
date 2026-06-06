@@ -218,6 +218,20 @@ def test_int_set_contains_intvar_indicator_semantics_exhaustive_small_domain():
         assert (m_out.solve().status != "unsat") is (not truth)
 
 
+def test_int_set_contains_intvar_includes_closed_upper_bound():
+    m_true = Model()
+    s_true = m_true.int_set("s", values=[2])
+    x_true = m_true.int("x", lb=2, ub=2)
+    m_true &= s_true.contains(x_true)
+    assert m_true.solve().status == "sat"
+
+    m_false = Model()
+    s_false = m_false.int_set("s", values=[2])
+    x_false = m_false.int("x", lb=2, ub=2)
+    m_false &= ~s_false.contains(x_false)
+    assert m_false.solve().status == "unsat"
+
+
 def test_int_set_algebra_union_intersection_difference_symdiff():
     m = Model()
     a = m.int_set("a", lb=1, ub=4)

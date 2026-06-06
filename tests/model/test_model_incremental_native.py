@@ -83,6 +83,25 @@ def test_incremental_sat_assumptions_and_streamed_hard_updates():
     assert r2.status == "unsat"
 
 
+def test_incremental_sat_routes_int_set_algebra_clauses_after_bind():
+    m = Model()
+    a = m.bool("a")
+    m &= a
+    r1 = m.solve(incremental=True, backend="sat")
+    assert r1.ok
+
+    s1 = m.int_set("s1", values=[1])
+    s2 = m.int_set("s2", values=[1])
+    u = s1 | s2
+
+    m &= (s1 == [])
+    m &= (s2 == [])
+    m &= (u == [1])
+
+    r2 = m.solve(incremental=True, backend="sat")
+    assert r2.status == "unsat"
+
+
 def test_incremental_sat_lock_upgrades_backend_by_default():
     m = Model()
     a = m.bool("a")

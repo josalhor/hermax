@@ -350,6 +350,68 @@ class _EncoderDispatch:
         clauses.append(Clause(model, [~antecedent, consequent]))
 
     @staticmethod
+    def _lit_conj_implies(
+        clauses: list[Clause],
+        model: "Model",
+        left: bool | Literal,
+        right: bool | Literal,
+        consequent: bool | Literal,
+    ) -> None:
+        """Append CNF for ``(left and right) -> consequent`` with folding."""
+        if isinstance(left, bool):
+            if not left:
+                return
+            _EncoderDispatch._lit_implies(clauses, model, right, consequent)
+            return
+        if isinstance(right, bool):
+            if not right:
+                return
+            _EncoderDispatch._lit_implies(clauses, model, left, consequent)
+            return
+        if left is right:
+            _EncoderDispatch._lit_implies(clauses, model, left, consequent)
+            return
+        if left.id == right.id and left.polarity != right.polarity:
+            return
+        if isinstance(consequent, bool):
+            if consequent:
+                return
+            clauses.append(Clause(model, [~left, ~right]))
+            return
+        clauses.append(Clause(model, [~left, ~right, consequent]))
+
+    @staticmethod
+    def _append_guarded_clause2(
+        clauses: list[Clause],
+        model: "Model",
+        left: bool | Literal,
+        right: bool | Literal,
+        body: Sequence[Literal],
+    ) -> None:
+        """Append ``(~left or ~right or body...)`` with constant folding."""
+        if isinstance(left, bool):
+            if not left:
+                return
+            if isinstance(right, bool):
+                if not right:
+                    return
+                clauses.append(Clause(model, list(body)))
+                return
+            clauses.append(Clause(model, [~right, *body]))
+            return
+        if isinstance(right, bool):
+            if not right:
+                return
+            clauses.append(Clause(model, [~left, *body]))
+            return
+        if left is right:
+            clauses.append(Clause(model, [~left, *body]))
+            return
+        if left.id == right.id and left.polarity != right.polarity:
+            return
+        clauses.append(Clause(model, [~left, ~right, *body]))
+
+    @staticmethod
     def _negate_bool_or_lit(x: bool | Literal) -> bool | Literal:
         if isinstance(x, bool):
             return not x
@@ -902,6 +964,71 @@ class _EncoderDispatch:
         return ge_cache
 
     @staticmethod
+    def _emit_sum_le_gated_conj(
+        clauses: list[Clause],
+        model: "Model",
+        left: bool | Literal,
+        right: bool | Literal,
+        lits: Sequence[Literal],
+        bound: int,
+        ge_cache: list[bool | Literal] | None,
+    ) -> list[bool | Literal] | None:
+        """Append CNF for ``(left and right) -> (sum(lits) <= bound)``."""
+        n = len(lits)
+        if bound >= n:
+            return ge_cache
+        if bound < 0:
+            _EncoderDispatch._lit_conj_implies(clauses, model, left, right, False)
+            return ge_cache
+        if bound == 0:
+            for lit in lits:
+                _EncoderDispatch._append_guarded_clause2(clauses, model, left, right, [~lit])
+            return ge_cache
+        if bound == n - 1:
+            _EncoderDispatch._append_guarded_clause2(clauses, model, left, right, [~lit for lit in lits])
+            return ge_cache
+        if ge_cache is None:
+            seq_clauses, ge_cache = _EncoderDispatch._build_sequential_ge_counter(model, lits)
+            clauses.extend(seq_clauses)
+        ge_lit = ge_cache[bound + 1]
+        if isinstance(ge_lit, bool):
+            _EncoderDispatch._lit_conj_implies(clauses, model, left, right, not ge_lit)
+        else:
+            _EncoderDispatch._lit_conj_implies(clauses, model, left, right, ~ge_lit)
+        return ge_cache
+
+    @staticmethod
+    def _emit_sum_ge_gated_conj(
+        clauses: list[Clause],
+        model: "Model",
+        left: bool | Literal,
+        right: bool | Literal,
+        lits: Sequence[Literal],
+        threshold: int,
+        ge_cache: list[bool | Literal] | None,
+    ) -> list[bool | Literal] | None:
+        """Append CNF for ``(left and right) -> (sum(lits) >= threshold)``."""
+        n = len(lits)
+        if threshold <= 0:
+            return ge_cache
+        if threshold > n:
+            _EncoderDispatch._lit_conj_implies(clauses, model, left, right, False)
+            return ge_cache
+        if threshold == n:
+            for lit in lits:
+                _EncoderDispatch._append_guarded_clause2(clauses, model, left, right, [lit])
+            return ge_cache
+        if threshold == 1:
+            _EncoderDispatch._append_guarded_clause2(clauses, model, left, right, list(lits))
+            return ge_cache
+        if ge_cache is None:
+            seq_clauses, ge_cache = _EncoderDispatch._build_sequential_ge_counter(model, lits)
+            clauses.extend(seq_clauses)
+        ge_lit = ge_cache[threshold]
+        _EncoderDispatch._lit_conj_implies(clauses, model, left, right, ge_lit)
+        return ge_cache
+
+    @staticmethod
     def _emit_sum_ge_implies_lit(
         clauses: list[Clause],
         model: "Model",
@@ -1097,9 +1224,32 @@ class _EncoderDispatch:
             else:
                 cond = _EncoderDispatch._negate_bool_or_lit(x_ge_k)
                 rhs_bound = bound - a * (k - 1)
-            gate = _EncoderDispatch._lit_and(clauses, model, antecedent, cond)
-            ge_cache = _EncoderDispatch._emit_sum_le_gated(
-                clauses, model, gate, bool_lits, rhs_bound, ge_cache
+            ge_cache = _EncoderDispatch._emit_sum_le_gated_conj(
+                clauses, model, antecedent, cond, bool_lits, rhs_bound, ge_cache
+            )
+        return ge_cache
+
+    @staticmethod
+    def _emit_int_boolsum_ge_gated(
+        clauses: list[Clause],
+        model: "Model",
+        antecedent: bool | Literal,
+        x: IntVar,
+        a: int,
+        bool_lits: Sequence[Literal],
+        bound: int,
+        ge_cache: list[bool | Literal] | None,
+    ) -> list[bool | Literal] | None:
+        """Append CNF for ``antecedent -> (a*x + sum(bool_lits) >= bound)``."""
+        for k in range(x.lb, x.ub + 2):
+            if a > 0:
+                cond = _EncoderDispatch._int_cmp_constraint(x, "<", k)
+                rhs_threshold = bound - a * (k - 1)
+            else:
+                cond = _EncoderDispatch._int_cmp_constraint(x, ">=", k)
+                rhs_threshold = bound - a * k
+            ge_cache = _EncoderDispatch._emit_sum_ge_gated_conj(
+                clauses, model, antecedent, cond, bool_lits, rhs_threshold, ge_cache
             )
         return ge_cache
 
@@ -1109,7 +1259,8 @@ class _EncoderDispatch:
     ) -> ClauseGroup | None:
         """Detect and compile ``a*x + sum(unit-bools) OP k + m*lit``.
 
-        Supported comparators: ``<=, <, >=, >``.
+        Supports the ``<=, <, >=, >`` families by enumerating ladder cuts of
+        the IntVar side and pushing gated bounds on the unit-bool sum.
         """
         if op not in ("<=", "<", ">=", ">"):
             return None
@@ -1146,8 +1297,13 @@ class _EncoderDispatch:
                 )
                 return ClauseGroup(model, clauses)
             if cmp_op == ">=":
-                # LHS >= RHS  <=>  RHS <= LHS, then reuse oriented <= encoder.
-                return None
+                ge_cache = _EncoderDispatch._emit_int_boolsum_ge_gated(
+                    clauses, model, ~lit, x, a, bool_lits, b_false, ge_cache
+                )
+                ge_cache = _EncoderDispatch._emit_int_boolsum_ge_gated(
+                    clauses, model, lit, x, a, bool_lits, b_true, ge_cache
+                )
+                return ClauseGroup(model, clauses)
             return None
 
         out = compile_oriented(lhs, op, rhs)

@@ -256,6 +256,26 @@ def test_diff_mixed_int_boolsum_fastpath_soundness():
     )
 
 
+def test_diff_mixed_int_boolsum_fastpath_soundness_ge():
+    def build(v, b):
+        return (2 * v["x"] + b["b_0"] + b["b_1"] + b["b_2"] >= (4 + 3 * b["b_gate"]))
+
+    def truth(p):
+        return 2 * p["x"] + (
+            (1 if p["b_0"] else 0)
+            + (1 if p["b_1"] else 0)
+            + (1 if p["b_2"] else 0)
+        ) >= 4 + 3 * (1 if p["b_gate"] else 0)
+
+    _assert_diff_equivalent(
+        build_constraint=build,
+        domains={"x": (0, 5)},
+        bool_names=("b_0", "b_1", "b_2", "b_gate"),
+        disable_fastpath="_try_mixed_int_boolsum_bigm_fastpath",
+        truth_fn=truth,
+    )
+
+
 def test_dispatch_precedence_unary_adder_over_trivariate():
     seen = {"unary_adder": 0, "trivariate": 0}
     o1 = _EncoderDispatch._try_unary_adder_eq_fastpath

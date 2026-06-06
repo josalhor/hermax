@@ -20,6 +20,19 @@ def test_enum_declaration_properties_and_choice_literals():
     assert all(isinstance(l, Literal) for l in color._choice_lits.values())
 
 
+def test_nonnullable_enum_requires_at_least_one_choice():
+    m = Model()
+    with pytest.raises(ValueError, match="at least one choice"):
+        m.enum("empty", choices=[], nullable=False)
+
+
+def test_nullable_empty_enum_decodes_to_none():
+    m = Model()
+    e = m.enum("empty", choices=[], nullable=True)
+    r = _solve_ok(m)
+    assert r[e] is None
+
+
 def test_enum_domain_constraints_are_deferred_lazily():
     m = Model()
     color = m.enum("color", choices=["red", "green", "blue"], nullable=False)

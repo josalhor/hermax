@@ -253,7 +253,7 @@ def test_random_diff_trivariate_fastpath():
         xl, xu = _rand_domain(rng, min_lb=0, max_lb=2)
         yl, yu = _rand_domain(rng, min_lb=0, max_lb=2)
         zl, zu = _rand_domain(rng, min_lb=0, max_lb=3, min_span=3, max_span=8)
-        op = rng.choice(["<=", "<"])
+        op = rng.choice(["<=", "<", ">=", ">"])
         pinx = rng.choice([None, rng.randint(xl, xu - 1)])
         piny = rng.choice([None, rng.randint(yl, yu - 1)])
         pinz = rng.choice([None, rng.randint(zl, zu - 1)])
@@ -503,7 +503,12 @@ def test_random_diff_mixed_int_boolsum_bigm_fastpath():
             def truth(asg):
                 lhs_v = a * int(asg["x"]) + sum(1 if bool(asg[f"b{i}"]) else 0 for i in range(n))
                 rhs_v = k + mcoef * (1 if bool(asg["gate"]) else 0)
-                ok = (lhs_v <= rhs_v) if op == "<=" else (lhs_v < rhs_v)
+                ok = (
+                    (lhs_v <= rhs_v) if op == "<="
+                    else (lhs_v < rhs_v) if op == "<"
+                    else (lhs_v >= rhs_v) if op == ">="
+                    else (lhs_v > rhs_v)
+                )
                 if pinx is not None and int(asg["x"]) != pinx:
                     return False
                 if gate_pin is not None and bool(asg["gate"]) != gate_pin:

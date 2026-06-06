@@ -147,8 +147,8 @@ Use :meth:`hermax.model.IntVar.distance_at_most`:
 
    model &= x.distance_at_most(y, 3)
 
-This compiles to ladder-threshold implications and introduces no auxiliary
-variables. It is linear in the relevant threshold cuts and mostly binary clauses.
+This compiles to ladder implications and introduces no auxiliary
+variables.
 
 Edge cases:
 

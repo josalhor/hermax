@@ -157,6 +157,53 @@ def test_decode_end_to_end_with_model_solve_on_mixed_types():
     assert r[bv] == [True, False]
 
 
+def test_decode_lazy_scale_expr_uses_solved_value_without_realizing():
+    m = Model()
+    x = m.int("x", lb=0, ub=5)
+    y = x.scale(2)
+    m &= (x == 3)
+
+    hard_before = len(m._hard)
+    r = _solve_ok(m)
+
+    assert r[y] == 6
+    assert len(m._hard) == hard_before
+
+
+def test_decode_lazy_floor_div_expr_uses_solved_value_without_realizing():
+    m = Model()
+    x = m.int("x", lb=0, ub=11)
+    q = x // 3
+    m &= (x == 10)
+
+    hard_before = len(m._hard)
+    r = _solve_ok(m)
+
+    assert r[q] == 3
+    assert len(m._hard) == hard_before
+
+
+def test_decode_lazy_max_expr_uses_solved_values_without_realizing():
+    m = Model()
+    xs = m.int_vector("x", length=3, lb=0, ub=9)
+    mx = xs.max()
+    mn = xs.min()
+    ubv = xs.upper_bound()
+    lbv = xs.lower_bound()
+    m &= (xs[0] == 2)
+    m &= (xs[1] == 7)
+    m &= (xs[2] == 4)
+
+    hard_before = len(m._hard)
+    r = _solve_ok(m)
+
+    assert r[mx] == 7
+    assert r[mn] == 2
+    assert r[ubv] == 7
+    assert r[lbv] == 2
+    assert len(m._hard) == hard_before
+
+
 def test_decode_rejects_unsupported_target_type():
     m = Model()
     dec = m.decode_model([])
