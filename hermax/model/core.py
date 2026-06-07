@@ -486,6 +486,8 @@ class _IncrementalCoordinator:
         "solver_kwargs",
         "ip_next_vid",
         "soft_lit_by_id",
+        "hard_routed",
+        "soft_routed",
     )
 
     def __init__(self, model: "Model"):
@@ -499,6 +501,8 @@ class _IncrementalCoordinator:
         self.solver_kwargs: dict = {}
         self.ip_next_vid = 0
         self.soft_lit_by_id: dict[int, int] = {}
+        self.hard_routed = 0
+        self.soft_routed = 0
 
     @property
     def bound(self) -> bool:
@@ -520,6 +524,8 @@ class _IncrementalCoordinator:
         self.solver_kwargs = {}
         self.ip_next_vid = 0
         self.soft_lit_by_id.clear()
+        self.hard_routed = 0
+        self.soft_routed = 0
 
     @staticmethod
     def _safe_call(fn) -> None:
@@ -564,27 +570,33 @@ class _IncrementalCoordinator:
     def route_deltas(self, hard_start: int, soft_start: int) -> None:
         """Push hard/soft changes since offsets into the bound backend."""
         m = self._model
+        hard_from = min(hard_start, self.hard_routed)
+        soft_from = min(soft_start, self.soft_routed)
         if m._debug_level >= m.DEBUG_DELTA:
             m._debug(
                 m.DEBUG_DELTA,
-                f"route_deltas mode={self.mode} hard+={max(0, len(m._hard)-hard_start)} soft+={max(0, len(m._soft)-soft_start)}",
+                f"route_deltas mode={self.mode} hard+={max(0, len(m._hard)-hard_from)} soft+={max(0, len(m._soft)-soft_from)}",
             )
         if self.mode is None:
             return
         if self.mode == "sat":
             # SAT backend owns hard clauses only.
-            if soft_start < len(m._soft):
+            if soft_from < len(m._soft):
                 return
             assert self.sat_solver is not None
-            for c in m._hard[hard_start:]:
+            for c in m._hard[hard_from:]:
                 self.sat_solver.add_clause(m._clause_to_dimacs_list(c))
+            self.hard_routed = len(m._hard)
+            self.soft_routed = len(m._soft)
             return
         if self.mode == "maxsat":
             assert self.ip_solver is not None
-            for c in m._hard[hard_start:]:
+            for c in m._hard[hard_from:]:
                 self.ip_solver.add_clause(m._clause_to_dimacs_list(c))
-            for i in range(soft_start, len(m._soft)):
+            for i in range(soft_from, len(m._soft)):
                 self._route_soft_index(i)
+            self.hard_routed = len(m._hard)
+            self.soft_routed = len(m._soft)
 
     def bind_sat(self, sat_solver_name: str) -> None:
         """Bind an incremental SAT backend on current hard clauses."""
@@ -596,6 +608,8 @@ class _IncrementalCoordinator:
         self.mode = "sat"
         self.sat_solver = s
         self.sat_solver_name = sat_solver_name
+        self.hard_routed = len(self._model._hard)
+        self.soft_routed = len(self._model._soft)
 
     def bind_maxsat(self, solver, solver_kwargs: dict | None) -> None:
         """Bind an incremental MaxSAT backend and replay current formula."""
@@ -639,6 +653,8 @@ class _IncrementalCoordinator:
         self.solver_kwargs = dict(solver_kwargs or {})
         for i in range(len(m._soft)):
             self._route_soft_index(i)
+        self.hard_routed = len(m._hard)
+        self.soft_routed = len(m._soft)
 
     def update_soft_weight(
         self,
@@ -730,6 +746,7 @@ class _IncrementalCoordinator:
             raise ValueError("Cannot change incremental backend from MaxSAT to SAT.")
 
         m._commit_pb()
+        self.route_deltas(len(m._hard), len(m._soft))
 
         if self.mode == "sat":
             assert self.sat_solver is not None

@@ -23,6 +23,8 @@ Highlights
 * Raise on non nullable enums with empty choice domains.
 * Fixed ``IntVector[IntVar]`` to use absolute index values.
 * Fixed routing for ``IntSetVar`` algebra operations.
+* Fixed incremental routing for certain constraints.
+* Stopped ``IntSetVar`` algebra ops from mutating model too early.
 
 
 

@@ -261,39 +261,54 @@ class IntSetVar:
         if not isinstance(other, IntSetVar):
             raise TypeError("set operation expects IntSetVar.")
         _ensure_same_model_pair_fast(self, other)
-        hard0 = len(self._model._hard)
-        soft0 = len(self._model._soft)
         vals = sorted(set(self.universe) | set(other.universe))
         out_name = self._model._reserve_name(None) if name is None else name
         self._model._reserve_container_name(out_name)
         out = IntSetVar(self._model, out_name, vals)
-
-        clauses: list[Clause] = []
         for v in vals:
             a = self._lit_for_value(v)
             b = other._lit_for_value(v)
             r = out._member_lits[v]
             if op == "union":
-                clauses.append(Clause(self._model, [~r, a, b]))
-                clauses.append(Clause(self._model, [~a, r]))
-                clauses.append(Clause(self._model, [~b, r]))
+                group = ClauseGroup(
+                    self._model,
+                    [
+                        Clause(self._model, [~r, a, b]),
+                        Clause(self._model, [~a, r]),
+                        Clause(self._model, [~b, r]),
+                    ],
+                )
             elif op == "intersection":
-                clauses.append(Clause(self._model, [~r, a]))
-                clauses.append(Clause(self._model, [~r, b]))
-                clauses.append(Clause(self._model, [~a, ~b, r]))
+                group = ClauseGroup(
+                    self._model,
+                    [
+                        Clause(self._model, [~r, a]),
+                        Clause(self._model, [~r, b]),
+                        Clause(self._model, [~a, ~b, r]),
+                    ],
+                )
             elif op == "difference":
-                clauses.append(Clause(self._model, [~r, a]))
-                clauses.append(Clause(self._model, [~r, ~b]))
-                clauses.append(Clause(self._model, [~a, b, r]))
+                group = ClauseGroup(
+                    self._model,
+                    [
+                        Clause(self._model, [~r, a]),
+                        Clause(self._model, [~r, ~b]),
+                        Clause(self._model, [~a, b, r]),
+                    ],
+                )
             elif op == "symdiff":
-                clauses.append(Clause(self._model, [a, b, ~r]))
-                clauses.append(Clause(self._model, [~a, ~b, ~r]))
-                clauses.append(Clause(self._model, [~a, b, r]))
-                clauses.append(Clause(self._model, [a, ~b, r]))
+                group = ClauseGroup(
+                    self._model,
+                    [
+                        Clause(self._model, [a, b, ~r]),
+                        Clause(self._model, [~a, ~b, ~r]),
+                        Clause(self._model, [~a, b, r]),
+                        Clause(self._model, [a, ~b, r]),
+                    ],
+                )
             else:  # pragma: no cover - defensive
                 raise ValueError(f"Unknown set op {op!r}")
-        self._model._hard.extend(clauses)
-        self._model._inc_state.route_deltas(hard0, soft0)
+            self._model._register_literal_definition(r, group)
         return out
 
     def union(self, other: "IntSetVar", *, name: Optional[str] = None) -> "IntSetVar":

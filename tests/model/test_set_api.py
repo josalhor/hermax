@@ -259,6 +259,20 @@ def test_int_set_algebra_union_intersection_difference_symdiff():
     assert r[x] == {1, 3}
 
 
+def test_int_set_algebra_builders_do_not_eagerly_mutate_model():
+    m = Model()
+    a = m.int_set("a", lb=1, ub=4)
+    b = m.int_set("b", lb=1, ub=4)
+
+    hard_before = len(m._hard)
+    _u = a | b
+    _i = a & b
+    _d = a - b
+    _x = a ^ b
+
+    assert len(m._hard) == hard_before
+
+
 def test_int_set_randomized_set_ops_cardinality_and_inequality():
     rng = random.Random(0)
 

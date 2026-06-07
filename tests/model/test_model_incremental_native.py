@@ -102,6 +102,125 @@ def test_incremental_sat_routes_int_set_algebra_clauses_after_bind():
     assert r2.status == "unsat"
 
 
+def test_incremental_sat_routes_new_intvar_domain_clauses_before_solve():
+    m = Model()
+    a = m.bool("a")
+    m &= a
+    r1 = m.solve(incremental=True, backend="sat")
+    assert r1.ok
+
+    x = m.int("x", 0, 2)
+    m &= (x == 2)
+    m &= (x < 1)
+
+    r2 = m.solve(incremental=True, backend="sat")
+    assert r2.status == "unsat"
+
+
+def test_incremental_sat_routes_interval_identity_clauses_before_solve():
+    m = Model()
+    a = m.bool("a")
+    m &= a
+    r1 = m.solve(incremental=True, backend="sat")
+    assert r1.ok
+
+    i1 = m.interval("i1", start=0, duration=2, end=4)
+    i2 = m.interval("i2", start=0, duration=2, end=4)
+    m &= (i1.start == 2)
+    m &= (i2.start == 1)
+    m &= i1.no_overlap(i2)
+
+    r2 = m.solve(incremental=True, backend="sat")
+    assert r2.status == "unsat"
+
+
+def test_incremental_sat_routes_aggregate_clauses_before_solve():
+    m = Model()
+    x = m.int("x", 0, 5)
+    y = m.int("y", 0, 5)
+    a = m.bool("a")
+    m &= a
+    r1 = m.solve(incremental=True, backend="sat")
+    assert r1.ok
+
+    z = m.max([x, y], name="z")
+    m &= (x == 1)
+    m &= (y == 4)
+    m &= (z == 1)
+
+    r2 = m.solve(incremental=True, backend="sat")
+    assert r2.status == "unsat"
+
+
+def test_incremental_sat_routes_sum_var_clauses_before_solve():
+    m = Model()
+    x = m.int("x", 0, 5)
+    y = m.int("y", 0, 5)
+    a = m.bool("a")
+    m &= a
+    r1 = m.solve(incremental=True, backend="sat")
+    assert r1.ok
+
+    s = m.sum_var([x, y], name="s")
+    m &= (x == 2)
+    m &= (y == 3)
+    m &= (s == 4)
+
+    r2 = m.solve(incremental=True, backend="sat")
+    assert r2.status == "unsat"
+
+
+def test_incremental_sat_routes_one_sided_bound_clauses_before_solve():
+    m = Model()
+    x = m.int("x", 0, 5)
+    y = m.int("y", 0, 5)
+    a = m.bool("a")
+    m &= a
+    r1 = m.solve(incremental=True, backend="sat")
+    assert r1.ok
+
+    z = m.upper_bound([x, y], name="z")
+    m &= (x == 1)
+    m &= (y == 4)
+    m &= (z == 0)
+
+    r2 = m.solve(incremental=True, backend="sat")
+    assert r2.status == "unsat"
+
+
+def test_incremental_sat_routes_post_bind_matrix_declarations_before_solve():
+    m = Model()
+    a = m.bool("a")
+    m &= a
+    r1 = m.solve(incremental=True, backend="sat")
+    assert r1.ok
+
+    mat = m.int_matrix("m", rows=1, cols=1, lb=0, ub=2)
+    m &= (mat[0, 0] == 2)
+    m &= (mat[0, 0] < 1)
+
+    r2 = m.solve(incremental=True, backend="sat")
+    assert r2.status == "unsat"
+
+
+def test_incremental_maxsat_routes_new_hard_clauses_before_solve():
+    m = Model()
+    a = m.bool("a")
+    m.add_soft(a, 1)
+    s = FakeIPSolver()
+    r1 = m.solve(incremental=True, backend="maxsat", solver=s)
+    assert r1.ok
+
+    x = m.int("x", 0, 2)
+    m &= (x == 2)
+    m &= (x < 1)
+
+    r2 = m.solve(incremental=True, backend="maxsat")
+    assert r2.status == "optimum"
+    # Fake solver always returns feasible, so check routing directly.
+    assert any(cl == [-x._threshold_lits[0].id] for cl in s.clauses)
+
+
 def test_incremental_sat_lock_upgrades_backend_by_default():
     m = Model()
     a = m.bool("a")
