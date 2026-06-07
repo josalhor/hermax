@@ -11,7 +11,7 @@ Highlights
 * Disabled CGSS PMRES due to soudnness issues.
 * Started incorporating MaxSATRegressionSuite: https://github.com/tobipaxe/MaxSATRegressionSuite/tree/main
 * Fixed ``IntVector.all_different`` off by one error (not a soudness isseu, but could raise an error preventing a valid model from solving).
-* Simplified ``update_soft_weight(ref, ...)`` SoftRef API description.
+* Moved SoftRef soft registration and updates under ``m.obj``.
 * Improved the form ``X + Y <= Z + c`` fast path with a better encoding.
 * Refined Big-M bool sum cases.
 * Improved ``IntVar == sum(unit-bools)`` with a count ladder builder.

@@ -44,7 +44,7 @@ def encode_cvrp(
         for j in range(inst.N):
             if i != j:
                 # Store SoftRefs to allow dynamic weight updates later
-                edge_refs[(i, j)] = m.add_soft(~edges[i][j], weight=inst.distances[i][j])
+                edge_refs[(i, j)] = m.obj.add_soft(~edges[i][j], weight=inst.distances[i][j])
 
     return edges, loads, edge_refs
 
@@ -88,7 +88,7 @@ def run_paper_example():
 
     # 3. Incrementality via Weight Updates (Permanent)
     # Traffic spikes between 0 and 1, drastically increasing its cost weight.
-    m.update_soft_weight(edge_refs[(0, 1)], new_weight=999)
+    m.obj.update_soft(edge_refs[(0, 1)], new_weight=999)
     res3 = m.solve()
     print_solution("Weight Update: Edge 0 -> 1 Avoided", res3, edges, loads, inst.N)
 

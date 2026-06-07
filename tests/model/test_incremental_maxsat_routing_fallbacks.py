@@ -58,7 +58,7 @@ def test_incremental_maxsat_relaxed_soft_uses_new_var_fallback_when_missing():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.add_soft(Clause(m, [a, b]), 1)
+    m.obj.add_soft(Clause(m, [a, b]), 1)
     s = _NoNewVarIPSolver()
     r = m.solve(incremental=True, backend="maxsat", solver=s)
     assert r.ok

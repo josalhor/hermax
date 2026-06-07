@@ -188,7 +188,7 @@ class _PrivateFakeIP(IPAMIRSolver):
 def test_private_incremental_route_soft_zero_weight_disables_in_backend():
     m = Model()
     a = m.bool("a")
-    ref = m.add_soft(a, weight=5)
+    ref = m.obj.add_soft(a, weight=5)
     s = _PrivateFakeIP()
     m._inc_state.bind_maxsat(s, {})
     sid = ref.soft_ids[0]

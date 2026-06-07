@@ -22,14 +22,14 @@ r2 = m.solve(assumptions=[rush, maintenance])
 print(r2.status)  # unsat (C required and forbidden)
 
 # Add soft preferences after SAT solves: model auto-upgrades to incremental MaxSAT.
-prefer_a = m.add_soft(plan[0], weight=10)
-prefer_b = m.add_soft(plan[1], weight=6)
+prefer_a = m.obj.add_soft(plan[0], weight=10)
+prefer_b = m.obj.add_soft(plan[1], weight=6)
 
 r3 = m.solve(assumptions=[~rush, ~maintenance])
 print(f"Before reweight: cost={r3.cost}, plan={r3[plan]}")
 
 # Change preference strength without rebuilding model or solver.
-m.update_soft_weight(prefer_a, new_weight=2)
+m.obj.update_soft(prefer_a, new_weight=2)
 
 r4 = m.solve(assumptions=[~rush, ~maintenance])
 print(f"After reweight:  cost={r4.cost}, plan={r4[plan]}")

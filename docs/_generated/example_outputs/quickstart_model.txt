@@ -3,9 +3,9 @@ Solve with assumption [~x1] (force x1=False):
   feasible: True
   status: optimum
   cost: 2
-  model: [-1, 2, -3]
+  model: [-1, 2, -3, -4, -5, -6]
 Solve with assumption [x2] (force x2=True):
   feasible: True
   status: optimum
   cost: 2
-  model: [-1, 2, -3]
+  model: [-1, 2, -3, -4, -5, -6]

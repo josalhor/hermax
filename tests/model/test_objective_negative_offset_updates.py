@@ -89,7 +89,7 @@ def test_update_soft_weight_with_negative_offset_objective_keeps_consistent_cost
     m.obj = (-2 * a) + 3
 
     # Explicit soft with handle.
-    ref = m.add_soft(b, weight=2)
+    ref = m.obj.add_soft(b, weight=2)
 
     r1 = _solve_ok(m)
     # minimize (-2*a + 3) + penalty if b is false -> a=True, b=True => 1
@@ -97,7 +97,7 @@ def test_update_soft_weight_with_negative_offset_objective_keeps_consistent_cost
     assert r1.cost == 1
 
     # Increase explicit soft weight; optimum assignment should stay b=True.
-    m.update_soft_weight(ref, 10)
+    m.obj.update_soft(ref, 10)
     r2 = _solve_ok(m)
     assert r2[a] is True and r2[b] is True
     assert r2.cost == 1
@@ -112,13 +112,13 @@ def test_update_soft_weight_changes_optimum_with_negative_offset_objective():
     m &= ~b
 
     m.obj = (-1 * a) + 2
-    ref = m.add_soft(b, weight=1)  # violated because b is forced false
+    ref = m.obj.add_soft(b, weight=1)  # violated because b is forced false
 
     r1 = _solve_ok(m)
     assert r1[a] is True and r1[b] is False
     assert r1.cost == 2  # (-1+2) + 1
 
-    m.update_soft_weight(ref, 7)
+    m.obj.update_soft(ref, 7)
     r2 = _solve_ok(m)
     assert r2[a] is True and r2[b] is False
     assert r2.cost == 8  # (-1+2) + 7
@@ -129,12 +129,12 @@ def test_update_soft_weight_rejects_non_positive_even_with_negative_offset_objec
     a = m.bool("a")
     b = m.bool("b")
     m.obj = (-1 * a) + 1
-    ref = m.add_soft(b, weight=2)
+    ref = m.obj.add_soft(b, weight=2)
 
     with pytest.raises(ValueError):
-        m.update_soft_weight(ref, 0)
+        m.obj.update_soft(ref, 0)
     with pytest.raises(ValueError):
-        m.update_soft_weight(ref, -3)
+        m.obj.update_soft(ref, -3)
 
 
 def test_disallow_negative_offset_policy_blocks_negative_objective_replacement():

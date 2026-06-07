@@ -36,7 +36,7 @@ The objective has two modes:
 * additive mode via ``model.obj += ...`` and ``model.obj[w] += ...``
 * replacement mode via ``model.obj = expr`` (or ``model.obj.set(expr)``)
 
-Replacement mode clears active objective terms and installs the new objective.
+Replacement mode clears the objective and installs the new objective.
 Additive mode keeps previous objective terms.
 
 Use:
@@ -50,14 +50,14 @@ Use:
    m.obj[3] += a        # additive
    m.obj[2] += ~b       # additive
    m.obj = (a + 5)      # replace objective
-   m.obj.clear()        # remove objective terms managed by replacement API
+   m.obj.clear()        # clear the current flat objective
 
 Notes:
 
 * ``model.obj = expr`` expects a linear expression
   (``Literal``, ``Term``, ``PBExpr``, ``IntVar``, lazy int expr)
 * for literal/clause soft constraints, use additive APIs
-  (``obj +=``, ``obj[w] +=``, or ``add_soft``)
+  (``obj +=``, ``obj[w] +=``, or ``obj.add_soft(...)``)
 
 Lexicographic objective API
 ---------------------------
@@ -84,7 +84,7 @@ Rules:
 
 * lower tier index means higher priority
 * tiers are solved in lexicographic order
-* ``model.obj``/``add_soft`` and ``model.tier_obj`` are mutually exclusive in one model state
+* ``model.obj`` and ``model.tier_obj`` are mutually exclusive in one model state
 * use ``model.tier_obj.clear()`` to drop tier objectives
 
 Solve strategies:
@@ -230,20 +230,20 @@ Examples:
 Weight Updates
 -------------------------------
 
-``Model.add_soft(...)`` returns a :class:`hermax.model.SoftRef`:
+``Model.obj.add_soft(...)`` returns a :class:`hermax.model.SoftRef`:
 
 * ``group_id``: logical soft group
 * ``soft_ids``: concrete lowered soft clause
 
-Use ``update_soft_weight(ref, w)`` with the returned ``SoftRef``.
+Use ``m.obj.update_soft(ref, w)`` with the returned ``SoftRef``.
 
 Example:
 
 .. code-block:: python
 
    x = m.int("x", 0, 5)
-   ref = m.add_soft(x, 3)   # may lower into many soft clauses
-   m.update_soft_weight(ref, 7)
+   ref = m.obj.add_soft(x, 3)   # may lower into many soft clauses
+   m.obj.update_soft(ref, 7)
 
 Weight updates use positive weights in the public API.
 Zero-weight removal is used internally by objective replacement and diffing.
@@ -262,8 +262,8 @@ enabled:
 
    m.obj = 3.5 * x
    m.obj[1.25] += ~x
-   ref = m.add_soft(x, 2.75)
-   m.update_soft_weight(ref, 4.10)
+   ref = m.obj.add_soft(x, 2.75)
+   m.obj.update_soft(ref, 4.10)
 
 Rules:
 

@@ -80,6 +80,11 @@ def main() -> int:
         action="store_true",
         help="Also capture examples/cvrp_flat.py (skipped by default to avoid churn in rendered assets).",
     )
+    parser.add_argument(
+        "--include-cvrp",
+        action="store_true",
+        help="Also capture examples/cvrp.py (skipped by default because symmetric optimal routes create output churn).",
+    )
     args = parser.parse_args()
 
     repo_root = args.repo_root.resolve()
@@ -109,6 +114,10 @@ def main() -> int:
                 top_level_paths.append(p)
         if args.include_cvrp_flat:
             p = repo_root / "examples/cvrp_flat.py"
+            if p.exists():
+                top_level_paths.append(p)
+        if args.include_cvrp:
+            p = repo_root / "examples/cvrp.py"
             if p.exists():
                 top_level_paths.append(p)
 

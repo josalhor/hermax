@@ -64,7 +64,7 @@ def _mk_nonunit_soft_model() -> Model:
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.add_soft(a | b, weight=7)
+    m.obj.add_soft(a | b, weight=7)
     return m
 
 
@@ -158,7 +158,7 @@ def test_add_soft_rejects_negative_lb_intvar():
     m = Model()
     x = m.int("x", -2, 3)
     with pytest.raises(ValueError, match="IntVar.lb >= 0"):
-        m.add_soft(x, weight=1)
+        m.obj.add_soft(x, weight=1)
 
 
 def test_add_soft_rejects_cross_model_pbexpr():
@@ -167,14 +167,14 @@ def test_add_soft_rejects_cross_model_pbexpr():
     a = m1.bool("a")
     expr = a + 1
     with pytest.raises(ValueError, match="different models"):
-        m2.add_soft(expr, weight=1)
+        m2.obj.add_soft(expr, weight=1)
 
 
 def test_add_soft_accepts_lazy_expr_by_realization():
     m = Model()
     x = m.int("x", 0, 6)
     # _LazyIntExpr branch in add_soft.
-    ref = m.add_soft(x // 2, weight=2)
+    ref = m.obj.add_soft(x // 2, weight=2)
     assert ref.soft_ids
 
 
@@ -235,14 +235,14 @@ def test_assumptions_reject_bool_zero_and_bad_term_coeff():
 def test_update_soft_weight_rejects_unknown_targets_and_types():
     m = Model()
     a = m.bool("a")
-    ref = m.add_soft(a, weight=2)
+    ref = m.obj.add_soft(a, weight=2)
 
     with pytest.raises(TypeError, match="SoftRef"):
-        m.update_soft_weight(999999, 3)
+        m.obj.update_soft(999999, 3)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.update_soft_weight(object(), 3)
+        m.obj.update_soft(object(), 3)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.update_soft_weight(ref.soft_ids[0], 3)
+        m.obj.update_soft(ref.soft_ids[0], 3)
 
 
 def test_vector_element_all_comparators_with_intvar_rhs():
@@ -295,7 +295,7 @@ def test_set_objective_precision_rejects_bad_decimals_and_zero_rounding():
         m.set_objective_precision(decimals=True)
 
     m.set_objective_precision(decimals=2)
-    m.add_soft(a, weight=0.01)
+    m.obj.add_soft(a, weight=0.01)
     with pytest.raises(ValueError, match="rounds an existing positive soft weight to zero"):
         m.set_objective_precision(decimals=1)
 
@@ -308,7 +308,7 @@ def test_add_soft_pbexpr_positive_and_negative_coeff_paths_affect_offset():
     m &= a
     m &= ~b
     # positive coeff path (~lit soft) and negative coeff path (lit soft + offset decrement)
-    m.add_soft((2 * a) + (-3 * b) + 5, weight=1)
+    m.obj.add_soft((2 * a) + (-3 * b) + 5, weight=1)
 
     s = _ReplaySolverNoNewVar()
     s._status = SolveStatus.OPTIMUM

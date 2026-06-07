@@ -166,6 +166,27 @@ class _ObjectiveProxy:
         merged = {d: int(w) for d, w in merged.items() if int(w) > 0}
         return self._apply_lit_weights(merged, int(self._offset) + int(add_offset))
 
+    def add_soft(self, constraint, weight: int):
+        """Add one managed soft objective term and return a grouped handle."""
+        self._model._ensure_no_tier_objective_active()
+        scaled_w, raw_w = self._model._coerce_soft_weight(weight, allow_zero=False)
+        gid, sids = self._model._add_soft(int(scaled_w), constraint, dedup=bool(self._model._soft_dedup_enabled), raw_weight=float(raw_w))
+        return SoftRef(gid, sids)
+
+    def update_soft(self, target, new_weight: int) -> None:
+        """Update the weight of one logical soft object referenced by ``SoftRef``."""
+        self._model._ensure_no_tier_objective_active()
+        scaled_w, raw_w = self._model._coerce_soft_weight(new_weight, allow_zero=False)
+        if isinstance(target, SoftRef):
+            ids = list(target.soft_ids)
+        else:
+            raise TypeError("target must be a SoftRef returned by obj.add_soft().")
+        if not ids:
+            return
+        for sid in ids:
+            self._model._soft_raw_weight_by_id[int(sid)] = float(raw_w)
+            self._model._set_soft_weight_internal(int(sid), int(scaled_w), allow_zero=False, allow_when_sat=False)
+
     def clear(self):
         """Disable all expression-managed objective terms."""
         for sid in list(self._model._soft_ids):
@@ -454,7 +475,7 @@ class SolveResult:
 
 
 class SoftRef:
-    """Reference handle returned by :meth:`Model.add_soft`."""
+    """Reference handle returned by :meth:`Model.obj.add_soft`."""
 
     __slots__ = ("group_id", "soft_ids")
 
@@ -2229,37 +2250,12 @@ class Model:
         return group_id, _done()
 
     def add_soft(self, constraint, weight: int):
-        """Add a soft constraint and return a grouped handle.
-
-        Notes:
-            ``add_soft`` cannot be used while ``model.tier_obj`` is active.
-            If objective precision is disabled, ``weight`` must be a positive
-            integer.
-        """
-        self._ensure_no_tier_objective_active()
-        scaled_w, raw_w = self._coerce_soft_weight(weight, allow_zero=False)
-        gid, sids = self._add_soft(int(scaled_w), constraint, dedup=bool(self._soft_dedup_enabled), raw_weight=float(raw_w))
-        return SoftRef(gid, sids)
+        """Compatibility alias for :meth:`Model.obj.add_soft`."""
+        return self.obj.add_soft(constraint, weight)
 
     def update_soft_weight(self, target, new_weight: int) -> None:
-        """Update the weight of one logical soft object referenced by ``SoftRef``.
-
-        Notes:
-            This API updates existing soft terms and requires a positive weight.
-            Use objective replacement/clear APIs when you need full objective
-            diffs. The public grouped-update handle is the :class:`SoftRef`
-            returned by :meth:`add_soft`.
-        """
-        scaled_w, raw_w = self._coerce_soft_weight(new_weight, allow_zero=False)
-        if isinstance(target, SoftRef):
-            ids = list(target.soft_ids)
-        else:
-            raise TypeError("target must be a SoftRef returned by add_soft().")
-        if not ids:
-            return
-        for sid in ids:
-            self._soft_raw_weight_by_id[int(sid)] = float(raw_w)
-            self._set_soft_weight_internal(int(sid), int(scaled_w), allow_zero=False, allow_when_sat=False)
+        """Compatibility alias for :meth:`Model.obj.update_soft`."""
+        self.obj.update_soft(target, new_weight)
 
     def _compile_pb_compare(self, lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup:
         with self.profile_scope("compile_pb_compare", metadata={"op": op}):

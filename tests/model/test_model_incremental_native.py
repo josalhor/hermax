@@ -206,7 +206,7 @@ def test_incremental_sat_routes_post_bind_matrix_declarations_before_solve():
 def test_incremental_maxsat_routes_new_hard_clauses_before_solve():
     m = Model()
     a = m.bool("a")
-    m.add_soft(a, 1)
+    m.obj.add_soft(a, 1)
     s = FakeIPSolver()
     r1 = m.solve(incremental=True, backend="maxsat", solver=s)
     assert r1.ok
@@ -265,14 +265,14 @@ def test_incremental_maxsat_routes_updates_realtime_and_keeps_solver_instance():
 def test_incremental_maxsat_update_soft_weight_tracked_id_calls_set_soft():
     m = Model()
     a = m.bool("a")
-    ref = m.add_soft(~a, 5)
+    ref = m.obj.add_soft(~a, 5)
     assert isinstance(ref, SoftRef)
 
     s = FakeIPSolver()
     m.solve(incremental=True, backend="maxsat", solver=s)
     before = len(s.soft_updates)
 
-    m.update_soft_weight(ref, 9)
+    m.obj.update_soft(ref, 9)
 
     assert len(s.soft_updates) == before + 1
     assert any(w == 9 for _lit, w in s.soft_updates)
@@ -308,7 +308,7 @@ def test_incremental_invalid_backend_raises():
 def test_incremental_maxsat_without_solver_uses_default_rc2():
     m = Model()
     a = m.bool("a")
-    m.add_soft(a, 1)
+    m.obj.add_soft(a, 1)
     r = m.solve(incremental=True, backend="maxsat", solver=None)
     assert r.status in {"optimum", "sat", "unsat", "unknown", "interrupted", "interrupted_sat"}
     assert m._inc_state.mode == "maxsat"
@@ -317,7 +317,7 @@ def test_incremental_maxsat_without_solver_uses_default_rc2():
 def test_incremental_solver_factory_must_return_ipamir():
     m = Model()
     a = m.bool("a")
-    m.add_soft(a, 1)
+    m.obj.add_soft(a, 1)
 
     def _bad_factory(*args, **kwargs):
         return object()
@@ -329,7 +329,7 @@ def test_incremental_solver_factory_must_return_ipamir():
 def test_incremental_backend_switch_maxsat_to_sat_rejected():
     m = Model()
     a = m.bool("a")
-    m.add_soft(a, 1)
+    m.obj.add_soft(a, 1)
     m.solve(incremental=True, backend="maxsat", solver=FakeIPSolver)
     with pytest.raises(ValueError):
         m.solve(incremental=True, backend="sat")
@@ -354,7 +354,7 @@ def test_incremental_backend_switch_sat_to_maxsat_without_soft_can_fail_in_stric
 def test_incremental_sat_backend_rejected_when_soft_exists():
     m = Model()
     a = m.bool("a")
-    m.add_soft(a, 1)
+    m.obj.add_soft(a, 1)
     with pytest.raises(ValueError):
         m.solve(incremental=True, backend="sat")
 
@@ -376,7 +376,7 @@ def test_close_incremental_unbinds_and_allows_rebind():
     assert m._inc_state.mode == "sat"
     m.close_incremental()
     assert m._inc_state.mode is None
-    m.add_soft(a, 1)
+    m.obj.add_soft(a, 1)
     m.solve(incremental=True, backend="maxsat", solver=FakeIPSolver)
     assert m._inc_state.mode == "maxsat"
 
@@ -384,7 +384,7 @@ def test_close_incremental_unbinds_and_allows_rebind():
 def test_incremental_maxsat_assumptions_and_raise_on_abnormal_passthrough():
     m = Model()
     a = m.bool("a")
-    m.add_soft(~a, 1)
+    m.obj.add_soft(~a, 1)
     s = FakeIPSolver()
     m.solve(incremental=True, backend="maxsat", solver=s, assumptions=[a.id], raise_on_abnormal=True)
     assert s.last_assumptions == [a.id]
@@ -394,24 +394,24 @@ def test_incremental_maxsat_assumptions_and_raise_on_abnormal_passthrough():
 def test_incremental_soft_update_rejects_non_softref_target():
     m = Model()
     with pytest.raises(TypeError, match="SoftRef"):
-        m.update_soft_weight(9999, 3)
+        m.obj.update_soft(9999, 3)
 
 
 def test_incremental_soft_update_while_sat_bound_raises():
     m = Model()
     a = m.bool("a")
     m.solve(incremental=True, backend="sat")
-    ref = m.add_soft(~a, 2)
+    ref = m.obj.add_soft(~a, 2)
     with pytest.raises(ValueError):
-        m.update_soft_weight(ref, 5)
+        m.obj.update_soft(ref, 5)
 
 
 def test_incremental_routes_preexisting_soft_when_binding_maxsat():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    ref1 = m.add_soft(a, 2)
-    ref2 = m.add_soft(a | b, 4)
+    ref1 = m.obj.add_soft(a, 2)
+    ref2 = m.obj.add_soft(a | b, 4)
     s = FakeIPSolver()
     m.solve(incremental=True, backend="maxsat", solver=s)
     assert ref1.group_id in m._soft_group_to_ids
@@ -427,7 +427,7 @@ def test_incremental_routes_new_soft_after_maxsat_bind():
     s = FakeIPSolver()
     m.solve(incremental=True, backend="maxsat", solver=s)
     before_soft = len(s.soft_updates)
-    m.add_soft(a | b, 7)
+    m.obj.add_soft(a | b, 7)
     assert len(s.soft_updates) == before_soft + 1
     assert s.soft_updates[-1][1] == 7
 
@@ -436,10 +436,10 @@ def test_incremental_update_soft_weight_after_relaxed_mapping():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    ref = m.add_soft(a | b, 6)
+    ref = m.obj.add_soft(a | b, 6)
     s = FakeIPSolver()
     m.solve(incremental=True, backend="maxsat", solver=s)
-    m.update_soft_weight(ref, 11)
+    m.obj.update_soft(ref, 11)
     assert s.soft_updates[-1][1] == 11
 
 
@@ -463,7 +463,7 @@ def test_incremental_sat_backends_bind_sat_mode(backend):
 def test_incremental_soft_model_binds_maxsat_mode(backend):
     m = Model()
     a = m.bool("a")
-    m.add_soft(a, 1)
+    m.obj.add_soft(a, 1)
     m.solve(incremental=True, backend=backend, solver=FakeIPSolver)
     assert m._inc_state.mode == "maxsat"
 
@@ -488,7 +488,7 @@ def test_assumptions_accept_terms_in_maxsat_mode_and_are_forwarded():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.add_soft(a | b, 2)
+    m.obj.add_soft(a | b, 2)
     s = FakeIPSolver()
     m.solve(backend="maxsat", solver=s, assumptions=[1 * a, -1 * b])
     assert s.last_assumptions == [a.id, -b.id]
@@ -527,9 +527,9 @@ def test_assumption_cross_model_literal_rejected():
 def test_update_soft_weight_by_softref_updates_all_members():
     m = Model()
     x = m.int("x", 0, 4)
-    ref = m.add_soft(x, 3)  # expands into multiple soft clauses
+    ref = m.obj.add_soft(x, 3)  # expands into multiple soft clauses
     assert len(ref.soft_ids) > 1
-    m.update_soft_weight(ref, 9)
+    m.obj.update_soft(ref, 9)
     for sid in ref.soft_ids:
         idx = m._soft_id_to_index[sid]
         assert m._soft[idx][0] == 9
@@ -538,30 +538,30 @@ def test_update_soft_weight_by_softref_updates_all_members():
 def test_update_soft_weight_invalid_target_type_raises():
     m = Model()
     a = m.bool("a")
-    ref = m.add_soft(a, 1)
+    ref = m.obj.add_soft(a, 1)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.update_soft_weight(object(), 2)
+        m.obj.update_soft(object(), 2)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.update_soft_weight(123456, 2)
+        m.obj.update_soft(123456, 2)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.update_soft_weight(ref.soft_ids[0], 2)
+        m.obj.update_soft(ref.soft_ids[0], 2)
 
 
 def test_update_soft_weight_rejects_non_positive_values():
     m = Model()
     a = m.bool("a")
-    ref = m.add_soft(a, 1)
+    ref = m.obj.add_soft(a, 1)
     with pytest.raises(ValueError):
-        m.update_soft_weight(ref, 0)
+        m.obj.update_soft(ref, 0)
     with pytest.raises(ValueError):
-        m.update_soft_weight(ref, -1)
+        m.obj.update_soft(ref, -1)
 
 
 def test_incremental_bound_sat_upgrades_when_soft_added_even_with_backend_sat():
     m = Model()
     a = m.bool("a")
     m.solve(backend="sat")
-    m.add_soft(a, 1)
+    m.obj.add_soft(a, 1)
     m.solve(backend="sat")
     assert m._inc_state.mode == "maxsat"
 
@@ -570,7 +570,7 @@ def test_incremental_bound_sat_can_fail_on_upgrade_in_strict_mode():
     m = Model()
     a = m.bool("a")
     m.solve(backend="sat")
-    m.add_soft(a, 1)
+    m.obj.add_soft(a, 1)
     with pytest.raises(ValueError):
         m.solve(backend="sat", sat_upgrade="error")
 
@@ -578,11 +578,11 @@ def test_incremental_bound_sat_can_fail_on_upgrade_in_strict_mode():
 def test_incremental_maxsat_soft_weight_group_update_pushes_all_to_solver():
     m = Model()
     x = m.int("x", 0, 5)
-    ref = m.add_soft(x, 2)
+    ref = m.obj.add_soft(x, 2)
     s = FakeIPSolver()
     m.solve(backend="maxsat", solver=s)
     before = len(s.soft_updates)
-    m.update_soft_weight(ref, 11)
+    m.obj.update_soft(ref, 11)
     assert len(s.soft_updates) >= before + len(ref.soft_ids)
 
 
