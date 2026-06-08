@@ -828,6 +828,7 @@ class Model:
         "_intvar_threshold_owner_by_litid",
         "_intvar_eq_owner_by_litid",
         "_container_names",
+        "_canonical_internal_lits",
         "_anon_counter",
         "_hard",
         "_soft",
@@ -881,6 +882,7 @@ class Model:
         self._intvar_threshold_owner_by_litid: dict[int, tuple["IntVar", int]] = {}
         self._intvar_eq_owner_by_litid: dict[int, tuple["IntVar", int]] = {}
         self._container_names: set[str] = set()
+        self._canonical_internal_lits: dict[object, Literal] = {}
         self._anon_counter = 0
         self._hard: list[tuple[int, ...]] = []
         self._soft: list[tuple[int, tuple[int, ...]]] = []
@@ -1158,6 +1160,30 @@ class Model:
         if name in self._registry or name in self._container_names:
             raise ValueError(f"Identifier '{name}' is already registered in this model.")
         return name
+
+    def fresh_internal_bool(self, debug_name: Optional[str] = None) -> Literal:
+        """Return a fresh internal helper literal.
+
+        Internal helpers are intentionally not added to the public model
+        registry. ``debug_name`` is advisory only and does not affect identity.
+        """
+        del debug_name
+        name = self._reserve_name(None)
+        return self._new_literal_pair(name)
+
+    def canonical_internal_bool(self, key: object, debug_name: Optional[str] = None) -> Literal:
+        """Return a canonical reusable internal helper literal for ``key``.
+
+        Repeated requests with the same semantic ``key`` return the same
+        internal literal. The helper remains hidden from the public registry.
+        """
+        del debug_name
+        cached = self._canonical_internal_lits.get(key)
+        if cached is not None:
+            return cached
+        lit = self.fresh_internal_bool()
+        self._canonical_internal_lits[key] = lit
+        return lit
 
     def _reserve_container_name(self, name: str) -> None:
         if name in self._registry or name in self._container_names:
@@ -2061,6 +2087,7 @@ class Model:
         scope_kind = "add_hard_pb" if isinstance(constraint, PBConstraint) else "add_hard"
         with self.profile_scope(scope_kind):
             if isinstance(constraint, PBConstraint):
+                self._maybe_register_pb_cardinality_structure(constraint)
                 compiled = self._prepare_pb_constraint(constraint)
                 if isinstance(compiled, PBConstraint):
                     self._defer_pb_constraint(compiled)
@@ -2351,6 +2378,38 @@ class Model:
             added_groups.append(group)
         return added_groups
 
+    def _maybe_register_pb_cardinality_structure(self, constraint: PBConstraint) -> None:
+        if constraint._conditions or constraint._op not in {"<=", "<", "=="}:
+            return
+
+        analyzed = self._analyze_deferred_pb_constraint(constraint)
+        cmp_op = str(analyzed["cmp_op"])
+        bound = int(analyzed["bound"])
+        if cmp_op not in {"<=", "=="} or bound != 1:
+            return
+
+        lits = list(analyzed["lits"])
+        weights = [int(w) for w in analyzed["weights"]]
+        if not lits or any(w <= 0 for w in weights):
+            return
+
+        group: list[int] = []
+        all_groupable = True
+        for lit in lits:
+            dim = int(self._lit_to_dimacs(lit))
+            if lit.id in self._intvar_threshold_owner_by_litid or dim in self._intvar_eq_owner_by_litid:
+                all_groupable = False
+                continue
+            group.append(dim)
+
+        if len(group) <= 1:
+            return
+
+        if cmp_op == "==" and all_groupable and len(group) == len(lits):
+            self._register_amo_group(group, exactly_one=True)
+            return
+        self._register_amo_group(group, exactly_one=False)
+
     def _analyze_deferred_pb_constraint(self, constraint: PBConstraint) -> dict[str, object]:
         lhs_r = constraint._lhs._realize_int_terms(self)
         rhs_r = constraint._rhs._realize_int_terms(self)
@@ -2513,7 +2572,9 @@ class Model:
 
             batch_entries: list[tuple[_DeferredPBEntry, PBItem]] = []
 
-            def _register_post_compile(item: PBItem) -> None:
+            def _register_post_compile(item: PBItem, *, allow: bool) -> None:
+                if not allow:
+                    return
                 if item.is_cardinality and item.bound == 1:
                     if item.cmp_op == "<=":
                         self._register_amo_group(item.lits, exactly_one=False)
@@ -2589,7 +2650,7 @@ class Model:
                         if self._debug_level >= self.DEBUG_COMPILE:
                             self._debug(self.DEBUG_COMPILE, "pb_cache hit")
                         _integrate_group(cached, entry.constraint._conditions if has_conditions else ())
-                        _register_post_compile(pb_item)
+                        _register_post_compile(pb_item, allow=not has_conditions)
                         continue
                     if self._debug_level >= self.DEBUG_COMPILE:
                         self._debug(self.DEBUG_COMPILE, "pb_cache miss")
@@ -2598,7 +2659,7 @@ class Model:
                         group = _compile_single(pb_item)
                         self._pb_clause_cache[cache_key] = group
                         _integrate_group(group, entry.constraint._conditions)
-                        _register_post_compile(pb_item)
+                        _register_post_compile(pb_item, allow=False)
                         continue
 
                     can_batch_merge = (
@@ -2614,7 +2675,7 @@ class Model:
                     group = _compile_single(pb_item)
                     self._pb_clause_cache[cache_key] = group
                     _integrate_group(group, ())
-                    _register_post_compile(pb_item)
+                    _register_post_compile(pb_item, allow=True)
 
             if batch_entries:
                 cnfs = PBCompiler.compile_batch_with_options(
@@ -2629,7 +2690,7 @@ class Model:
                     group = self._cnfplus_to_clausegroup(cnf)
                     _integrate_group(group, ())
                 for _entry, item in batch_entries:
-                    _register_post_compile(item)
+                    _register_post_compile(item, allow=True)
 
             if self._debug_level >= self.DEBUG_DELTA:
                 self._debug(

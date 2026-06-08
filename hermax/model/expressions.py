@@ -93,30 +93,48 @@ def sum_expr(iterable, start=0):
     model = _item_model(start)
     if model is None:
         numeric_total = start
-        expr: PBExpr | None = None
+        terms: list[Term] = []
+        constant = 0
+        int_terms: list[tuple[int, IntVar | _LazyIntExpr]] = []
     else:
         numeric_total = 0
-        expr = PBExpr.from_item(start)
+        start_expr = PBExpr.from_item(start)
+        terms = list(start_expr.terms)
+        constant = start_expr.constant
+        int_terms = list(start_expr.int_terms)
 
     for item in iterable:
         item_model = _item_model(item)
-        if expr is None and item_model is None:
+        if model is None and item_model is None:
             numeric_total = numeric_total + item
             continue
 
-        if expr is None:
+        item_expr = PBExpr.from_item(item)
+        if model is None:
             model = item_model
             if model is None:
                 raise TypeError(f"Unsupported item for sum_expr(): {type(item)!r}")
-            expr = PBExpr(model, [], 0)
-            if numeric_total != 0:
-                expr.add(numeric_total, inplace=True)
+            constant = numeric_total
+            numeric_total = 0
+        else:
+            if item_model is not None and item_model is not model:
+                raise ValueError("Variables belong to different models.")
 
-        expr.add(item, inplace=True)
+        if item_expr.terms:
+            terms.extend(item_expr.terms)
+        constant = constant + item_expr.constant
+        if item_expr.int_terms:
+            int_terms.extend((int(c), v) for c, v in item_expr.int_terms if int(c) != 0)
 
-    if expr is None:
+    if model is None:
         return numeric_total
-    return expr
+    return PBExpr._from_terms_trusted(
+        model,
+        PBExpr._collapse_terms(terms),
+        constant,
+        int_terms=int_terms,
+        collapsed=True,
+    )
 
 
 class ClauseGroup:
@@ -273,6 +291,79 @@ class ClauseGroup:
 
     def __repr__(self) -> str:
         return f"ClauseGroup(n={len(self._clauses)})"
+
+
+class DeferredClauseGroup(ClauseGroup):
+    """Clause-group shaped wrapper that compiles only when consumed.
+
+    This preserves the builder-side API boundary: constructing a derived
+    constraint should not allocate helper variables or clauses until the user
+    actually commits it to the model (for example via ``model &= ...``).
+    """
+
+    __slots__ = ("_builder", "_compiled")
+
+    def __init__(self, model: "Model", builder):
+        self._model = model
+        self._clauses = ()
+        self._amo_groups = []
+        self._eo_groups = []
+        self._builder = builder
+        self._compiled: ClauseGroup | None = None
+
+    def _realize(self) -> ClauseGroup:
+        if self._compiled is None:
+            group = self._builder()
+            if not isinstance(group, ClauseGroup):
+                raise TypeError("DeferredClauseGroup builder must return ClauseGroup.")
+            self._compiled = group
+            self._clauses = group._clauses
+            self._amo_groups = self._copy_groups(group._amo_groups)
+            self._eo_groups = self._copy_groups(group._eo_groups)
+        return self._compiled
+
+    def __len__(self) -> int:
+        return len(self._realize())
+
+    def __iter__(self):
+        return iter(self._realize())
+
+    def is_empty(self) -> bool:
+        return self._realize().is_empty()
+
+    def single_clause_or_none(self) -> "tuple[int, ...] | None":
+        return self._realize().single_clause_or_none()
+
+    def iter_dimacs(self):
+        return self._realize().iter_dimacs()
+
+    def materialize_semantic(self) -> tuple["Clause", ...]:
+        return self._realize().materialize_semantic()
+
+    def only_if(self, condition: "Literal") -> "ClauseGroup":
+        if not isinstance(condition, Literal):
+            raise _detection_error()
+        _ensure_same_model_pair_fast(self, condition)
+        return DeferredClauseGroup(self._model, lambda: self._realize().only_if(condition))
+
+    def implies(self, target):
+        raise _detection_error()
+
+    def __and__(self, other):
+        if isinstance(other, (Literal, Clause, ClauseGroup, DeferredClauseGroup)):
+            _ensure_same_model_pair_fast(self, other)
+            if isinstance(other, DeferredClauseGroup):
+                return DeferredClauseGroup(self._model, lambda: self._realize() & other._realize())
+            return DeferredClauseGroup(self._model, lambda: self._realize() & other)
+        return NotImplemented
+
+    def __iand__(self, other):
+        return self.__and__(other)
+
+    def __repr__(self) -> str:
+        if self._compiled is None:
+            return "DeferredClauseGroup(<pending>)"
+        return repr(self._compiled)
 
 
 class IntRelation(ClauseGroup):
@@ -1254,10 +1345,13 @@ class PBConstraint:
         # Equality antecedent: (~target) -> (A OR B), where A/B are PB constraints.
         # Encode the disjunction with a selector and two half-reified branches.
         left, right = neg
-        sel = self._model.bool()  # anonymous internal branch selector
-        g_left = left.only_if(~target).only_if(sel).clauses()
-        g_right = right.only_if(~target).only_if(~sel).clauses()
-        return g_left & g_right
+        return DeferredClauseGroup(
+            self._model,
+            lambda: (
+                left.only_if(~target).only_if((sel := self._model.bool())).clauses()
+                & right.only_if(~target).only_if(~sel).clauses()
+            ),
+        )
 
     def clauses(self) -> ClauseGroup:
         """Compile to a :class:`ClauseGroup` and cache the result."""

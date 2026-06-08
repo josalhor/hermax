@@ -42,7 +42,11 @@ def test_sum_expr_fast_path_avoids_pbexpr_merge(monkeypatch) -> None:
     def _boom(*_args, **_kwargs):
         raise AssertionError("PBExpr._merge should not be used by sum_expr fast path")
 
+    def _boom_add(*_args, **_kwargs):
+        raise AssertionError("PBExpr.add should not be used by sum_expr fast path")
+
     monkeypatch.setattr(hm.PBExpr, "_merge", _boom)
+    monkeypatch.setattr(hm.PBExpr, "add", _boom_add)
 
     expr = sum_expr(lits)
     assert isinstance(expr, PBExpr)
@@ -51,3 +55,17 @@ def test_sum_expr_fast_path_avoids_pbexpr_merge(monkeypatch) -> None:
     with pytest.raises(AssertionError, match="fast path"):
         _ = sum(lits)
 
+
+def test_sum_expr_collapses_repeated_literals_and_preserves_lazy_terms() -> None:
+    m = Model()
+    a = m.bool("a")
+    x = m.int("x", 0, 5)
+    scaled = x.scale(2)
+
+    expr = sum_expr([a, a, 3, scaled])
+    assert isinstance(expr, PBExpr)
+    assert expr.constant == 3
+    assert len(expr.terms) == 1
+    assert expr.terms[0].literal is a
+    assert expr.terms[0].coefficient == 2
+    assert expr.int_terms == [(1, scaled)]

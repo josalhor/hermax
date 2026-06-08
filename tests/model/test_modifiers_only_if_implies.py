@@ -214,9 +214,16 @@ def test_pb_equality_antecedent_implies_literal_supported():
     a = m.bool("a")
     b = m.bool("b")
     c = m.bool("c")
+    hard_before = len(m._hard)
+    top_before = m._top_id()
+
+    out = (a + b == 1).implies(c)
+    assert isinstance(out, ClauseGroup)
+    assert len(m._hard) == hard_before
+    assert m._top_id() == top_before
 
     # (a+b == 1) -> c
-    m &= (a + b == 1).implies(c)
+    m &= out
     m &= ~c
     m &= a
     m &= ~b
@@ -229,8 +236,15 @@ def test_pb_equality_antecedent_implies_literal_chain_only_if_is_sound():
     b = m.bool("b")
     c = m.bool("c")
     gate = m.bool("gate")
+    hard_before = len(m._hard)
+    top_before = m._top_id()
 
-    m &= (a + b == 1).implies(c).only_if(gate)
+    out = (a + b == 1).implies(c).only_if(gate)
+    assert isinstance(out, ClauseGroup)
+    assert len(m._hard) == hard_before
+    assert m._top_id() == top_before
+
+    m &= out
     m &= gate
     m &= ~c
     m &= a

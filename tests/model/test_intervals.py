@@ -145,3 +145,25 @@ def test_interval_no_overlap_self_is_contradiction():
     a = m.interval("A", start=0, duration=2, end=10)
     m &= a.no_overlap(a)
     assert m.solve().status == "unsat"
+
+
+def test_interval_no_overlap_duplicate_deferred_construction_reuses_internal_helper():
+    m = Model()
+    a = m.interval("A", start=0, duration=2, end=10)
+    b = m.interval("B", start=0, duration=2, end=10)
+
+    c1 = a.no_overlap(b)
+    c2 = a.no_overlap(b)
+
+    hard_before = len(m._hard)
+    top_before = m._top_id()
+    m &= c1
+    top_after_first = m._top_id()
+    m &= c2
+
+    assert len(m._hard) >= hard_before
+    assert m._top_id() == top_after_first
+
+    m &= (a.start == 0)
+    m &= (b.start == 1)
+    assert m.solve().status == "unsat"

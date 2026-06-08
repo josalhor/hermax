@@ -136,6 +136,53 @@ def test_enum_is_in_deduplicates_choices_preserving_first_occurrence_order():
     ]
 
 
+def test_nullable_enum_is_in_rejects_none_and_use_is_in_or_none_instead():
+    m = Model()
+    color = m.enum("color", choices=["red", "green", "blue"], nullable=True)
+
+    with pytest.raises(ValueError, match="Unknown enum choice None"):
+        color.is_in(["red", None])  # type: ignore[list-item]
+
+
+
+def test_nullable_enum_is_in_or_none_supports_none_only_and_mixed_subsets():
+    m = Model()
+    color = m.enum("color", choices=["red", "green", "blue"], nullable=True)
+
+    # method requires at least one concrete label; use explicit exclusion to reach None-only behavior indirectly
+    with pytest.raises(ValueError, match="at least one valid choice"):
+        color.is_in_or_none([])
+
+    m2 = Model()
+    color2 = m2.enum("color", choices=["red", "green", "blue"], nullable=True)
+    mixed = color2.is_in_or_none(["red"])
+    assert isinstance(mixed, ClauseGroup)
+    m2 &= mixed
+    m2 &= ~color2._choice_lits["red"]
+    r2 = _solve_ok(m2)
+    assert r2[color2] is None
+
+    m3 = Model()
+    color3 = m3.enum("color", choices=["red", "green", "blue"], nullable=True)
+    mixed3 = color3.is_in_or_none(["red"])
+    m3 &= mixed3
+    m3 &= (color3 == "green")
+    assert m3.solve().status == "unsat"
+
+
+
+def test_enum_is_in_or_none_rejects_nonnullable_or_unknown_choices():
+    m = Model()
+    color = m.enum("color", choices=["red", "green"], nullable=False)
+    with pytest.raises(ValueError, match="requires a nullable enum"):
+        color.is_in_or_none(["red"])
+
+    m2 = Model()
+    color2 = m2.enum("color", choices=["red", "green"], nullable=True)
+    with pytest.raises(ValueError, match="Unknown enum choice"):
+        color2.is_in_or_none(["blue"])
+
+
 def test_enum_is_in_rejects_unknown_or_empty_choice_sets():
     m = Model()
     color = m.enum("color", choices=["red", "green"], nullable=False)

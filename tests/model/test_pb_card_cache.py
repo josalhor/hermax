@@ -101,9 +101,10 @@ def test_card_cache_equals_reused(monkeypatch):
     m &= (a + b == 1)
     m._commit_pb()
     assert calls["structured_auto_eq"] == 1
-    assert calls["card_equals"] == 1
-    assert calls["card_atleast"] == 1
-    assert calls["card_atmost"] == 1
+    assert calls["structured_auto_leq"] == 2
+    assert calls["card_equals"] == 0
+    assert calls["card_atleast"] == 0
+    assert calls["card_atmost"] == 2
 
 
 def test_card_cache_atleast_reused(monkeypatch):

@@ -210,7 +210,7 @@ def test_boolvector_is_in_allowed_combinations_and_deduplicates_rows():
     m4 = Model()
     b = m4.bool_vector("b", length=2)
     cg_uni = b.is_in(uniq_rows)
-    assert len(cg_dup._clauses) == len(cg_uni._clauses)
+    assert len(cg_dup) == len(cg_uni)
 
 
 def test_intvector_lexicographic_less_than_requires_intvector_and_same_model():
@@ -264,24 +264,22 @@ def test_vector_operator_bans_eq_and_le():
         _ = (v1 <= v2)
 
 
-def test_intvector_ne_returns_flat_clause_of_elementwise_difference_indicators():
+def test_intvector_ne_returns_deferred_difference_group():
     m = Model()
     v1 = m.int_vector("v1", length=3, lb=0, ub=4)
     v2 = m.int_vector("v2", length=3, lb=0, ub=4)
 
+    hard_before = len(m._hard)
+    top_before = m._top_id()
     diff = (v1 != v2)
-    assert isinstance(diff, Clause)
-    assert len(diff.literals) == 3
-
-    # Current implementation uses exact per-element inequality indicators.
-    expected = [v1[i]._neq_indicator(v2[i]) for i in range(3)]
-    for got, exp in zip(diff.literals, expected):
-        assert got is exp
+    assert isinstance(diff, ClauseGroup)
+    assert len(m._hard) == hard_before
+    assert m._top_id() == top_before
 
     # It should be addable and solvable.
     m &= diff
     r = _solve_ok(m)
-    assert any(r[lit] for lit in diff.literals)
+    assert r[v1] != r[v2]
 
 
 def test_intvector_all_different_semantics_detects_equal_neighbors():
@@ -392,6 +390,44 @@ def test_intvector_lexicographic_less_than_semantics():
     m2 &= t[2]
     r2 = m2.solve()
     assert r2.status == "unsat"
+
+
+def test_intvector_lexicographic_duplicate_deferred_construction_reuses_internal_helpers():
+    m = Model()
+    a = m.int_vector("a", length=2, lb=0, ub=4)
+    b = m.int_vector("b", length=2, lb=0, ub=4)
+
+    c1 = a.lexicographic_less_than(b)
+    c2 = a.lexicographic_less_than(b)
+
+    hard_before = len(m._hard)
+    top_before = m._top_id()
+    m &= c1
+    top_after_first = m._top_id()
+    m &= c2
+
+    assert len(m._hard) >= hard_before
+    assert m._top_id() == top_after_first
+
+    # Force a lex violation. Duplicating the same deferred constraint should
+    # not change semantics or raise internal name-collision errors.
+    # a=[2,0]
+    t = a[0]._threshold_lits
+    m &= t[0]
+    m &= t[1]
+    m &= ~t[2]
+    for lit in a[1]._threshold_lits:
+        m &= ~lit
+    # b=[1,3]
+    t = b[0]._threshold_lits
+    m &= t[0]
+    m &= ~t[1]
+    m &= ~t[2]
+    t = b[1]._threshold_lits
+    m &= t[0]
+    m &= t[1]
+    m &= t[2]
+    assert m.solve().status == "unsat"
 
 
 def test_intvector_ne_clause_is_semantically_exact_via_indicators():

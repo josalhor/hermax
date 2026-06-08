@@ -204,6 +204,37 @@ def test_decode_lazy_max_expr_uses_solved_values_without_realizing():
     assert len(m._hard) == hard_before
 
 
+def test_decode_multiplexer_int_uses_solved_index_without_realizing():
+    m = Model()
+    idx = m.int("idx", lb=0, ub=2)
+    pick = [10, 20, 30] @ idx
+    m &= (idx == 1)
+
+    hard_before = len(m._hard)
+    r = _solve_ok(m)
+
+    assert r[pick] == 20
+    assert len(m._hard) == hard_before
+
+
+
+def test_decode_vector_element_int_uses_solved_index_without_realizing():
+    m = Model()
+    vals = m.int_vector("v", length=3, lb=0, ub=9)
+    idx = m.int("idx", lb=0, ub=2)
+    el = vals[idx]
+    m &= (vals[0] == 2)
+    m &= (vals[1] == 5)
+    m &= (vals[2] == 8)
+    m &= (idx == 2)
+
+    hard_before = len(m._hard)
+    r = _solve_ok(m)
+
+    assert r[el] == 8
+    assert len(m._hard) == hard_before
+
+
 def test_decode_rejects_unsupported_target_type():
     m = Model()
     dec = m.decode_model([])

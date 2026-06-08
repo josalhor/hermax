@@ -25,6 +25,14 @@ Highlights
 * Fixed routing for ``IntSetVar`` algebra operations.
 * Fixed incremental routing for certain constraints.
 * Stopped ``IntSetVar`` algebra ops from mutating model too early.
+* Added decoding for multiplexer and index integer element expressions.
+* Fixed ``IntSetVector.is_in(...)`` for set-valued rows.
+* Added ``EnumVar.is_in_or_none(...)`` for nullable enum subset checks.
+* Deferred ``IntSetVar != ...`` and ``IntVector != IntVector`` until commit.
+* Improved internal helper memoization.
+* Improved encoding of ``IntSetVar.contains(IntVar)``.
+* Improved ``sum_expr(...)`` performance.
+* Registered implied AMO/EO structure from cardinalities for usage of PB(AMO).
 
 
 

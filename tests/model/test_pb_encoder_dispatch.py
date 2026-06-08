@@ -7,6 +7,7 @@ from hermax.internal.card import CardEnc
 from hermax.internal.pb import PBEnc
 import hermax.encoder.pbamo as pbamo_mod
 from hermax.model import Model
+from hermax.model.expressions import sum_expr
 
 
 def _solve_ok(m: Model):
@@ -227,7 +228,7 @@ def test_unit_coefficients_use_cardinality_equals(monkeypatch):
     assert r[a] is True
     assert r[b] is False
     kinds = [c[0] for c in calls]
-    assert kinds == ["structured.auto_eq", "card.equals", "card.atleast", "card.atmost"]
+    assert kinds == ["structured.auto_eq", "structured.auto_leq", "card.atmost", "structured.auto_leq", "card.atmost"]
 
 
 def test_weighted_coefficients_use_pb_equals(monkeypatch):
@@ -248,6 +249,67 @@ def test_weighted_coefficients_use_pb_equals(monkeypatch):
     assert r[b] is False
     assert [c[0] for c in calls] == ["structured.auto_eq", "pb.equals"]
     assert calls[1][3] == 2  # bound
+
+
+def test_boolean_cardinality_structure_registers_on_commit_not_only_on_solve():
+    m = Model()
+    b = m.bool_vector("b", length=4)
+    c_le = sum_expr(b) <= 1
+    c_eq = sum_expr(b) == 1
+    assert len(m._known_amo_groups) == 0
+    assert len(m._known_eo_groups) == 0
+
+    m &= c_le
+    assert len(m._known_amo_groups) == 1
+    assert len(m._known_eo_groups) == 0
+
+    m2 = Model()
+    b2 = m2.bool_vector("b", length=4)
+    m2 &= c_eq
+    assert len(m2._known_amo_groups) == 0
+    assert len(m2._known_eo_groups) == 1
+
+
+def test_conditioned_boolean_cardinality_never_registers_structure():
+    m = Model()
+    b = m.bool_vector("b", length=4)
+    gate = m.bool("gate")
+    m &= (sum_expr(b) <= 1).only_if(gate)
+    assert len(m._known_amo_groups) == 0
+    assert len(m._known_eo_groups) == 0
+    m._commit_pb()
+    assert len(m._known_amo_groups) == 0
+    assert len(m._known_eo_groups) == 0
+
+    m2 = Model()
+    b2 = m2.bool_vector("b", length=4)
+    gate2 = m2.bool("gate")
+    m2 &= (sum_expr(b2) == 1).only_if(gate2)
+    assert len(m2._known_amo_groups) == 0
+    assert len(m2._known_eo_groups) == 0
+    m2._commit_pb()
+    assert len(m2._known_amo_groups) == 0
+    assert len(m2._known_eo_groups) == 0
+
+
+def test_mixed_int_bool_cardinality_registers_only_boolean_subset():
+    m = Model()
+    x = m.int("x", 0, 2)
+    b = m.bool_vector("b", length=2)
+    m &= (x + sum_expr(b) <= 1)
+    assert len(m._known_amo_groups) == 1
+    assert len(m._known_eo_groups) == 0
+    group = next(iter(m._known_amo_groups.values()))
+    assert sorted(abs(dim) for dim in group) == sorted([b[0].id, b[1].id])
+
+    m2 = Model()
+    x2 = m2.int("x", 0, 2)
+    b2 = m2.bool_vector("b", length=2)
+    m2 &= (x2 + sum_expr(b2) == 1)
+    assert len(m2._known_amo_groups) == 1
+    assert len(m2._known_eo_groups) == 0
+    group2 = next(iter(m2._known_amo_groups.values()))
+    assert sorted(abs(dim) for dim in group2) == sorted([b2[0].id, b2[1].id])
 
 
 def test_strict_operators_map_to_adjusted_cardinality_bounds(monkeypatch):

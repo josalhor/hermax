@@ -214,20 +214,78 @@ def test_intvector_neq_clause_construction_does_not_eagerly_mutate_model():
     v1 = m.int_vector("v1", length=3, lb=0, ub=6)
     v2 = m.int_vector("v2", length=3, lb=0, ub=6)
     hard_before = len(m._hard)
+    top_before = m._top_id()
 
     diff_clause = (v1 != v2)
-    assert isinstance(diff_clause, Clause)
+    assert isinstance(diff_clause, ClauseGroup)
     assert len(m._hard) == hard_before
+    assert m._top_id() == top_before
 
 
 def test_intvector_table_constraint_construction_does_not_eagerly_mutate_model():
     m = Model()
     spec = m.int_vector("spec", length=3, lb=0, ub=6)
     hard_before = len(m._hard)
+    top_before = m._top_id()
 
     table = spec.is_in([(1, 2, 1), (2, 4, 2), (3, 4, 3)])
     assert isinstance(table, ClauseGroup)
     assert len(m._hard) == hard_before
+    assert m._top_id() == top_before
+
+
+def test_interval_no_overlap_construction_does_not_eagerly_mutate_model():
+    m = Model()
+    a = m.interval("a", start=0, duration=2, end=5)
+    b = m.interval("b", start=0, duration=2, end=5)
+    hard_before = len(m._hard)
+    top_before = m._top_id()
+
+    group = a.no_overlap(b)
+    assert isinstance(group, ClauseGroup)
+    assert len(m._hard) == hard_before
+    assert m._top_id() == top_before
+
+
+def test_lexicographic_constraint_construction_does_not_eagerly_mutate_model():
+    m = Model()
+    left = m.int_vector("left", length=3, lb=0, ub=6)
+    right = m.int_vector("right", length=3, lb=0, ub=6)
+    hard_before = len(m._hard)
+    top_before = m._top_id()
+
+    lex = left.lexicographic_less_than(right)
+    assert isinstance(lex, ClauseGroup)
+    assert len(m._hard) == hard_before
+    assert m._top_id() == top_before
+
+
+def test_combining_two_deferred_clausegroups_preserves_both_semantics():
+    m = Model()
+    a = m.interval("a", start=0, duration=2, end=6)
+    b = m.interval("b", start=0, duration=2, end=6)
+    c = m.interval("c", start=0, duration=2, end=6)
+    d = m.interval("d", start=0, duration=2, end=6)
+    hard_before = len(m._hard)
+    top_before = m._top_id()
+
+    left = a.no_overlap(b)
+    right = c.no_overlap(d)
+    both = left & right
+
+    assert isinstance(both, ClauseGroup)
+    assert len(m._hard) == hard_before
+    assert m._top_id() == top_before
+
+    # Satisfy the left pair and violate only the right pair. If the right
+    # deferred group gets dropped during combination, this would incorrectly
+    # remain satisfiable.
+    m &= both
+    m &= (a.start == 0)
+    m &= (b.start == 2)  # touching is allowed
+    m &= (c.start == 0)
+    m &= (d.start == 1)  # [0,2) overlaps [1,3)
+    assert m.solve().status == "unsat"
 
 
 def test_multiplexer_constraint_construction_does_not_eagerly_mutate_model():
@@ -235,15 +293,19 @@ def test_multiplexer_constraint_construction_does_not_eagerly_mutate_model():
     m1 = Model()
     w1 = m1.int("w", lb=0, ub=4)
     hard_before_1 = len(m1._hard)
+    top_before_1 = m1._top_id()
     c1 = ([10, 20, 30, 40, 50] @ w1 <= 25)
     assert isinstance(c1, ClauseGroup)
     assert len(m1._hard) == hard_before_1
+    assert m1._top_id() == top_before_1
 
     # IntVar RHS case
     m2 = Model()
     w2 = m2.int("w", lb=0, ub=4)
     b2 = m2.int("budget", lb=0, ub=100)
     hard_before_2 = len(m2._hard)
+    top_before_2 = m2._top_id()
     c2 = ([10, 20, 30, 40, 50] @ w2 <= b2)
     assert isinstance(c2, ClauseGroup)
     assert len(m2._hard) == hard_before_2
+    assert m2._top_id() == top_before_2

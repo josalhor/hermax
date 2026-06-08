@@ -140,6 +140,27 @@ def test_int_set_inequality_semantics_with_set_and_constant_rhs():
     assert m2.solve().status == "unsat"
 
 
+def test_int_set_inequality_builders_do_not_eagerly_mutate_model():
+    m = Model()
+    a = m.int_set("a", lb=1, ub=3)
+    b = m.int_set("b", lb=1, ub=3)
+    hard_before = len(m._hard)
+    top_before = m._top_id()
+    cg = (a != b)
+    assert isinstance(cg, ClauseGroup)
+    assert len(m._hard) == hard_before
+    assert m._top_id() == top_before
+
+    m2 = Model()
+    s = m2.int_set("s", lb=1, ub=3)
+    hard_before = len(m2._hard)
+    top_before = m2._top_id()
+    cg2 = (s != {1, 2})
+    assert isinstance(cg2, ClauseGroup)
+    assert len(m2._hard) == hard_before
+    assert m2._top_id() == top_before
+
+
 def test_int_set_inequality_with_outside_value_is_always_satisfied():
     m = Model()
     s = m.int_set("s", lb=1, ub=3)
@@ -230,6 +251,54 @@ def test_int_set_contains_intvar_includes_closed_upper_bound():
     x_false = m_false.int("x", lb=2, ub=2)
     m_false &= ~s_false.contains(x_false)
     assert m_false.solve().status == "unsat"
+
+
+def test_int_set_contains_intvar_single_run_reuses_in_range():
+    m = Model()
+    s = m.int_set("s", values=list(range(10, 20)))
+    x = m.int("x", lb=0, ub=63)
+    b = s.contains(x)
+    assert b is x.in_range(10, 19)
+    assert s.contains(x) is b
+
+
+def test_int_set_contains_intvar_two_runs_scales_with_runs_not_values():
+    m = Model()
+    s = m.int_set("s", values=list(range(10, 20)) + list(range(40, 50)))
+    x = m.int("x", lb=0, ub=63)
+    top_before = m._top_id()
+    _ = s.contains(x)
+    assert (m._top_id() - top_before) <= 5
+
+
+def test_int_set_contains_intvar_random_matches_python_membership():
+    rng = random.Random(7)
+
+    for case in range(20):
+        universe = sorted({rng.randint(0, 15) for _ in range(rng.randint(1, 12))})
+        if not universe:
+            universe = [0]
+        lb = rng.randint(0, 8)
+        ub = rng.randint(lb, 15)
+
+        for xv in range(lb, ub + 1):
+            truth = xv in set(universe)
+
+            m_in = Model()
+            s_in = m_in.int_set(f"s_in_{case}", values=universe)
+            x_in = m_in.int(f"x_in_{case}", lb=lb, ub=ub)
+            b_in = s_in.contains(x_in)
+            m_in &= (x_in == xv)
+            m_in &= b_in
+            assert (m_in.solve().status != "unsat") is truth
+
+            m_out = Model()
+            s_out = m_out.int_set(f"s_out_{case}", values=universe)
+            x_out = m_out.int(f"x_out_{case}", lb=lb, ub=ub)
+            b_out = s_out.contains(x_out)
+            m_out &= (x_out == xv)
+            m_out &= ~b_out
+            assert (m_out.solve().status != "unsat") is (not truth)
 
 
 def test_int_set_algebra_union_intersection_difference_symdiff():
@@ -343,3 +412,39 @@ def test_int_set_vector_and_dict_typed_construction_and_decode():
     r = _solve_ok(m)
     assert r[sv] == [{1}, {2, 3}]
     assert r[sd] == {"a": {2}, "b": set()}
+
+
+def test_int_set_vector_is_in_supports_set_rows_and_deduplicates_logically_equal_rows():
+    allowed_dup = [({1, 2}, {3}), ({2, 1}, {3}), ({1}, {2, 3})]
+    allowed_uni = [({1, 2}, {3}), ({1}, {2, 3})]
+
+    m = Model()
+    sv = m.int_set_vector("sv", length=2, lb=1, ub=3)
+    cg = sv.is_in(allowed_dup)
+    assert isinstance(cg, ClauseGroup)
+    m &= cg
+    m &= (sv[0] == {1})
+    r = _solve_ok(m)
+    assert r[sv] == [{1}, {2, 3}]
+
+    m2 = Model()
+    a = m2.int_set_vector("sv", length=2, lb=1, ub=3)
+    cg_dup = a.is_in(allowed_dup)
+    m3 = Model()
+    b = m3.int_set_vector("sv", length=2, lb=1, ub=3)
+    cg_uni = b.is_in(allowed_uni)
+    assert len(cg_dup) == len(cg_uni)
+
+
+def test_int_set_vector_is_in_rejects_bad_row_cells_cleanly():
+    m = Model()
+    sv = m.int_set_vector("sv", length=2, lb=1, ub=3)
+
+    with pytest.raises(TypeError, match="integers only|integers"):
+        _ = sv.is_in([("x", {1})])
+
+    with pytest.raises(TypeError, match="integers only|integers"):
+        _ = sv.is_in([({1}, "x")])
+
+    with pytest.raises(ValueError, match="vector length"):
+        _ = sv.is_in([({1},)])
