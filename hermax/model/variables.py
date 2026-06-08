@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
 from pysat.formula import CNF, WCNF
-from hermax.encoder.card import CardEnc
+from hermax.encoder.card import CardEnc, EncType as CardEncType
 from hermax.encoder.pb_enc import PBEnc
 from hermax.encoder.pbamo import PBAMOEnc
 from hermax.utils import batcher_odd_even_unary_add_network
@@ -416,15 +416,23 @@ class EnumVar:
         if not lits:
             return
         dimacs = [self._model._lit_to_dimacs(lit) for lit in lits]
-        clauses = []
-        for i in range(len(lits)):
-            for j in range(i + 1, len(lits)):
-                clauses.append(Clause(self._model, [~lits[i], ~lits[j]]))
-        if self.nullable:
-            group = ClauseGroup(self._model, clauses, amo_groups=[dimacs])
+        if len(lits) <= 8:
+            clauses = []
+            for i in range(len(lits)):
+                for j in range(i + 1, len(lits)):
+                    clauses.append(Clause(self._model, [~lits[i], ~lits[j]]))
+            if self.nullable:
+                group = ClauseGroup(self._model, clauses, amo_groups=[dimacs])
+            else:
+                clauses.append(Clause(self._model, lits))
+                group = ClauseGroup(self._model, clauses, eo_groups=[dimacs])
         else:
-            clauses.append(Clause(self._model, lits))
-            group = ClauseGroup(self._model, clauses, eo_groups=[dimacs])
+            if self.nullable:
+                cnf = CardEnc.atmost(lits=dimacs, bound=1, top_id=self._model._top_id(), encoding=CardEncType.seqcounter)
+                group = ClauseGroup(self._model, self._model._cnfplus_to_clausegroup(cnf), amo_groups=[dimacs])
+            else:
+                cnf = CardEnc.equals(lits=dimacs, bound=1, top_id=self._model._top_id(), encoding=CardEncType.seqcounter)
+                group = ClauseGroup(self._model, self._model._cnfplus_to_clausegroup(cnf), eo_groups=[dimacs])
         self._model._register_clausegroup_structure(group)
         for lit in lits:
             self._model._register_literal_definition(lit, group)

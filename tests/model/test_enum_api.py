@@ -295,3 +295,31 @@ def test_enum_export_preserves_exactly_one_semantics_for_nonnullable():
     cnf = m.to_cnf()
     r = _solve_ok(m)
     assert r[color] in {"r", "g", "b"}
+
+
+def test_enum_domain_encoding_policy_uses_pairwise_up_to_8_and_seqcounter_from_9():
+    m_small = Model()
+    e_small = m_small.enum("e_small", choices=[f"c{i}" for i in range(8)], nullable=False)
+    g_small = m_small._pending_literal_defs[e_small._choice_lits["c0"].id]
+    assert len(g_small._clauses) == 29
+    assert m_small._top_id() == 8
+
+    m_big = Model()
+    e_big = m_big.enum("e_big", choices=[f"c{i}" for i in range(9)], nullable=False)
+    g_big = m_big._pending_literal_defs[e_big._choice_lits["c0"].id]
+    assert len(g_big._clauses) == 24
+    assert m_big._top_id() == 17
+
+
+def test_nullable_enum_domain_encoding_policy_uses_pairwise_up_to_8_and_seqcounter_from_9():
+    m_small = Model()
+    e_small = m_small.enum("e_small", choices=[f"c{i}" for i in range(8)], nullable=True)
+    g_small = m_small._pending_literal_defs[e_small._choice_lits["c0"].id]
+    assert len(g_small._clauses) == 28
+    assert m_small._top_id() == 8
+
+    m_big = Model()
+    e_big = m_big.enum("e_big", choices=[f"c{i}" for i in range(9)], nullable=True)
+    g_big = m_big._pending_literal_defs[e_big._choice_lits["c0"].id]
+    assert len(g_big._clauses) == 23
+    assert m_big._top_id() == 17

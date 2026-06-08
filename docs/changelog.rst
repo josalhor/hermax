@@ -33,6 +33,7 @@ Highlights
 * Improved encoding of ``IntSetVar.contains(IntVar)``.
 * Improved ``sum_expr(...)`` performance.
 * Registered implied AMO/EO structure from cardinalities for usage of PB(AMO).
+* Switched enum domains to ``seqcounter`` (pairwise up to 8).
 
 
 

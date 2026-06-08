@@ -64,7 +64,7 @@ from hermax.model import Model
 m = Model()
 
 # Decision variables
-x = m.int_vector("x", length=4, lb=0, ub=6)       # integer domain [0, 5]
+x = m.int_vector("x", length=4, lb=0, ub=6)       # integer domain [0, 6]
 use_bonus = m.bool("use_bonus")
 
 # Hard constraints
