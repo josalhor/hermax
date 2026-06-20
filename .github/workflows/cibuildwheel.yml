@@ -18,13 +18,13 @@ jobs:
       matrix:
         include:
           # - os: ubuntu-latest
-          #  artifact: wheels-linux
-          - os: ubuntu-24.04-arm
-            artifact: wheels-linux-arm
-          - os: macos-14
-            artifact: wheels-macos
-          # - os: macos-15-intel
-          #   artifact: wheels-macos-intel
+          #   artifact: wheels-linux
+          # - os: ubuntu-24.04-arm
+          #   artifact: wheels-linux-arm
+          # - os: macos-14
+          #   artifact: wheels-macos
+          - os: macos-15-intel
+            artifact: wheels-macos-intel
           #- os: windows-latest
           #  artifact: wheels-windows
     steps:
