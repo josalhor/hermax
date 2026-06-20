@@ -197,6 +197,22 @@ def test_clausegroup_extend_requires_inplace_flag_and_then_mutates():
     assert r[a] and r[b] and r[c]
 
 
+def test_clausegroup_extend_inplace_switches_to_mutable_storage_once():
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    c = m.bool("c")
+
+    g = a & b
+    assert isinstance(g._clauses, tuple)
+    g.extend(c, inplace=True)
+    assert isinstance(g._clauses, list)
+    assert tuple(g) == ((a.id,), (b.id,), (c.id,))
+    g.extend(ClauseGroup(m, [Clause(m, [~a])]), inplace=True)
+    assert isinstance(g._clauses, list)
+    assert tuple(g)[-1] == (-a.id,)
+
+
 def test_negating_clause_is_banned():
     m = Model()
     a = m.bool("a")
@@ -281,6 +297,21 @@ def test_clausegroup_and_reuses_existing_dimacs_tuples_for_prefix_clauses():
     assert g2._clauses[0] is g._clauses[0]
     assert g2._clauses[1] is g._clauses[1]
     assert g2._clauses[2] == (c.id,)
+
+
+def test_clause_append_inplace_switches_to_mutable_storage_once():
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    c = m.bool("c")
+
+    cl = Clause(m, [a])
+    assert isinstance(cl._dimacs, tuple)
+    cl.append(b, inplace=True)
+    assert isinstance(cl._dimacs, list)
+    cl.append(c, inplace=True)
+    assert cl.dimacs == (a.id, b.id, c.id)
+    assert [lit.id for lit in cl.literals] == [a.id, b.id, c.id]
 
 
 def test_clause_from_dimacs_trusted_keeps_aux_lazy_until_literals_access():

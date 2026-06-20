@@ -331,3 +331,21 @@ def test_private_objective_proxy_apply_lit_weights_routes_deltas():
     cur = m.obj._current_lit_weights()
     assert cur == lit_map
     assert m._objective_constant == old_const + 5
+
+
+def test_private_objective_proxy_add_does_not_rebuild_full_current_map(monkeypatch):
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+
+    m.obj.add(a, weight=2)
+
+    def _boom(self):
+        raise AssertionError("obj.add() should not rebuild the full current objective map")
+
+    with monkeypatch.context() as mp:
+        mp.setattr(type(m.obj), "_current_lit_weights", _boom)
+        m.obj.add(b, weight=3)
+
+    cur = m.obj._current_lit_weights()
+    assert cur == {m._lit_to_dimacs(~a): 2, m._lit_to_dimacs(~b): 3}

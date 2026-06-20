@@ -29,11 +29,12 @@ from hermax.internal.kmerge import DEFAULT_KMERGE_CONFIG, KMergeConfig
 
 
 class _ObjectiveProxy:
-    __slots__ = ("_model", "_lit_to_sid", "_offset")
+    __slots__ = ("_model", "_lit_to_sid", "_lit_weights", "_offset")
 
     def __init__(self, model: "Model"):
         self._model = model
         self._lit_to_sid: dict[int, int] = {}
+        self._lit_weights: dict[int, int] = {}
         self._offset: int = 0
 
     def __getitem__(self, weight: int) -> "_WeightBucket":
@@ -45,6 +46,31 @@ class _ObjectiveProxy:
         # Required for Python's `obj[key] += x` protocol. The mutation is already
         # performed by WeightBucket.__iadd__; this assignment is a no-op.
         return None
+
+    def _disable_all_active_softs(self) -> None:
+        m = self._model
+        for sid in list(m._soft_ids):
+            idx = m._soft_id_to_index.get(int(sid))
+            if idx is None:
+                continue
+            old_w, _ = m._soft[idx]
+            if int(old_w) > 0:
+                m._set_soft_weight_internal(int(sid), 0, allow_zero=True, allow_when_sat=True)
+
+    def _reset_expression_state(self) -> None:
+        self._lit_to_sid.clear()
+        self._lit_weights.clear()
+        if self._offset:
+            self._model._objective_constant -= int(self._offset)
+        self._offset = 0
+
+    def _ensure_expr_soft_sid(self, dim: int, weight: int) -> int:
+        m = self._model
+        lit = m._dimacs_to_lit(int(dim))
+        m._ensure_literal_def_realized(lit)
+        sid = m._append_soft_entry(int(weight), Clause(m, [lit]), group_id=None)
+        self._lit_to_sid[int(dim)] = int(sid)
+        return int(sid)
 
     def _normalize_expr(self, constraint, *, weight: int) -> tuple[dict[int, int], int]:
         if isinstance(constraint, PBConstraint):
@@ -110,41 +136,90 @@ class _ObjectiveProxy:
     def _current_lit_weights(self) -> dict[int, int]:
         out: dict[int, int] = {}
         m = self._model
-        for dim, sid in self._lit_to_sid.items():
+        stale_dims: list[int] = []
+        for dim, cached_w in self._lit_weights.items():
+            sid = self._lit_to_sid.get(int(dim))
+            if sid is None:
+                stale_dims.append(int(dim))
+                continue
             idx = m._soft_id_to_index.get(int(sid))
             if idx is None:
+                stale_dims.append(int(dim))
                 continue
             w, _ = m._soft[idx]
             if int(w) > 0:
                 out[int(dim)] = int(w)
+                if int(cached_w) != int(w):
+                    self._lit_weights[int(dim)] = int(w)
+            else:
+                stale_dims.append(int(dim))
+        for dim in stale_dims:
+            self._lit_weights.pop(int(dim), None)
+            self._lit_to_sid.pop(int(dim), None)
         return out
 
     def _apply_lit_weights(self, lit_weights: dict[int, int], offset: int):
         m = self._model
         hard0 = len(m._hard)
         soft0 = len(m._soft)
-        all_lits = set(self._lit_to_sid.keys()) | set(lit_weights.keys())
+        current = self._current_lit_weights()
+        all_lits = set(current.keys()) | set(lit_weights.keys())
         for dim in all_lits:
             sid = self._lit_to_sid.get(dim)
             new_w = int(lit_weights.get(dim, 0))
             if sid is None:
                 if new_w <= 0:
                     continue
-                lit = m._dimacs_to_lit(dim)
-                m._ensure_literal_def_realized(lit)
-                sid = m._append_soft_entry(new_w, Clause(m, [lit]), group_id=None)
-                self._lit_to_sid[dim] = sid
+                self._ensure_expr_soft_sid(dim, new_w)
                 continue
-            idx = m._soft_id_to_index[sid]
+            idx = m._soft_id_to_index.get(sid)
+            if idx is None:
+                if new_w <= 0:
+                    self._lit_to_sid.pop(dim, None)
+                    continue
+                self._ensure_expr_soft_sid(dim, new_w)
+                continue
             old_w, _cl = m._soft[idx]
             if int(old_w) == new_w:
                 continue
             m._set_soft_weight_internal(sid, new_w, allow_zero=True, allow_when_sat=True)
 
+        self._lit_weights = {int(dim): int(w) for dim, w in lit_weights.items() if int(w) > 0}
+
         delta = int(offset) - int(self._offset)
         if delta:
             m._objective_constant += int(delta)
         self._offset = int(offset)
+        m._inc_state.route_deltas(hard0, soft0)
+        return self
+
+    def _add_lit_weights(self, add_map: dict[int, int], offset_delta: int):
+        m = self._model
+        hard0 = len(m._hard)
+        soft0 = len(m._soft)
+        for dim, w in add_map.items():
+            inc = int(w)
+            if inc <= 0:
+                continue
+            sid = self._lit_to_sid.get(int(dim))
+            if sid is None:
+                self._ensure_expr_soft_sid(int(dim), inc)
+                self._lit_weights[int(dim)] = int(self._lit_weights.get(int(dim), 0)) + inc
+                continue
+            idx = m._soft_id_to_index.get(int(sid))
+            if idx is None:
+                self._ensure_expr_soft_sid(int(dim), inc)
+                self._lit_weights[int(dim)] = int(self._lit_weights.get(int(dim), 0)) + inc
+                continue
+            old_w, _cl = m._soft[idx]
+            new_w = int(old_w) + inc
+            if new_w != int(old_w):
+                m._set_soft_weight_internal(int(sid), new_w, allow_zero=True, allow_when_sat=True)
+            self._lit_weights[int(dim)] = new_w
+
+        if int(offset_delta):
+            m._objective_constant += int(offset_delta)
+            self._offset += int(offset_delta)
         m._inc_state.route_deltas(hard0, soft0)
         return self
 
@@ -160,11 +235,7 @@ class _ObjectiveProxy:
         self._model._ensure_no_tier_objective_active()
         scaled_w, _raw_w = self._model._coerce_soft_weight(weight, allow_zero=False)
         add_map, add_offset = self._normalize_expr(constraint, weight=int(scaled_w))
-        merged = self._current_lit_weights()
-        for dim, w in add_map.items():
-            merged[int(dim)] = int(merged.get(int(dim), 0)) + int(w)
-        merged = {d: int(w) for d, w in merged.items() if int(w) > 0}
-        return self._apply_lit_weights(merged, int(self._offset) + int(add_offset))
+        return self._add_lit_weights(add_map, int(add_offset))
 
     def add_soft(self, constraint, weight: int):
         """Add one managed soft objective term and return a grouped handle."""
@@ -189,17 +260,8 @@ class _ObjectiveProxy:
 
     def clear(self):
         """Disable all expression-managed objective terms."""
-        for sid in list(self._model._soft_ids):
-            idx = self._model._soft_id_to_index.get(int(sid))
-            if idx is None:
-                continue
-            old_w, _ = self._model._soft[idx]
-            if int(old_w) > 0:
-                self._model._set_soft_weight_internal(int(sid), 0, allow_zero=True, allow_when_sat=True)
-        self._lit_to_sid.clear()
-        if self._offset:
-            self._model._objective_constant -= int(self._offset)
-        self._offset = 0
+        self._disable_all_active_softs()
+        self._reset_expression_state()
         return self
 
     def replace_with(self, constraint):
@@ -208,17 +270,8 @@ class _ObjectiveProxy:
         # Full objective replacement:
         # disable all currently active soft clauses first, then install the new
         # expression-managed objective.
-        for sid in list(self._model._soft_ids):
-            idx = self._model._soft_id_to_index.get(int(sid))
-            if idx is None:
-                continue
-            old_w, _ = self._model._soft[idx]
-            if int(old_w) > 0:
-                self._model._set_soft_weight_internal(int(sid), 0, allow_zero=True, allow_when_sat=True)
-        self._lit_to_sid.clear()
-        if self._offset:
-            self._model._objective_constant -= int(self._offset)
-        self._offset = 0
+        self._disable_all_active_softs()
+        self._reset_expression_state()
         return self.set(constraint)
 
     def __iadd__(self, constraint):

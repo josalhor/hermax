@@ -1,7 +1,7 @@
 import pytest
 import random
 
-from hermax.model import Model
+from hermax.model import Model, PBExpr, Term
 
 
 def _solve(m: Model):
@@ -216,6 +216,37 @@ def test_pbexpr_explicit_mutators_require_inplace_flag_and_mutate():
     r = _solve_ok(m)
     assert r[a] is True
     assert r[b] is True
+
+
+def test_pbexpr_inplace_add_disjoint_terms_skips_global_recollapse(monkeypatch):
+    m = Model()
+    lits = list(m.bool_vector("b", length=6))
+
+    expr = PBExpr(m, terms=[])
+
+    def _boom(_terms):
+        raise AssertionError("PBExpr.add(inplace=True) should not recollapse the full prefix for disjoint terms")
+
+    monkeypatch.setattr(PBExpr, "_collapse_terms", staticmethod(_boom))
+    for lit in lits:
+        expr.add(lit, inplace=True)
+
+    assert [(t.literal, int(t.coefficient)) for t in expr.terms] == [(lit, 1) for lit in lits]
+
+
+def test_pbexpr_inplace_mutators_preserve_order_and_cancel_overlaps():
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+
+    expr = PBExpr(m, terms=[])
+    expr.add(Term(2, b), inplace=True)
+    expr.add(a, inplace=True)
+    expr.sub(b, inplace=True)
+    expr.add(3 * a, inplace=True)
+    expr.sub(4 * a, inplace=True)
+
+    assert [(t.literal, int(t.coefficient)) for t in expr.terms] == [(b, 1)]
 
 
 def test_pbexpr_sub_cancels_lazy_scaled_int_terms_end_to_end():

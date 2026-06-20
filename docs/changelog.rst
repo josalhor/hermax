@@ -32,6 +32,9 @@ Highlights
 * Improved internal helper memoization.
 * Improved encoding of ``IntSetVar.contains(IntVar)``.
 * Improved ``sum_expr(...)`` performance.
+* Improved performance of ``ClauseGroup.extend(..., inplace=True)`` and ``Clause.append(..., inplace=True)``.
+* Improved performance of ``PBExpr.add/sub(..., inplace=True)``.
+* Improved performance of ``m.obj.add(...)``.
 * Registered implied AMO/EO structure from cardinalities for usage of PB(AMO).
 * Switched enum domains to ``seqcounter`` (pairwise up to 8).
 

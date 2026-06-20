@@ -182,10 +182,20 @@ class ClauseGroup:
         """
         group = cls.__new__(cls)
         group._model = model
-        group._clauses = clauses
+        if isinstance(clauses, tuple) and all(isinstance(clause, tuple) for clause in clauses):
+            group._clauses = clauses
+        else:
+            group._clauses = tuple(tuple(int(x) for x in clause) for clause in clauses)
         group._amo_groups = [] if amo_groups is None else amo_groups
         group._eo_groups = [] if eo_groups is None else eo_groups
         return group
+
+    def _ensure_mutable_clauses(self) -> list[tuple[int, ...]]:
+        if isinstance(self._clauses, list):
+            return self._clauses
+        mutable = list(self._clauses)
+        self._clauses = mutable
+        return mutable
 
     @staticmethod
     def _copy_groups(groups: Sequence[Sequence[int]]) -> list[list[int]]:
@@ -275,15 +285,15 @@ class ClauseGroup:
             raise TypeError("ClauseGroup.extend() requires keyword argument inplace=True to mutate.")
         if isinstance(other, Literal):
             _ensure_same_model_pair_fast(self, other)
-            self._clauses = (*self._clauses, (self._model._lit_to_dimacs(other),))
+            self._ensure_mutable_clauses().append((self._model._lit_to_dimacs(other),))
             return self
         if isinstance(other, Clause):
             _ensure_same_model_pair_fast(self, other)
-            self._clauses = (*self._clauses, other.dimacs)
+            self._ensure_mutable_clauses().append(other.dimacs)
             return self
         if isinstance(other, ClauseGroup):
             _ensure_same_model_pair_fast(self, other)
-            self._clauses = (*self._clauses, *other._clauses)
+            self._ensure_mutable_clauses().extend(other._clauses)
             self._amo_groups.extend(other._amo_groups)
             self._eo_groups.extend(other._eo_groups)
             return self
@@ -437,9 +447,16 @@ class Clause:
     ) -> "Clause":
         clause = cls.__new__(cls)
         clause._model = model
-        clause._dimacs = dimacs
+        clause._dimacs = dimacs if isinstance(dimacs, tuple) else tuple(int(x) for x in dimacs)
         clause._literals_cache = literals_cache
         return clause
+
+    def _ensure_mutable_dimacs(self) -> list[int]:
+        if isinstance(self._dimacs, list):
+            return self._dimacs
+        mutable = list(self._dimacs)
+        self._dimacs = mutable
+        return mutable
 
     @property
     def literals(self) -> list["Literal"]:
@@ -451,7 +468,9 @@ class Clause:
 
     @property
     def dimacs(self) -> tuple[int, ...]:
-        return self._dimacs
+        if isinstance(self._dimacs, tuple):
+            return self._dimacs
+        return tuple(self._dimacs)
 
     @classmethod
     def from_iterable(cls, literals: Iterable["Literal"]) -> "Clause":
@@ -490,7 +509,7 @@ class Clause:
             raise TypeError("Clause.append() expects a Literal.")
         _ensure_same_model_pair_fast(self, literal)
         dim = self._model._lit_to_dimacs(literal)
-        self._dimacs = (*self._dimacs, dim)
+        self._ensure_mutable_dimacs().append(dim)
         if self._literals_cache is not None:
             self._literals_cache.append(literal)
         return self
@@ -920,7 +939,7 @@ class MaxExpr(_LazyIntExpr):
 
 class PBExpr:
     """Pseudo-Boolean expression (weighted sum of literals / lifted Int variables)."""
-    __slots__ = ("_model", "terms", "constant", "int_terms", "_collapsed")
+    __slots__ = ("_model", "terms", "constant", "int_terms", "_collapsed", "_term_index")
 
     def __init__(
         self,
@@ -934,6 +953,7 @@ class PBExpr:
         self.constant = int(constant)
         self.int_terms = [(int(c), v) for c, v in (int_terms or []) if int(c) != 0]
         self._collapsed = True
+        self._term_index = None
 
     @classmethod
     def _from_terms_trusted(
@@ -951,7 +971,103 @@ class PBExpr:
         expr.constant = int(constant)
         expr.int_terms = [(int(c), v) for c, v in (int_terms or []) if int(c) != 0]
         expr._collapsed = bool(collapsed)
+        expr._term_index = None
         return expr
+
+    def _ensure_term_index(self) -> dict[tuple[int, bool], int]:
+        if not self._collapsed:
+            self.terms = self._collapse_terms(self.terms)
+            self._collapsed = True
+            self._term_index = None
+        index = self._term_index
+        if index is None:
+            index = {(t.literal.id, t.literal.polarity): i for i, t in enumerate(self.terms)}
+            self._term_index = index
+        return index
+
+    def _accumulate_terms_inplace(self, incoming: Sequence[Term]) -> None:
+        if not incoming:
+            return
+        index = self._ensure_term_index()
+        for t in incoming:
+            key = (t.literal.id, t.literal.polarity)
+            pos = index.get(key)
+            if pos is None:
+                coeff = t.coefficient
+                if isinstance(coeff, float):
+                    if abs(coeff) <= FLOAT_ZERO_TOL:
+                        continue
+                elif coeff == 0:
+                    continue
+                index[key] = len(self.terms)
+                self.terms.append(t)
+                continue
+
+            prev = self.terms[pos]
+            prev_coeff = prev.coefficient
+            coeff = t.coefficient
+            if isinstance(prev_coeff, float) or isinstance(coeff, float):
+                new_coeff = float(prev_coeff) + float(coeff)
+                zero = abs(new_coeff) <= FLOAT_ZERO_TOL
+            else:
+                new_coeff = int(prev_coeff) + int(coeff)
+                zero = new_coeff == 0
+
+            if zero:
+                self.terms.pop(pos)
+                del index[key]
+                for i in range(pos, len(self.terms)):
+                    lit = self.terms[i].literal
+                    index[(lit.id, lit.polarity)] = i
+                continue
+
+            self.terms[pos] = Term._unsafe_new(new_coeff, prev.literal)
+
+    @staticmethod
+    def _merge_int_terms(
+        left: Sequence[tuple[int, IntVar | _LazyIntExpr]],
+        right: Sequence[tuple[int, IntVar | _LazyIntExpr]],
+        sign: int,
+    ) -> list[tuple[int, IntVar | _LazyIntExpr]]:
+        out = [*left]
+        if sign == 1:
+            out.extend((int(c), v) for c, v in right if int(c) != 0)
+        else:
+            out.extend((-int(c), v) for c, v in right if int(c) != 0)
+        return out
+
+    @staticmethod
+    def _signed_terms(terms: Sequence[Term], sign: int) -> list[Term]:
+        if sign == 1:
+            return list(terms)
+        return [Term._unsafe_new(sign * t.coefficient, t.literal) for t in terms]
+
+    @classmethod
+    def _merge_terms_immutable(
+        cls,
+        lhs: "PBExpr",
+        rhs: "PBExpr",
+        sign: int,
+    ) -> tuple[list[Term], bool]:
+        rhs_terms = cls._signed_terms(rhs.terms, sign)
+        if lhs._collapsed and rhs._collapsed:
+            if not lhs.terms:
+                return rhs_terms, True
+            if not rhs_terms:
+                return list(lhs.terms), True
+            if cls._terms_disjoint(lhs.terms, rhs_terms):
+                return [*lhs.terms, *rhs_terms], True
+        return [*lhs.terms, *rhs_terms], False
+
+    def _accumulate_int_terms_inplace(
+        self,
+        incoming: Sequence[tuple[int, IntVar | _LazyIntExpr]],
+        sign: int,
+    ) -> None:
+        if sign == 1:
+            self.int_terms.extend((int(c), v) for c, v in incoming if int(c) != 0)
+        else:
+            self.int_terms.extend((-int(c), v) for c, v in incoming if int(c) != 0)
 
     @staticmethod
     def _collapse_terms(terms: list[Term]) -> list[Term]:
@@ -1076,46 +1192,16 @@ class PBExpr:
 
     def _merge(self, other: "PBExpr", sign: int = 1) -> "PBExpr":
         model = _ensure_same_model(self, other)
-        int_terms = [*self.int_terms, *((sign * c, v) for c, v in other.int_terms)]
-        if sign == 1:
-            if self._collapsed and other._collapsed:
-                if not self.terms:
-                    return PBExpr._from_terms_trusted(
-                        model, other.terms, self.constant + other.constant, int_terms=int_terms, collapsed=True
-                    )
-                if not other.terms:
-                    return PBExpr._from_terms_trusted(
-                        model, self.terms, self.constant + other.constant, int_terms=int_terms, collapsed=True
-                    )
-                if self._terms_disjoint(self.terms, other.terms):
-                    return PBExpr._from_terms_trusted(
-                        model,
-                        [*self.terms, *other.terms],
-                        self.constant + other.constant,
-                        int_terms=int_terms,
-                        collapsed=True,
-                    )
-            terms = [*self.terms, *other.terms]
-        else:
-            other_signed = [Term._unsafe_new(sign * t.coefficient, t.literal) for t in other.terms]
-            if self._collapsed and other._collapsed:
-                if not other_signed:
-                    return PBExpr._from_terms_trusted(
-                        model, self.terms, self.constant + sign * other.constant, int_terms=int_terms, collapsed=True
-                    )
-                if not self.terms and PBExpr._terms_disjoint([], other_signed):
-                    return PBExpr._from_terms_trusted(
-                        model, other_signed, self.constant + sign * other.constant, int_terms=int_terms, collapsed=True
-                    )
-                if self._terms_disjoint(self.terms, other_signed):
-                    return PBExpr._from_terms_trusted(
-                        model,
-                        [*self.terms, *other_signed],
-                        self.constant + sign * other.constant,
-                        int_terms=int_terms,
-                        collapsed=True,
-                    )
-            terms = [*self.terms, *other_signed]
+        int_terms = self._merge_int_terms(self.int_terms, other.int_terms, sign)
+        terms, collapsed = self._merge_terms_immutable(self, other, sign)
+        if collapsed:
+            return PBExpr._from_terms_trusted(
+                model,
+                terms,
+                self.constant + sign * other.constant,
+                int_terms=int_terms,
+                collapsed=True,
+            )
         return PBExpr(model, terms, self.constant + sign * other.constant, int_terms=int_terms)
 
     def _realize_int_terms(self, model: "Model") -> "PBExpr":
@@ -1207,11 +1293,10 @@ class PBExpr:
         if self._model is None:
             self._model = model
         if other_expr.terms:
-            self.terms = self._collapse_terms([*self.terms, *other_expr.terms])
+            self._accumulate_terms_inplace(other_expr.terms)
         self.constant = self.constant + other_expr.constant
         if other_expr.int_terms:
-            self.int_terms.extend((int(c), v) for c, v in other_expr.int_terms if int(c) != 0)
-            self.int_terms = [(int(c), v) for c, v in self.int_terms if int(c) != 0]
+            self._accumulate_int_terms_inplace(other_expr.int_terms, +1)
         return self
 
     def sub(self, other, *, inplace: bool = False) -> "PBExpr":
@@ -1229,11 +1314,10 @@ class PBExpr:
             self._model = model
         if other_expr.terms:
             neg_terms = [Term(-t.coefficient, t.literal) for t in other_expr.terms]
-            self.terms = self._collapse_terms([*self.terms, *neg_terms])
+            self._accumulate_terms_inplace(neg_terms)
         self.constant = self.constant - other_expr.constant
         if other_expr.int_terms:
-            self.int_terms.extend((-int(c), v) for c, v in other_expr.int_terms if int(c) != 0)
-            self.int_terms = [(int(c), v) for c, v in self.int_terms if int(c) != 0]
+            self._accumulate_int_terms_inplace(other_expr.int_terms, -1)
         return self
 
     def _finalize_compare(self, op: str, rhs):
