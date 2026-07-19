@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use Hermax, please cite this software and the relevant solver papers."
+message: "If you use Hermax, please cite the Hermax paper and the relevant solver papers."
 title: "Hermax"
 type: software
 authors:
@@ -11,13 +11,32 @@ license: "Apache-2.0"
 version: "1.2.0"
 date-released: 2026-02-18
 preferred-citation:
-  type: software
-  title: "Hermax"
+  type: conference-paper
+  title: "Hermax: A Unified MaxSAT Library"
   authors:
     - family-names: "Salvia Hornos"
       given-names: "Josep Maria"
-  repository-code: "https://github.com/josalhor/hermax"
-  url: "https://github.com/josalhor/hermax"
+    - family-names: "Fernandez Camon"
+      given-names: "Cesar"
+    - family-names: "Mateu Pinol"
+      given-names: "Carles"
+  year: 2026
+  conference: "29th International Conference on Theory and Applications of Satisfiability Testing (SAT 2026)"
+  collection-title: "Leibniz International Proceedings in Informatics (LIPIcs)"
+  volume: "377"
+  pages: "41:1-41:13"
+  isbn: "978-3-95977-431-4"
+  issn: "1868-8969"
+  editors:
+    - family-names: "Ignatiev"
+      given-names: "Alexey"
+    - family-names: "Szeider"
+      given-names: "Stefan"
+  publisher:
+    name: "Schloss Dagstuhl -- Leibniz-Zentrum fuer Informatik"
+    location: "Dagstuhl, Germany"
+  doi: "10.4230/LIPIcs.SAT.2026.41"
+  url: "https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.SAT.2026.41"
 references:
   - type: conference-paper
     authors:

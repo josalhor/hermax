@@ -85,6 +85,11 @@ html_theme_options = {
             "url": "https://github.com/josalhor/hermax",
             "icon": "fa-brands fa-github",
         },
+        {
+            "name": "PyPI",
+            "url": "https://pypi.org/project/hermax/",
+            "icon": "fa-brands fa-python",
+        },
     ],
     "show_prev_next": False,
     "navbar_start": ["navbar-logo"],

@@ -9,9 +9,11 @@ Citation request
 ----------------
 If you use Hermax in research, please cite:
 
-- Repository: https://github.com/josalhor/hermax
+- Salvia Hornos, Josep Maria; Fern\'andez Cam\'on, C\`esar; Mateu Pi\~nol,
+  Carles. Hermax: A Unified MaxSAT Library. SAT 2026, LIPIcs 377, 41:1--41:13.
+  DOI: 10.4230/LIPIcs.SAT.2026.41
 
-and cite relevant solver/paper references for the evaluated backend(s).
+Please also cite relevant solver/paper references for the evaluated backend(s).
 
 Latest available papers (selection)
 -----------------------------------
