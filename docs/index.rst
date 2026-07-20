@@ -72,6 +72,35 @@ Useful Next Steps
 * :doc:`api` if you want the full API reference.
 * :doc:`changelog` for versioned user-facing changes.
 
+Citation
+--------
+
+If you use Hermax in research, please cite:
+
+.. code-block:: bibtex
+
+   @InProceedings{salviahornos_et_al:LIPIcs.SAT.2026.41,
+     author = {Salvia Hornos, Josep Maria and Fern\'{a}ndez Cam\'{o}n, C\`{e}sar and Mateu Pi\~{n}ol, Carles},
+     title = {{Hermax: A Unified MaxSAT Library}},
+     booktitle = {29th International Conference on Theory and Applications of Satisfiability Testing (SAT 2026)},
+     pages = {41:1--41:13},
+     series = {Leibniz International Proceedings in Informatics (LIPIcs)},
+     ISBN = {978-3-95977-431-4},
+     ISSN = {1868-8969},
+     year = {2026},
+     volume = {377},
+     editor = {Ignatiev, Alexey and Szeider, Stefan},
+     publisher = {Schloss Dagstuhl -- Leibniz-Zentrum f\"{u}r Informatik},
+     address = {Dagstuhl, Germany},
+     URL = {https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.SAT.2026.41},
+     URN = {urn:nbn:de:0030-drops-263478},
+     doi = {10.4230/LIPIcs.SAT.2026.41},
+     annote = {Keywords: MaxSAT, Incremental Solving, IPAMIR, Python, Constraint modelling}
+   }
+
+See :doc:`Acknowledgments <acknowledgments>` for backend solver citations and
+other project references.
+
 .. toctree::
    :hidden:
    :maxdepth: 2
@@ -79,6 +108,7 @@ Useful Next Steps
    quickstart
    examples
    modeling
-   api
+   API <api>
    changelog
-   developer
+   Developer <developer>
+   Citation <acknowledgments>

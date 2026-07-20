@@ -123,7 +123,8 @@ If you use Hermax in research, please cite:
 ```
 
 Please also cite the backend solver papers relevant to your experiments; see
-`CITATION.cff` and `NOTICE` for the relevant references.
+the [documentation acknowledgments](https://hermax.readthedocs.io/en/latest/acknowledgments.html),
+`CITATION.cff`, and `NOTICE` for the relevant references.
 
 ## License
 
