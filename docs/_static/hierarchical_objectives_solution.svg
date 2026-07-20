@@ -1,83 +1,76 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 360" role="img" aria-label="Hierarchical objectives solution">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 545" role="img" aria-labelledby="title desc">
+  <title id="title">Lexicographic optimum with tied travel cost</title>
+  <desc id="desc">Both tier-0-optimal assignments have travel cost 60. The solver returns the assignment that sends VIP 1 to Alice and VIP 2 to Bob; Standard 1 is unassigned.</desc>
   <style>
-    :root {
-      --ink: #1c1b1a;
-      --muted: #6c655c;
-      --stroke: rgba(74, 64, 54, 0.22);
-      --panel: rgba(244, 239, 232, 0.82);
-      --vip: rgba(184, 38, 93, 0.16);
-      --vip-stroke: #b8265d;
-      --chosen: #146356;
-      --chosen-soft: rgba(20, 99, 86, 0.18);
-      --accent-bg: rgba(20, 99, 86, 0.12);
-    }
-
+    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; fill: #252a2b; }
+    .heading { font-size: 19px; font-weight: 700; }
+    .subheading { font-size: 13px; fill: #5f686a; }
+    .section { font-size: 12px; font-weight: 700; letter-spacing: 1.1px; fill: #4d6465; }
+    .step { fill: #f2f6f4; stroke: #71918b; stroke-width: 1.4; }
+    .candidate { fill: #fafbfa; stroke: #c7d0cd; stroke-width: 1.2; }
+    .returned { fill: #e5efeb; stroke: #527a74; stroke-width: 1.7; }
+    .badge { fill: #dceae5; stroke: #72938d; stroke-width: 1; }
+    .badge-text { font-size: 11px; font-weight: 700; letter-spacing: 0.6px; fill: #315f60; }
+    .name { font-size: 15px; font-weight: 700; }
+    .detail { font-size: 12px; fill: #5d6869; }
+    .body { font-size: 13px; fill: #404a4c; }
+    .metric { font-size: 18px; font-weight: 700; fill: #315f60; }
+    .formula { font-family: "STIX Two Text", "Cambria Math", serif; font-size: 15px; fill: #293b3d; }
+    .arrow { fill: none; stroke: #697a78; stroke-width: 1.7; marker-end: url(#arrow); }
+    .arrow-label { font-size: 12px; font-weight: 700; fill: #496865; }
+    .unassigned { fill: #f4f2ef; stroke: #c6bbb0; stroke-width: 1.1; }
+    .unassigned-text { font-size: 13px; fill: #756d65; }
+    .canvas { fill: #ffffff; }
     @media (prefers-color-scheme: dark) {
-      :root {
-        --ink: #f4efe6;
-        --muted: #cbbca8;
-        --stroke: rgba(255, 255, 255, 0.16);
-        --panel: rgba(36, 35, 33, 0.88);
-        --vip: rgba(255, 111, 161, 0.16);
-        --vip-stroke: #ff6fa1;
-        --chosen: #4fd2b5;
-        --chosen-soft: rgba(79, 210, 181, 0.20);
-        --accent-bg: rgba(79, 210, 181, 0.16);
-      }
+      .canvas { fill: #1f2120; }
+      text, .heading, .name, .formula { fill: #f4efe6; }
+      .subheading, .detail, .body, .unassigned-text { fill: #cbbca8; }
+      .section, .badge-text, .metric, .arrow-label { fill: #82c2b6; }
+      .step { fill: #292f2d; stroke: #71918b; }
+      .candidate { fill: #292b2a; stroke: #535a57; }
+      .returned { fill: #263b36; stroke: #7ba79f; }
+      .badge { fill: #273632; stroke: #71918b; }
+      .unassigned { fill: #302d2a; stroke: #806f63; }
+      .arrow { stroke: #91aaa5; }
     }
-
-    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; }
-    .title { font-size: 15px; font-weight: 700; fill: var(--ink); }
-    .subtitle { font-size: 13px; fill: var(--muted); }
-    .node { fill: var(--panel); stroke: var(--stroke); stroke-width: 1.4; rx: 14; }
-    .vip { fill: var(--vip); stroke: var(--vip-stroke); stroke-width: 1.8; }
-    .name { font-size: 14px; font-weight: 700; fill: var(--ink); }
-    .meta { font-size: 12px; fill: var(--muted); }
-    .sel { font-size: 12px; font-weight: 700; fill: var(--chosen); }
-    .choice { fill: var(--chosen-soft); stroke: var(--chosen); stroke-width: 1.7; rx: 12; }
-    .edge { stroke: var(--chosen); stroke-width: 3.0; fill: none; }
-    .box { fill: var(--accent-bg); stroke: var(--chosen); stroke-width: 1.5; rx: 14; }
-    .box-title { font-size: 14px; font-weight: 700; fill: var(--chosen); }
-    .box-text { font-size: 13px; fill: var(--ink); }
   </style>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 Z" fill="#697a78"/>
+    </marker>
+  </defs>
 
-  <text class="title" x="34" y="28">Lexicographic Optimum</text>
-  <text class="subtitle" x="210" y="28">serve all VIP clients first, then minimize travel among those feasible assignments</text>
+  <rect class="canvas" width="920" height="545"/>
+  <text class="heading" x="38" y="38">Lexicographic optimum: tier 0 first, then tier 1</text>
+  <text class="subheading" x="38" y="61">Tier-0 priority rules out every assignment that leaves a VIP unserved, regardless of travel cost.</text>
 
-  <path class="edge" d="M254,89 C390,89 510,98 640,104" />
-  <path class="edge" d="M254,164 C390,164 510,188 640,199" />
+  <text class="section" x="38" y="98">STEP 1 · OPTIMIZE VIP SERVICE</text>
+  <rect class="step" x="38" y="113" width="844" height="75" rx="9"/>
+  <text class="formula" x="58" y="143">minimize unassigned VIPs</text>
+  <text class="metric" x="58" y="171">tier-0 cost = 0</text>
+  <text class="body" x="318" y="143">VIP_1 and VIP_2 must both be assigned.</text>
+  <text class="body" x="318" y="171">This commits both driver slots, leaving Standard_1 unassigned.</text>
 
-  <rect class="node vip choice" x="34" y="60" width="220" height="58" />
-  <text class="name" x="50" y="84">VIP_1</text>
-  <text class="meta" x="50" y="104">assigned to Alice</text>
-  <text class="sel" x="170" y="84">selected</text>
+  <path class="arrow" d="M460,188 L460,220"/>
+  <text class="arrow-label" x="480" y="210">restrict to tier-0-optimal assignments</text>
 
-  <rect class="node vip choice" x="34" y="135" width="220" height="58" />
-  <text class="name" x="50" y="159">VIP_2</text>
-  <text class="meta" x="50" y="179">assigned to Bob</text>
-  <text class="sel" x="170" y="159">selected</text>
+  <text class="section" x="38" y="241">STEP 2 · MINIMIZE TRAVEL IN THAT RESTRICTED SET</text>
+  <rect class="candidate returned" x="38" y="256" width="404" height="146" rx="9"/>
+  <rect class="badge" x="56" y="272" width="142" height="20" rx="9"/>
+  <text class="badge-text" x="67" y="286">RETURNED SOLUTION</text>
+  <text class="name" x="56" y="319">VIP_1 → Alice   (50)</text>
+  <text class="name" x="56" y="345">VIP_2 → Bob     (10)</text>
+  <text class="metric" x="56" y="380">travel cost = 60</text>
 
-  <rect class="node" x="34" y="210" width="220" height="58" />
-  <text class="name" x="50" y="234">Standard_1</text>
-  <text class="meta" x="50" y="254">left unassigned</text>
+  <rect class="candidate" x="478" y="256" width="404" height="146" rx="9"/>
+  <text class="detail" x="496" y="286">ANOTHER TIER-1 OPTIMUM</text>
+  <text class="name" x="496" y="319">VIP_1 → Bob     (10)</text>
+  <text class="name" x="496" y="345">VIP_2 → Alice   (50)</text>
+  <text class="metric" x="496" y="380">travel cost = 60</text>
 
-  <rect class="node choice" x="640" y="75" width="246" height="58" />
-  <text class="name" x="656" y="99">Alice</text>
-  <text class="meta" x="656" y="119">receives VIP_1</text>
+  <rect class="unassigned" x="38" y="424" width="844" height="48" rx="8"/>
+  <text class="unassigned-text" x="58" y="453">Standard_1 is unassigned in both cases: the two driver capacities are consumed by the tier-0 VIP requirement.</text>
 
-  <rect class="node choice" x="640" y="170" width="246" height="58" />
-  <text class="name" x="656" y="194">Bob</text>
-  <text class="meta" x="656" y="214">receives VIP_2</text>
-
-  <rect class="box" x="34" y="287" width="272" height="54" />
-  <text class="box-title" x="50" y="311">Tier 0 cost</text>
-  <text class="box-text" x="150" y="311">unassigned VIPs = 0</text>
-
-  <rect class="box" x="324" y="287" width="272" height="54" />
-  <text class="box-title" x="340" y="311">Tier 1 cost</text>
-  <text class="box-text" x="430" y="311">travel = 60</text>
-
-  <rect class="box" x="614" y="287" width="272" height="54" />
-  <text class="box-title" x="630" y="311">Assignments</text>
-  <text class="box-text" x="724" y="311">VIP_1→Alice, VIP_2→Bob</text>
+  <text class="section" x="38" y="505">REPORTED RESULT</text>
+  <text class="body" x="184" y="505">tier_costs = [0, 60]  ·  returned assignment: VIP_1→Alice, VIP_2→Bob, Standard_1→None</text>
 </svg>

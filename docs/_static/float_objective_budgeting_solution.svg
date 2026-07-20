@@ -1,86 +1,106 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 340" role="img" aria-label="Floating objective budgeting solution">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 570" role="img" aria-labelledby="title desc">
+  <title id="title">Floating-point objective: optimal capital budget selection</title>
+  <desc id="desc">The optimal selection funds Beta and Delta. It uses 15 of 18 developer-months, selects 6.20 million dollars of ROI, and misses 3.35 million dollars of ROI.</desc>
   <style>
-    :root {
-      --ink: #1c1b1a;
-      --muted: #6c655c;
-      --stroke: rgba(74, 64, 54, 0.22);
-      --panel: rgba(244, 239, 232, 0.82);
-      --chosen: rgba(20, 99, 86, 0.20);
-      --chosen-stroke: #146356;
-      --dropped: rgba(120, 112, 103, 0.16);
-      --accent: #146356;
-      --accent-bg: rgba(20, 99, 86, 0.12);
-    }
-
+    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; fill: #252a2b; }
+    .heading { font-size: 19px; font-weight: 700; }
+    .subheading { font-size: 13px; fill: #5f686a; }
+    .section { font-size: 12px; font-weight: 700; letter-spacing: 1.1px; fill: #4d6465; }
+    .card { fill: #f8f9f8; stroke: #c9d0ce; stroke-width: 1.2; }
+    .chosen { fill: #e7efec; stroke: #527775; stroke-width: 1.6; }
+    .name { font-size: 16px; font-weight: 700; }
+    .detail { font-size: 13px; fill: #566062; }
+    .tag { font-size: 12px; font-weight: 700; letter-spacing: 0.7px; }
+    .selected { fill: #315f60; }
+    .not-selected { fill: #778082; }
+    .panel { fill: #f2f5f3; stroke: #b9c5c2; stroke-width: 1.2; }
+    .metric-label { font-size: 13px; fill: #586365; }
+    .metric-value { font-size: 18px; font-weight: 700; fill: #315f60; }
+    .formula { font-family: "STIX Two Text", "Cambria Math", serif; font-size: 14px; fill: #263a3b; }
+    .table-head { font-size: 12px; font-weight: 700; letter-spacing: 0.8px; fill: #566a6b; }
+    .table-text { font-size: 13px; fill: #3d484a; }
+    .winner { fill: #e7efec; stroke: #789491; stroke-width: 1.1; }
+    .invalid { fill: #f4f2ef; stroke: #c7bdb3; stroke-width: 1.1; }
+    .rule { stroke: #c4cdca; stroke-width: 1; }
+    .canvas { fill: #ffffff; }
     @media (prefers-color-scheme: dark) {
-      :root {
-        --ink: #f4efe6;
-        --muted: #cbbca8;
-        --stroke: rgba(255, 255, 255, 0.16);
-        --panel: rgba(36, 35, 33, 0.88);
-        --chosen: rgba(79, 210, 181, 0.20);
-        --chosen-stroke: #4fd2b5;
-        --dropped: rgba(185, 172, 152, 0.12);
-        --accent: #4fd2b5;
-        --accent-bg: rgba(79, 210, 181, 0.16);
-      }
+      .canvas { fill: #1f2120; }
+      text, .heading, .name, .formula, .table-text { fill: #f4efe6; }
+      .subheading, .detail, .metric-label { fill: #cbbca8; }
+      .section, .selected, .metric-value { fill: #82c2b6; }
+      .not-selected { fill: #bbb6ad; }
+      .card { fill: #292b2a; stroke: #535a57; }
+      .chosen { fill: #263b36; stroke: #7ba79f; }
+      .panel { fill: #292b2a; stroke: #586560; }
+      .table-head { fill: #a9c5c0; }
+      .winner { fill: #263b36; stroke: #769a94; }
+      .invalid { fill: #312e2b; stroke: #867a70; }
+      .rule { stroke: #59615d; }
     }
-
-    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; }
-    .title { font-size: 15px; font-weight: 700; fill: var(--ink); }
-    .subtitle { font-size: 13px; fill: var(--muted); }
-    .card { fill: var(--panel); stroke: var(--stroke); stroke-width: 1.4; rx: 16; }
-    .card.chosen { fill: var(--chosen); stroke: var(--chosen-stroke); stroke-width: 1.8; }
-    .card.dropped { fill: var(--dropped); }
-    .name { font-size: 18px; font-weight: 700; fill: var(--ink); }
-    .meta { font-size: 13px; fill: var(--muted); }
-    .tag { font-size: 12px; font-weight: 700; }
-    .tag.chosen { fill: var(--accent); }
-    .tag.dropped { fill: var(--muted); }
-    .box { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.5; rx: 14; }
-    .box-title { font-size: 14px; font-weight: 700; fill: var(--accent); }
-    .box-text { font-size: 13px; fill: var(--ink); }
   </style>
 
-  <text class="title" x="38" y="28">Optimal Selection</text>
-  <text class="subtitle" x="172" y="28">fund Beta + Delta, keep capacity feasible, maximize ROI</text>
+  <rect class="canvas" width="920" height="570"/>
+  <text class="heading" x="38" y="38">Optimal selection: fund Beta and Delta</text>
+  <text class="subheading" x="38" y="61">The optimizer leaves Alpha and Gamma unfunded, incurring their fractional ROI as missed value.</text>
 
-  <rect class="card dropped" x="38" y="52" width="185" height="138" />
-  <text class="name" x="56" y="86">Alpha</text>
-  <text class="meta" x="56" y="115">dev-months: 5</text>
-  <text class="meta" x="56" y="140">ROI (M USD): 1.25</text>
-  <text class="tag dropped" x="56" y="168">not funded</text>
+  <text class="section" x="38" y="98">SOLUTION</text>
+  <rect class="card" x="38" y="112" width="198" height="103" rx="8"/>
+  <text class="name" x="56" y="141">Alpha</text>
+  <text class="detail" x="56" y="166">5 months · 1.25 M ROI</text>
+  <text class="tag not-selected" x="56" y="194">NOT FUNDED</text>
 
-  <rect class="card chosen" x="240" y="52" width="185" height="138" />
-  <text class="name" x="258" y="86">Beta</text>
-  <text class="meta" x="258" y="115">dev-months: 8</text>
-  <text class="meta" x="258" y="140">ROI (M USD): 3.40</text>
-  <text class="tag chosen" x="258" y="168">funded</text>
+  <rect class="card chosen" x="253" y="112" width="198" height="103" rx="8"/>
+  <text class="name" x="271" y="141">Beta</text>
+  <text class="detail" x="271" y="166">8 months · 3.40 M ROI</text>
+  <text class="tag selected" x="271" y="194">FUNDED</text>
 
-  <rect class="card dropped" x="442" y="52" width="185" height="138" />
-  <text class="name" x="460" y="86">Gamma</text>
-  <text class="meta" x="460" y="115">dev-months: 6</text>
-  <text class="meta" x="460" y="140">ROI (M USD): 2.10</text>
-  <text class="tag dropped" x="460" y="168">not funded</text>
+  <rect class="card" x="468" y="112" width="198" height="103" rx="8"/>
+  <text class="name" x="486" y="141">Gamma</text>
+  <text class="detail" x="486" y="166">6 months · 2.10 M ROI</text>
+  <text class="tag not-selected" x="486" y="194">NOT FUNDED</text>
 
-  <rect class="card chosen" x="644" y="52" width="185" height="138" />
-  <text class="name" x="662" y="86">Delta</text>
-  <text class="meta" x="662" y="115">dev-months: 7</text>
-  <text class="meta" x="662" y="140">ROI (M USD): 2.80</text>
-  <text class="tag chosen" x="662" y="168">funded</text>
+  <rect class="card chosen" x="683" y="112" width="198" height="103" rx="8"/>
+  <text class="name" x="701" y="141">Delta</text>
+  <text class="detail" x="701" y="166">7 months · 2.80 M ROI</text>
+  <text class="tag selected" x="701" y="194">FUNDED</text>
 
-  <rect class="box" x="38" y="214" width="250" height="92" />
-  <text class="box-title" x="56" y="238">Capacity usage</text>
-  <text class="box-text" x="56" y="263">used = 15</text>
-  <text class="box-text" x="56" y="286">limit = 18</text>
+  <text class="section" x="38" y="253">OBJECTIVE LEDGER</text>
+  <rect class="panel" x="38" y="267" width="260" height="99" rx="8"/>
+  <text class="metric-label" x="57" y="294">Capacity used</text>
+  <text class="metric-value" x="57" y="323">15 / 18 months</text>
+  <text class="detail" x="57" y="348">Beta (8) + Delta (7)</text>
 
-  <rect class="box" x="307" y="214" width="250" height="92" />
-  <text class="box-title" x="325" y="238">ROI summary</text>
-  <text class="box-text" x="325" y="263">selected ROI = 6.20 M USD</text>
-  <text class="box-text" x="325" y="286">missed ROI = 3.35 M USD</text>
+  <rect class="panel" x="318" y="267" width="260" height="99" rx="8"/>
+  <text class="metric-label" x="337" y="294">Selected ROI</text>
+  <text class="metric-value" x="337" y="323">6.20 M USD</text>
+  <text class="detail" x="337" y="348">3.40 + 2.80</text>
 
-  <rect class="box" x="576" y="214" width="253" height="92" />
-  <text class="box-title" x="594" y="238">Funded projects</text>
-  <text class="box-text" x="594" y="263">Beta, Delta</text>
-  <text class="box-text" x="594" y="286">status: optimum</text>
+  <rect class="panel" x="598" y="267" width="283" height="99" rx="8"/>
+  <text class="metric-label" x="617" y="294">Solver cost: missed ROI</text>
+  <text class="metric-value" x="617" y="323">3.35 M USD</text>
+  <text class="detail" x="617" y="348">1.25 + 2.10 (Alpha, Gamma)</text>
+
+  <text class="formula" x="38" y="400">cost = 1.25[¬fund[Alpha]] + 3.40[¬fund[Beta]] + 2.10[¬fund[Gamma]] + 2.80[¬fund[Delta]] = 3.35</text>
+
+  <text class="section" x="38" y="433">WHY THIS SELECTION?</text>
+  <text class="table-head" x="56" y="458">PROJECT SET</text>
+  <text class="table-head" x="349" y="458">MONTHS</text>
+  <text class="table-head" x="484" y="458">SELECTED ROI</text>
+  <text class="table-head" x="710" y="458">RESULT</text>
+  <line class="rule" x1="38" y1="467" x2="881" y2="467"/>
+  <rect class="winner" x="38" y="470" width="843" height="25" rx="4"/>
+  <text class="table-text" x="56" y="488">Beta + Delta</text>
+  <text class="table-text" x="349" y="488">15</text>
+  <text class="table-text" x="484" y="488">6.20 M</text>
+  <text class="table-text" x="710" y="488">optimum</text>
+  <line class="rule" x1="38" y1="503" x2="881" y2="503"/>
+  <text class="table-text" x="56" y="522">Alpha + Gamma + Delta</text>
+  <text class="table-text" x="349" y="522">18</text>
+  <text class="table-text" x="484" y="522">6.15 M</text>
+  <text class="table-text" x="710" y="522">feasible suboptimal</text>
+  <rect class="invalid" x="38" y="534" width="843" height="25" rx="4"/>
+  <text class="table-text" x="56" y="552">Alpha + Beta + Gamma</text>
+  <text class="table-text" x="349" y="552">19</text>
+  <text class="table-text" x="484" y="552">6.75 M</text>
+  <text class="table-text" x="710" y="552">over capacity</text>
 </svg>

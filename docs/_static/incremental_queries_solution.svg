@@ -1,116 +1,121 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 430" role="img" aria-label="Incremental queries timeline">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 710" role="img" aria-labelledby="title desc">
+  <title id="title">Incremental rescheduling: persistent updates and temporary assumptions</title>
+  <desc id="desc">A model moves through three persistent states. A temporary assumption branches from the middle state and is discarded after that solve. The results of all five solve calls are shown.</desc>
   <style>
-    :root {
-      --ink: #1c1b1a;
-      --muted: #6c655c;
-      --stroke: rgba(74, 64, 54, 0.22);
-      --panel: rgba(244, 239, 232, 0.82);
-      --accent: #146356;
-      --accent-bg: rgba(20, 99, 86, 0.12);
-      --temp: #b8265d;
-      --temp-bg: rgba(184, 38, 93, 0.14);
-      --arrow: rgba(74, 64, 54, 0.42);
-    }
-
+    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; fill: #252a2b; }
+    .heading { font-size: 19px; font-weight: 700; }
+    .subheading { font-size: 13px; fill: #5f686a; }
+    .section { font-size: 12px; font-weight: 700; letter-spacing: 1.1px; fill: #4d6465; }
+    .state { fill: #f4f7f5; stroke: #70908c; stroke-width: 1.5; }
+    .query { fill: #f7f5f2; stroke: #9a8271; stroke-width: 1.5; stroke-dasharray: 5 4; }
+    .label { font-size: 12px; fill: #5e686a; }
+    .state-title { font-size: 15px; font-weight: 700; fill: #315f60; }
+    .query-title { font-size: 15px; font-weight: 700; fill: #725b4c; }
+    .value { font-size: 13px; fill: #303a3c; }
+    .cost { font-size: 17px; font-weight: 700; fill: #315f60; }
+    .query-cost { font-size: 17px; font-weight: 700; fill: #725b4c; }
+    .tag-persistent { fill: #e0ebe7; stroke: #70908c; stroke-width: 1; }
+    .tag-temporary { fill: #eee7e0; stroke: #9a8271; stroke-width: 1; }
+    .tag-text { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; fill: #315f60; }
+    .tag-text-temp { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; fill: #725b4c; }
+    .arrow { fill: none; stroke: #6b7a79; stroke-width: 1.7; marker-end: url(#arrow); }
+    .dash-arrow { fill: none; stroke: #927968; stroke-width: 1.7; stroke-dasharray: 5 4; marker-end: url(#arrow-temp); }
+    .arrow-label { font-size: 12px; font-weight: 700; fill: #496865; }
+    .arrow-label-temp { font-size: 12px; font-weight: 700; fill: #725b4c; }
+    .table-head { font-size: 11px; font-weight: 700; letter-spacing: 0.8px; fill: #586d6c; }
+    .table-text { font-size: 12px; fill: #394345; }
+    .row { fill: #fafbfa; stroke: #d2d9d6; stroke-width: 1; }
+    .row-temp { fill: #faf7f4; stroke: #d5c8bd; stroke-width: 1; }
+    .rule { stroke: #c4cdca; stroke-width: 1; }
+    .canvas { fill: #ffffff; }
     @media (prefers-color-scheme: dark) {
-      :root {
-        --ink: #f4efe6;
-        --muted: #cbbca8;
-        --stroke: rgba(255, 255, 255, 0.16);
-        --panel: rgba(36, 35, 33, 0.88);
-        --accent: #4fd2b5;
-        --accent-bg: rgba(79, 210, 181, 0.16);
-        --temp: #ff6fa1;
-        --temp-bg: rgba(255, 111, 161, 0.16);
-        --arrow: rgba(235, 225, 210, 0.42);
-      }
+      .canvas { fill: #1f2120; }
+      text, .heading, .value, .table-text { fill: #f4efe6; }
+      .subheading, .label { fill: #cbbca8; }
+      .section, .state-title, .cost, .tag-text, .table-head { fill: #82c2b6; }
+      .query-title, .query-cost, .tag-text-temp, .arrow-label-temp { fill: #d9b7a0; }
+      .state { fill: #292b2a; stroke: #71918b; }
+      .query { fill: #302d2a; stroke: #a48a76; }
+      .tag-persistent { fill: #273632; stroke: #71918b; }
+      .tag-temporary { fill: #3a322c; stroke: #a48a76; }
+      .arrow { stroke: #91aaa5; }
+      .dash-arrow { stroke: #b49884; }
+      .row { fill: #292b2a; stroke: #535a57; }
+      .row-temp { fill: #302d2a; stroke: #806e61; }
+      .rule { stroke: #59615d; }
     }
-
-    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; }
-    .title { font-size: 16px; font-weight: 700; fill: var(--ink); }
-    .subtitle { font-size: 13px; fill: var(--muted); }
-    .step { fill: var(--panel); stroke: var(--stroke); stroke-width: 1.4; rx: 14; }
-    .step-title { font-size: 13px; font-weight: 700; fill: var(--ink); }
-    .label { font-size: 12px; fill: var(--muted); }
-    .value { font-size: 12px; fill: var(--ink); }
-    .tag-persist { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.2; rx: 10; }
-    .tag-temp { fill: var(--temp-bg); stroke: var(--temp); stroke-width: 1.2; rx: 10; }
-    .tag-text-persist { font-size: 11px; font-weight: 700; fill: var(--accent); }
-    .tag-text-temp { font-size: 11px; font-weight: 700; fill: var(--temp); }
-    .arrow { stroke: var(--arrow); stroke-width: 1.8; fill: none; marker-end: url(#arr); }
-    .legend { fill: var(--accent-bg); stroke: var(--stroke); stroke-width: 1.2; rx: 12; }
   </style>
-
   <defs>
-    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3.5" orient="auto">
-      <polygon points="0 0, 7 3.5, 0 7" fill="currentColor" />
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 Z" fill="#6b7a79"/>
+    </marker>
+    <marker id="arrow-temp" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 Z" fill="#927968"/>
     </marker>
   </defs>
 
-  <text class="title" x="28" y="30">Incremental Query Flow</text>
-  <text class="subtitle" x="236" y="30">hard update persists · assumptions are temporary · objective replacement persists</text>
+  <rect class="canvas" width="920" height="710"/>
+  <text class="heading" x="38" y="38">One live model, three persistent states</text>
+  <text class="subheading" x="38" y="61">Hard constraints and objective replacements alter later solves; assumptions apply only to the call that receives them.</text>
 
-  <path class="arrow" d="M226,170 L244,170" />
-  <path class="arrow" d="M452,170 L470,170" />
-  <path class="arrow" d="M678,170 L696,170" />
-  <path class="arrow" d="M904,170 L922,170" />
+  <text class="section" x="38" y="98">PERSISTENT MODEL STATE</text>
 
-  <rect class="step" x="20" y="56" width="206" height="238" />
-  <text class="step-title" x="34" y="82">1) Baseline solve</text>
-  <rect class="tag-persist" x="34" y="92" width="84" height="20" />
-  <text class="tag-text-persist" x="44" y="106">model state</text>
-  <text class="label" x="34" y="132">cost</text>
-  <text class="value" x="88" y="132">3</text>
-  <text class="label" x="34" y="154">T1</text><text class="value" x="88" y="154">M1</text>
-  <text class="label" x="34" y="174">T2</text><text class="value" x="88" y="174">M1</text>
-  <text class="label" x="34" y="194">T3</text><text class="value" x="88" y="194">M1</text>
-  <text class="subtitle" x="34" y="224">all prefer M1 initially</text>
+  <rect class="state" x="38" y="117" width="235" height="156" rx="9"/>
+  <rect class="tag-persistent" x="55" y="132" width="112" height="20" rx="9"/>
+  <text class="tag-text" x="66" y="146">INITIAL MODEL</text>
+  <text class="state-title" x="55" y="177">Baseline solve (r1)</text>
+  <text class="label" x="55" y="201">objective: M1 costs 1; M2 costs 3</text>
+  <text class="cost" x="55" y="229">cost 3</text>
+  <text class="value" x="55" y="252">T1→M1   T2→M1   T3→M1</text>
 
-  <rect class="step" x="246" y="56" width="206" height="238" />
-  <text class="step-title" x="260" y="82">2) Add hard rule</text>
-  <rect class="tag-persist" x="260" y="92" width="128" height="20" />
-  <text class="tag-text-persist" x="270" y="106">persistent update</text>
-  <text class="label" x="260" y="132">added</text>
-  <text class="value" x="314" y="132">T2 != M1</text>
-  <text class="label" x="260" y="154">cost</text>
-  <text class="value" x="314" y="154">5</text>
-  <text class="label" x="260" y="174">T1</text><text class="value" x="314" y="174">M1</text>
-  <text class="label" x="260" y="194">T2</text><text class="value" x="314" y="194">M2</text>
-  <text class="label" x="260" y="214">T3</text><text class="value" x="314" y="214">M1</text>
+  <rect class="state" x="343" y="117" width="235" height="156" rx="9"/>
+  <rect class="tag-persistent" x="360" y="132" width="138" height="20" rx="9"/>
+  <text class="tag-text" x="371" y="146">HARD RULE ADDED</text>
+  <text class="state-title" x="360" y="177">Adjusted solve (r2, r4)</text>
+  <text class="label" x="360" y="201">constraint: T2→M1 is forbidden</text>
+  <text class="cost" x="360" y="229">cost 5</text>
+  <text class="value" x="360" y="252">T1→M1   T2→M2   T3→M1</text>
 
-  <rect class="step" x="472" y="56" width="206" height="238" />
-  <text class="step-title" x="486" y="82">3) Assumption solve</text>
-  <rect class="tag-temp" x="486" y="92" width="128" height="20" />
-  <text class="tag-text-temp" x="496" y="106">temporary only</text>
-  <text class="label" x="486" y="132">assume</text>
-  <text class="value" x="540" y="132">T1 == M2</text>
-  <text class="label" x="486" y="154">cost</text>
-  <text class="value" x="540" y="154">7</text>
-  <text class="label" x="486" y="174">T1</text><text class="value" x="540" y="174">M2</text>
-  <text class="label" x="486" y="194">T2</text><text class="value" x="540" y="194">M2</text>
-  <text class="label" x="486" y="214">T3</text><text class="value" x="540" y="214">M1</text>
+  <rect class="state" x="648" y="117" width="235" height="156" rx="9"/>
+  <rect class="tag-persistent" x="665" y="132" width="163" height="20" rx="9"/>
+  <text class="tag-text" x="676" y="146">OBJECTIVE REPLACED</text>
+  <text class="state-title" x="665" y="177">Updated objective (r5)</text>
+  <text class="label" x="665" y="201">penalty T3→M1 changes from 1 to 5</text>
+  <text class="cost" x="665" y="229">cost 7</text>
+  <text class="value" x="665" y="252">T1→M1   T2→M2   T3→M2</text>
 
-  <rect class="step" x="698" y="56" width="206" height="238" />
-  <text class="step-title" x="712" y="82">4) Assumption removed</text>
-  <rect class="tag-persist" x="712" y="92" width="128" height="20" />
-  <text class="tag-text-persist" x="722" y="106">model state</text>
-  <text class="label" x="712" y="132">cost</text>
-  <text class="value" x="766" y="132">5</text>
-  <text class="label" x="712" y="154">T1</text><text class="value" x="766" y="154">M1</text>
-  <text class="label" x="712" y="174">T2</text><text class="value" x="766" y="174">M2</text>
-  <text class="label" x="712" y="194">T3</text><text class="value" x="766" y="194">M1</text>
-  <text class="subtitle" x="712" y="224">reverts assumption only</text>
+  <path class="arrow" d="M273,195 L343,195"/>
+  <path class="arrow" d="M578,195 L648,195"/>
 
-  <rect class="step" x="924" y="56" width="236" height="238" />
-  <text class="step-title" x="938" y="82">5) Replace objective</text>
-  <rect class="tag-persist" x="938" y="92" width="144" height="20" />
-  <text class="tag-text-persist" x="948" y="106">persistent update</text>
-  <text class="label" x="938" y="132">change</text>
-  <text class="value" x="1002" y="132">penalty(T3=M1): 1→5</text>
-  <text class="label" x="938" y="154">cost</text>
-  <text class="value" x="1002" y="154">7</text>
-  <text class="label" x="938" y="174">T1</text><text class="value" x="1002" y="174">M1</text>
-  <text class="label" x="938" y="194">T2</text><text class="value" x="1002" y="194">M2</text>
-  <text class="label" x="938" y="214">T3</text><text class="value" x="1002" y="214">M2</text>
+  <text class="section" x="38" y="316">TEMPORARY WHAT-IF QUERY</text>
+  <rect class="query" x="343" y="335" width="235" height="139" rx="9"/>
+  <rect class="tag-temporary" x="360" y="350" width="154" height="20" rx="9"/>
+  <text class="tag-text-temp" x="371" y="364">ONE SOLVE CALL ONLY</text>
+  <text class="query-title" x="360" y="393">Assume T1→M2 (r3)</text>
+  <text class="query-cost" x="360" y="420">cost 7</text>
+  <text class="value" x="360" y="445">T1→M2   T2→M2   T3→M1</text>
+  <text class="label" x="360" y="463">the hard rule still applies</text>
 
+  <path class="dash-arrow" d="M460,273 L460,335"/>
+  <text class="arrow-label-temp" x="478" y="311">solve with assumption</text>
+  <path class="dash-arrow" d="M578,404 C618,404 618,278 578,278"/>
+  <text class="arrow-label-temp" x="603" y="356">discard assumption</text>
+  <text class="label" x="603" y="374">next solve returns to r2 state</text>
+
+  <text class="section" x="38" y="513">SOLVE TRANSCRIPT</text>
+  <text class="table-head" x="55" y="538">CALL</text>
+  <text class="table-head" x="143" y="538">MODEL / QUERY CHANGE</text>
+  <text class="table-head" x="495" y="538">COST</text>
+  <text class="table-head" x="574" y="538">ASSIGNMENT</text>
+  <line class="rule" x1="38" y1="546" x2="883" y2="546"/>
+  <rect class="row" x="38" y="552" width="845" height="20" rx="3"/>
+  <text class="table-text" x="55" y="566">r1</text><text class="table-text" x="143" y="566">baseline</text><text class="table-text" x="495" y="566">3</text><text class="table-text" x="574" y="566">T1→M1, T2→M1, T3→M1</text>
+  <rect class="row" x="38" y="576" width="845" height="20" rx="3"/>
+  <text class="table-text" x="55" y="590">r2</text><text class="table-text" x="143" y="590">add hard rule</text><text class="table-text" x="495" y="590">5</text><text class="table-text" x="574" y="590">T1→M1, T2→M2, T3→M1</text>
+  <rect class="row-temp" x="38" y="600" width="845" height="20" rx="3"/>
+  <text class="table-text" x="55" y="614">r3</text><text class="table-text" x="143" y="614">assume T1→M2</text><text class="table-text" x="495" y="614">7</text><text class="table-text" x="574" y="614">T1→M2, T2→M2, T3→M1</text>
+  <rect class="row" x="38" y="624" width="845" height="20" rx="3"/>
+  <text class="table-text" x="55" y="638">r4</text><text class="table-text" x="143" y="638">assumption removed</text><text class="table-text" x="495" y="638">5</text><text class="table-text" x="574" y="638">T1→M1, T2→M2, T3→M1</text>
+  <rect class="row" x="38" y="648" width="845" height="20" rx="3"/>
+  <text class="table-text" x="55" y="662">r5</text><text class="table-text" x="143" y="662">replace objective</text><text class="table-text" x="495" y="662">7</text><text class="table-text" x="574" y="662">T1→M1, T2→M2, T3→M2</text>
 </svg>

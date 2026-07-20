@@ -1,65 +1,70 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 300" role="img" aria-label="Floating objective budgeting problem">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 430" role="img" aria-labelledby="title desc">
+  <title id="title">Floating-point objective: capital budgeting model</title>
+  <desc id="desc">Four projects have integer developer-month requirements and fractional ROI values. The model has capacity 18 and minimizes the ROI missed by unfunded projects.</desc>
   <style>
-    :root {
-      --ink: #1c1b1a;
-      --muted: #6c655c;
-      --stroke: rgba(74, 64, 54, 0.22);
-      --panel: rgba(244, 239, 232, 0.82);
-      --accent: #146356;
-      --accent-bg: rgba(20, 99, 86, 0.12);
-    }
-
+    text { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif; fill: #252a2b; }
+    .heading { font-size: 19px; font-weight: 700; }
+    .subheading { font-size: 13px; fill: #5f686a; }
+    .section { font-size: 12px; font-weight: 700; letter-spacing: 1.1px; fill: #4d6465; }
+    .project { fill: #f7f8f6; stroke: #c9d0ce; stroke-width: 1.2; }
+    .name { font-size: 16px; font-weight: 700; }
+    .detail { font-size: 13px; fill: #566062; }
+    .roi { font-size: 15px; font-weight: 700; fill: #315f60; }
+    .panel { fill: #f2f5f3; stroke: #b9c5c2; stroke-width: 1.2; }
+    .formula { font-family: "STIX Two Text", "Cambria Math", serif; font-size: 17px; fill: #263a3b; }
+    .explain { font-size: 13px; fill: #4b5557; }
+    .small { font-size: 12px; fill: #687173; }
+    .line { stroke: #9eaead; stroke-width: 1.2; }
+    .capacity { fill: #dce6e2; stroke: #78908d; stroke-width: 1.2; }
+    .capacity-label { font-size: 13px; font-weight: 700; fill: #315f60; }
+    .canvas { fill: #ffffff; }
     @media (prefers-color-scheme: dark) {
-      :root {
-        --ink: #f4efe6;
-        --muted: #cbbca8;
-        --stroke: rgba(255, 255, 255, 0.16);
-        --panel: rgba(36, 35, 33, 0.88);
-        --accent: #4fd2b5;
-        --accent-bg: rgba(79, 210, 181, 0.16);
-      }
+      .canvas { fill: #1f2120; }
+      text, .heading, .name, .formula { fill: #f4efe6; }
+      .subheading, .detail, .explain, .small { fill: #cbbca8; }
+      .section, .roi, .capacity-label { fill: #82c2b6; }
+      .project { fill: #292b2a; stroke: #535a57; }
+      .panel { fill: #292b2a; stroke: #586560; }
+      .capacity { fill: #273632; stroke: #71918b; }
+      .line { stroke: #6d7d78; }
     }
-
-    text {
-      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
-    }
-
-    .title { font-size: 15px; font-weight: 700; fill: var(--ink); }
-    .subtitle { font-size: 13px; fill: var(--muted); }
-    .card { fill: var(--panel); stroke: var(--stroke); stroke-width: 1.4; rx: 16; }
-    .name { font-size: 18px; font-weight: 700; fill: var(--ink); }
-    .meta { font-size: 13px; fill: var(--muted); }
-    .rule { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.5; rx: 16; }
-    .rule-title { font-size: 14px; font-weight: 700; fill: var(--accent); }
-    .rule-text { font-size: 13px; fill: var(--ink); }
   </style>
 
-  <text class="title" x="38" y="28">Capital Budgeting Instance</text>
-  <text class="subtitle" x="236" y="28">maximize ROI under integer developer-month capacity</text>
+  <rect class="canvas" width="920" height="430"/>
+  <text class="heading" x="38" y="38">Capital budgeting with a fractional objective</text>
+  <text class="subheading" x="38" y="61">Choose projects under an integer developer-month budget; ROI remains in millions of USD.</text>
 
-  <rect class="card" x="38" y="52" width="185" height="132" />
-  <text class="name" x="56" y="86">Alpha</text>
-  <text class="meta" x="56" y="115">dev-months: 5</text>
-  <text class="meta" x="56" y="140">ROI (M USD): 1.25</text>
+  <text class="section" x="38" y="98">PROJECT DATA</text>
+  <rect class="project" x="38" y="112" width="198" height="104" rx="8"/>
+  <text class="name" x="56" y="140">Alpha</text>
+  <text class="detail" x="56" y="166">5 developer-months</text>
+  <text class="roi" x="56" y="194">ROI 1.25 M</text>
 
-  <rect class="card" x="240" y="52" width="185" height="132" />
-  <text class="name" x="258" y="86">Beta</text>
-  <text class="meta" x="258" y="115">dev-months: 8</text>
-  <text class="meta" x="258" y="140">ROI (M USD): 3.40</text>
+  <rect class="project" x="253" y="112" width="198" height="104" rx="8"/>
+  <text class="name" x="271" y="140">Beta</text>
+  <text class="detail" x="271" y="166">8 developer-months</text>
+  <text class="roi" x="271" y="194">ROI 3.40 M</text>
 
-  <rect class="card" x="442" y="52" width="185" height="132" />
-  <text class="name" x="460" y="86">Gamma</text>
-  <text class="meta" x="460" y="115">dev-months: 6</text>
-  <text class="meta" x="460" y="140">ROI (M USD): 2.10</text>
+  <rect class="project" x="468" y="112" width="198" height="104" rx="8"/>
+  <text class="name" x="486" y="140">Gamma</text>
+  <text class="detail" x="486" y="166">6 developer-months</text>
+  <text class="roi" x="486" y="194">ROI 2.10 M</text>
 
-  <rect class="card" x="644" y="52" width="185" height="132" />
-  <text class="name" x="662" y="86">Delta</text>
-  <text class="meta" x="662" y="115">dev-months: 7</text>
-  <text class="meta" x="662" y="140">ROI (M USD): 2.80</text>
+  <rect class="project" x="683" y="112" width="198" height="104" rx="8"/>
+  <text class="name" x="701" y="140">Delta</text>
+  <text class="detail" x="701" y="166">7 developer-months</text>
+  <text class="roi" x="701" y="194">ROI 2.80 M</text>
 
-  <rect class="rule" x="38" y="205" width="791" height="58" />
-  <text class="rule-title" x="56" y="229">Constraint</text>
-  <text class="rule-text" x="140" y="229">Total developer-months of funded projects must be at most 18.</text>
-  <text class="rule-title" x="56" y="250">Objective</text>
-  <text class="rule-text" x="140" y="250">Minimize missed ROI (equivalently maximize selected ROI).</text>
+  <rect class="capacity" x="38" y="239" width="843" height="43" rx="7"/>
+  <text class="capacity-label" x="56" y="266">Hard constraint</text>
+  <text class="explain" x="179" y="266">selected developer-months ≤ 18</text>
+  <line class="line" x1="432" y1="251" x2="432" y2="271"/>
+  <text class="capacity-label" x="456" y="266">Decision variables</text>
+  <text class="explain" x="586" y="266">fund[p] ∈ {false, true}</text>
+
+  <text class="section" x="38" y="317">FRACTIONAL SOFT OBJECTIVE</text>
+  <rect class="panel" x="38" y="331" width="843" height="69" rx="8"/>
+  <text class="formula" x="58" y="360">minimize  Σₚ ROIₚ · [¬fund[p]]</text>
+  <text class="explain" x="58" y="384">Each fractional ROI weight is paid only when its project is not funded: this is missed ROI.</text>
+  <text class="small" x="580" y="360">equivalently: maximize selected ROI</text>
 </svg>
