@@ -57,6 +57,7 @@ autodoc_mock_imports = [
     'hermax.core.nuwls_c_ibr',
     'hermax.core.loandra',
     'hermax.internal._pblib',
+    'hermax.internal._pbamo',
     'hermax_pycard',
     'fast_wcnf_loader_capi',
 ]
