@@ -22,22 +22,44 @@ def _boolsum(xs):
     return out
 
 
-def _exists_sat_upper(n: int, k: int, mcoef: int) -> bool:
-    # sum(x) <= k + mcoef*y
-    for y in (0, 1):
-        for bits in itertools.product((0, 1), repeat=n):
-            if sum(bits) <= k + mcoef * y:
-                return True
-    return False
+def _compare(lhs, op: str, rhs):
+    if op == "<=":
+        return lhs <= rhs
+    if op == "<":
+        return lhs < rhs
+    if op == ">=":
+        return lhs >= rhs
+    if op == ">":
+        return lhs > rhs
+    raise ValueError(f"Unsupported comparator {op!r}")
 
 
-def _exists_sat_lower(n: int, k: int, mcoef: int) -> bool:
-    # sum(x) >= k - mcoef*(1-y)  == sum(x) >= (k-mcoef) + mcoef*y
-    for y in (0, 1):
-        for bits in itertools.product((0, 1), repeat=n):
-            if sum(bits) >= (k - mcoef) + mcoef * y:
-                return True
-    return False
+def _eval_compare(lhs: int, op: str, rhs: int) -> bool:
+    if op == "<=":
+        return lhs <= rhs
+    if op == "<":
+        return lhs < rhs
+    if op == ">=":
+        return lhs >= rhs
+    if op == ">":
+        return lhs > rhs
+    raise ValueError(f"Unsupported comparator {op!r}")
+
+
+def _assert_gated_bound_points(n: int, k: int, mcoef: int, op: str, *, lower: bool) -> None:
+    """Check every input assignment, rather than merely existence of a model."""
+    for gate, bits in itertools.product((False, True), itertools.product((False, True), repeat=n)):
+        m = Model()
+        xs = [m.bool(f"x{i}") for i in range(n)]
+        y = m.bool("y")
+        lhs = _boolsum(xs)
+        rhs = (k - mcoef) + mcoef * y if lower else k + mcoef * y
+        m &= _compare(lhs, op, rhs)
+        m &= y if gate else ~y
+        for lit, bit in zip(xs, bits):
+            m &= lit if bit else ~lit
+        expected = _eval_compare(sum(bits), op, (k - mcoef if lower else k) + mcoef * int(gate))
+        assert _solve(m).ok == expected, (n, k, mcoef, op, lower, gate, bits, expected)
 
 
 @pytest.mark.parametrize("n,k,mcoef", [
@@ -51,13 +73,7 @@ def _exists_sat_lower(n: int, k: int, mcoef: int) -> bool:
     (5, 4, 1),
 ])
 def test_upper_gated_bound_matches_bruteforce(n: int, k: int, mcoef: int):
-    m = Model()
-    xs = [m.bool(f"x{i}") for i in range(n)]
-    y = m.bool("y")
-    m &= (_boolsum(xs) <= (k + mcoef * y))
-    r = _solve(m)
-    expected = _exists_sat_upper(n, k, mcoef)
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_gated_bound_points(n, k, mcoef, "<=", lower=False)
 
 
 @pytest.mark.parametrize("n,k,mcoef", [
@@ -71,13 +87,7 @@ def test_upper_gated_bound_matches_bruteforce(n: int, k: int, mcoef: int):
     (5, 4, 1),
 ])
 def test_lower_gated_bound_matches_bruteforce(n: int, k: int, mcoef: int):
-    m = Model()
-    xs = [m.bool(f"x{i}") for i in range(n)]
-    y = m.bool("y")
-    m &= (_boolsum(xs) >= ((k - mcoef) + mcoef * y))
-    r = _solve(m)
-    expected = _exists_sat_lower(n, k, mcoef)
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_gated_bound_points(n, k, mcoef, ">=", lower=True)
 
 
 @pytest.mark.parametrize("n", [4, 5, 6])
@@ -167,18 +177,7 @@ def test_lower_bound_when_y_true_is_tighter(n: int, k: int, mcoef: int):
     (5, 3, 2),
 ])
 def test_strict_upper_gated_bound_semantics(n: int, k: int, mcoef: int):
-    # sum(x) < k + M*y
-    m = Model()
-    xs = [m.bool(f"x{i}") for i in range(n)]
-    y = m.bool("y")
-    m &= (_boolsum(xs) < (k + mcoef * y))
-    r = _solve(m)
-    expected = any(
-        sum(bits) < (k + mcoef * yy)
-        for yy in (0, 1)
-        for bits in itertools.product((0, 1), repeat=n)
-    )
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_gated_bound_points(n, k, mcoef, "<", lower=False)
 
 
 @pytest.mark.parametrize("n,k,mcoef", [
@@ -187,18 +186,7 @@ def test_strict_upper_gated_bound_semantics(n: int, k: int, mcoef: int):
     (5, 3, 2),
 ])
 def test_strict_lower_gated_bound_semantics(n: int, k: int, mcoef: int):
-    # sum(x) > (k - M) + M*y
-    m = Model()
-    xs = [m.bool(f"x{i}") for i in range(n)]
-    y = m.bool("y")
-    m &= (_boolsum(xs) > ((k - mcoef) + mcoef * y))
-    r = _solve(m)
-    expected = any(
-        sum(bits) > ((k - mcoef) + mcoef * yy)
-        for yy in (0, 1)
-        for bits in itertools.product((0, 1), repeat=n)
-    )
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_gated_bound_points(n, k, mcoef, ">", lower=True)
 
 
 @pytest.mark.parametrize("n", [4, 5, 6])

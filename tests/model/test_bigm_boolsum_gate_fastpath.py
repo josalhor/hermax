@@ -21,13 +21,44 @@ def _boolsum(xs):
     return expr
 
 
-def _sat_expected_sum_le_m_y(n: int, mcoef: int) -> bool:
-    # Exists assignment over x_1..x_n and y with: sum(x) <= mcoef * y.
-    for y in (0, 1):
-        for bits in itertools.product((0, 1), repeat=n):
-            if sum(bits) <= mcoef * y:
-                return True
-    return False
+def _compare(lhs, op: str, rhs):
+    if op == "<=":
+        return lhs <= rhs
+    if op == "<":
+        return lhs < rhs
+    if op == ">=":
+        return lhs >= rhs
+    if op == ">":
+        return lhs > rhs
+    raise ValueError(f"Unsupported comparator {op!r}")
+
+
+def _eval_compare(lhs: int, op: str, rhs: int) -> bool:
+    if op == "<=":
+        return lhs <= rhs
+    if op == "<":
+        return lhs < rhs
+    if op == ">=":
+        return lhs >= rhs
+    if op == ">":
+        return lhs > rhs
+    raise ValueError(f"Unsupported comparator {op!r}")
+
+
+def _assert_sum_gate_points(n: int, mcoef: int, op: str, *, swapped: bool = False) -> None:
+    flipped = {"<=": ">=", "<": ">"}[op]
+    for gate, bits in itertools.product((False, True), itertools.product((False, True), repeat=n)):
+        m = Model()
+        xs = [m.bool(f"x{i}") for i in range(n)]
+        y = m.bool("y")
+        lhs = _boolsum(xs)
+        rhs = mcoef * y
+        m &= _compare(rhs, flipped, lhs) if swapped else _compare(lhs, op, rhs)
+        m &= y if gate else ~y
+        for lit, bit in zip(xs, bits):
+            m &= lit if bit else ~lit
+        expected = _eval_compare(sum(bits), op, mcoef * int(gate))
+        assert _solve(m).ok == expected, (n, mcoef, op, swapped, gate, bits, expected)
 
 
 @pytest.mark.parametrize("n,mcoef", [
@@ -46,13 +77,7 @@ def _sat_expected_sum_le_m_y(n: int, mcoef: int) -> bool:
     (4, 4),
 ])
 def test_sum_le_m_times_y_matches_bruteforce(n: int, mcoef: int):
-    m = Model()
-    xs = [m.bool(f"x{i}") for i in range(n)]
-    y = m.bool("y")
-    m &= (_boolsum(xs) <= mcoef * y)
-    r = _solve(m)
-    expected = _sat_expected_sum_le_m_y(n, mcoef)
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_sum_gate_points(n, mcoef, "<=")
 
 
 @pytest.mark.parametrize("n", [3, 4, 5])
@@ -130,17 +155,7 @@ def test_sum_le_m_times_y_y_true_allows_up_to_m(n: int, mcoef: int):
     (5, 3),
 ])
 def test_sum_strict_lt_m_times_y_semantics(n: int, mcoef: int):
-    m = Model()
-    xs = [m.bool(f"x{i}") for i in range(n)]
-    y = m.bool("y")
-    m &= (_boolsum(xs) < mcoef * y)
-    r = _solve(m)
-    expected = any(
-        sum(bits) < (mcoef * yy)
-        for yy in (0, 1)
-        for bits in itertools.product((0, 1), repeat=n)
-    )
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_sum_gate_points(n, mcoef, "<")
 
 
 @pytest.mark.parametrize("n,mcoef", [
@@ -149,12 +164,7 @@ def test_sum_strict_lt_m_times_y_semantics(n: int, mcoef: int):
     (5, 3),
 ])
 def test_swapped_orientation_m_times_y_ge_sum_supported(n: int, mcoef: int):
-    m = Model()
-    xs = [m.bool(f"x{i}") for i in range(n)]
-    y = m.bool("y")
-    m &= (mcoef * y >= _boolsum(xs))
-    r = _solve(m)
-    assert r.ok
+    _assert_sum_gate_points(n, mcoef, "<=", swapped=True)
 
 
 @pytest.mark.parametrize("n", [3, 4, 5])

@@ -386,19 +386,29 @@ def test_bool_sum_intvar_inequalities_match_bruteforce_sat(op, lb, ub, n_lits, o
 
 @pytest.mark.parametrize("op", ["<=", ">=", "<", ">"])
 def test_bool_sum_intvar_inequalities_swapped_sides_equivalent(op):
-    m1 = Model()
-    x1 = m1.int("x", -1, 6)
-    b1 = [m1.bool(f"b{i}") for i in range(4)]
-    m1 &= _constraint_builder_op(x1, b1, op=op, offset_x=1, offset_s=2, swapped=False)
-    r1 = _solve(m1)
+    # Reversing sides requires reversing the relation: x OP sum iff
+    # sum flip(OP) x. Pin every small-domain assignment so a satisfiable
+    # witness cannot hide a directional encoding error.
+    flipped = {"<=": ">=", ">=": "<=", "<": ">", ">": "<"}[op]
+    for xv in range(-1, 3):
+        for bits in itertools.product([0, 1], repeat=3):
+            m1 = Model()
+            x1 = m1.int("x", -1, 6)
+            b1 = [m1.bool(f"b{i}") for i in range(3)]
+            m1 &= _constraint_builder_op(x1, b1, op=op, offset_x=1, offset_s=2)
+            m1 &= (x1 == xv)
+            for lit, bit in zip(b1, bits):
+                m1 &= lit if bit else ~lit
 
-    m2 = Model()
-    x2 = m2.int("x", -1, 6)
-    b2 = [m2.bool(f"b{i}") for i in range(4)]
-    m2 &= _constraint_builder_op(x2, b2, op=op, offset_x=1, offset_s=2, swapped=True)
-    r2 = _solve(m2)
+            m2 = Model()
+            x2 = m2.int("x", -1, 6)
+            b2 = [m2.bool(f"b{i}") for i in range(3)]
+            m2 &= _constraint_builder_op(x2, b2, op=flipped, offset_x=1, offset_s=2, swapped=True)
+            m2 &= (x2 == xv)
+            for lit, bit in zip(b2, bits):
+                m2 &= lit if bit else ~lit
 
-    assert r1.status == r2.status
+            assert _solve(m1).status == _solve(m2).status, (op, xv, bits)
 
 
 @pytest.mark.parametrize("op", ["<=", ">=", "<", ">"])

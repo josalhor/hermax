@@ -27,14 +27,6 @@ def _cmp(lhs: int, op: str, rhs: int) -> bool:
     raise ValueError(op)
 
 
-def _exists_sat(a: int, b: int, w: int, op: str, k: int, *, neg_lit: bool) -> bool:
-    for xv, yv, bv in itertools.product(range(0, 4), range(0, 4), (0, 1)):
-        bit = (1 - bv) if neg_lit else bv
-        if _cmp(a * xv + b * yv + w * bit, op, k):
-            return True
-    return False
-
-
 def _post_rel(m: Model, lhs, op: str, rhs) -> None:
     if op == "<=":
         m &= (lhs <= rhs)
@@ -60,15 +52,19 @@ def _post_rel(m: Model, lhs, op: str, rhs) -> None:
 ])
 @pytest.mark.parametrize("neg_lit", [False, True])
 def test_bivariate_bool_fastpath_matches_bruteforce_small_domains(op: str, a: int, b: int, w: int, k: int, neg_lit: bool):
-    m = Model()
-    x = m.int("x", 0, 4)
-    y = m.int("y", 0, 4)
-    bit = m.bool("bit")
-    lit = (~bit) if neg_lit else bit
-    _post_rel(m, a * x + b * y + w * lit, op, k)
-    r = m.solve()
-    expected = _exists_sat(a, b, w, op, k, neg_lit=neg_lit)
-    assert (r.ok if expected else r.status == "unsat")
+    for xv, yv, bit_value in itertools.product(range(5), range(5), (False, True)):
+        m = Model()
+        x = m.int("x", 0, 4)
+        y = m.int("y", 0, 4)
+        bit = m.bool("bit")
+        lit = (~bit) if neg_lit else bit
+        _post_rel(m, a * x + b * y + w * lit, op, k)
+        m &= (x == xv)
+        m &= (y == yv)
+        m &= bit if bit_value else ~bit
+        literal_value = int(not bit_value) if neg_lit else int(bit_value)
+        expected = _cmp(a * xv + b * yv + w * literal_value, op, k)
+        assert m.solve().ok == expected, (op, a, b, w, k, neg_lit, xv, yv, bit_value)
 
 
 def test_bivariate_bool_fastpath_bypasses_pb_and_card_encoders(monkeypatch):

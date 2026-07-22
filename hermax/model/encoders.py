@@ -1157,8 +1157,10 @@ class _EncoderDispatch:
             # -> sum(lits) OP (rhs_const - sum_const) + mcoef * ind_lit
             k = rhs_const - sum_const
 
-            bound_false = k + (mcoef if not ind_lit.polarity else 0)
-            bound_true = k + (0 if not ind_lit.polarity else mcoef)
+            # The branch literal is already used as the gate below. Its
+            # syntactic polarity must not change the value of ``m * lit``.
+            bound_false = k
+            bound_true = k + mcoef
 
             clauses: list[Clause] = []
             ge_cache: list[bool | Literal] | None = None
@@ -1283,8 +1285,10 @@ class _EncoderDispatch:
             # a*x + sum + c_left OP c_right + mcoef*lit
             # -> a*x + sum OP (c_right - c_left) + mcoef*lit
             base = c_right - c_left
-            b_false = base + (mcoef if not lit.polarity else 0)
-            b_true = base + (0 if not lit.polarity else mcoef)
+            # ``~lit`` selects the zero contribution and ``lit`` selects
+            # the full ``mcoef`` contribution, regardless of lit polarity.
+            b_false = base
+            b_true = base + mcoef
 
             clauses: list[Clause] = []
             ge_cache: list[bool | Literal] | None = None
@@ -1402,7 +1406,12 @@ class _EncoderDispatch:
         if op not in ("==", "<=", ">=", "<", ">"):
             return None
 
-        def try_orient(int_items: list[tuple[IntVar, int]], int_off: int, bool_expr: PBExpr) -> ClauseGroup | None:
+        def try_orient(
+            int_items: list[tuple[IntVar, int]],
+            int_off: int,
+            bool_expr: PBExpr,
+            cmp_op: str,
+        ) -> ClauseGroup | None:
             if len(int_items) != 1:
                 return None
             x, a = int_items[0]
@@ -1415,7 +1424,7 @@ class _EncoderDispatch:
 
             # x + int_off == sum(bool_lits) + bool_off
             shift = bool_off - int_off
-            eff_op = op
+            eff_op = cmp_op
             if eff_op == "<":
                 # x < sum  <=>  x+1 <= sum
                 eff_op = "<="
@@ -1450,14 +1459,16 @@ class _EncoderDispatch:
         left = _EncoderDispatch._extract_multi_int_affine(model, lhs)
         if left is not None:
             litems, loff = left
-            out = try_orient(litems, loff, rhs)
+            out = try_orient(litems, loff, rhs, op)
             if out is not None:
                 return out
 
         right = _EncoderDispatch._extract_multi_int_affine(model, rhs)
         if right is not None:
             ritems, roff = right
-            out = try_orient(ritems, roff, lhs)
+            # sum OP int  <=>  int flip(OP) sum.
+            swapped = {"<=": ">=", "<": ">", ">=": "<=", ">": "<", "==": "=="}
+            out = try_orient(ritems, roff, lhs, swapped[op])
             if out is not None:
                 return out
 

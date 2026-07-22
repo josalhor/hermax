@@ -75,7 +75,7 @@ def test_model_scale_accepts_lazy_input_and_chains():
 
 @pytest.mark.parametrize("factor", [1, 2, 3, 4, 5])
 def test_model_scale_exactness_exhaustive_small_positive(factor):
-    for xv in range(0, 8):
+    for xv in range(0, 9):
         m = Model()
         x = m.int("x", 0, 8)
         y = m.scale(x, factor, name="y")
@@ -86,7 +86,7 @@ def test_model_scale_exactness_exhaustive_small_positive(factor):
 
 @pytest.mark.parametrize("factor", [2, 3, 4])
 def test_model_scale_exactness_exhaustive_small_negative_domain(factor):
-    for xv in range(-4, 5):
+    for xv in range(-4, 6):
         m = Model()
         x = m.int("x", -4, 5)
         y = m.scale(x, factor, name="y")
@@ -100,7 +100,7 @@ def test_model_scale_partition_property_for_exact_values(factor):
     m = Model()
     x = m.int("x", 0, 9)
     y = m.scale(x, factor, name="y")
-    for xv in range(0, 9):
+    for xv in range(0, 10):
         mm = Model()
         xx = mm.int("x", 0, 9)
         yy = mm.scale(xx, factor, name="y")
@@ -145,7 +145,7 @@ def test_int_scale_composes_in_pb_constraint_via_lazy_realization():
 
 
 def test_int_scale_factor_one_preserves_exact_value_through_lazy_path():
-    for xv in range(-3, 4):
+    for xv in range(-3, 5):
         m = Model()
         x = m.int("x", -3, 4)
         y = x.scale(1)
@@ -174,8 +174,8 @@ def test_model_scale_can_be_added_to_objective_and_realizes():
 
 @pytest.mark.parametrize("op", ["<=", "<", ">=", ">", "=="])
 def test_pb_fastpath_scaled_intvar_relations_match_truth_table_same_domain(op):
-    for xv in range(0, 6):
-        for yv in range(0, 18):
+    for xv in range(0, 7):
+        for yv in range(0, 19):
             m = Model()
             x = m.int("x", 0, 6)
             y = m.int("y", 0, 18)

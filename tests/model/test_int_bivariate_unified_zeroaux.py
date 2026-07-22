@@ -58,14 +58,14 @@ def _constrain_expr(m: Model, x, y, a: int, b: int, op: str, c: int):
 ])
 def test_unified_bivariate_fastpath_matches_bruteforce_small_domains(op: str, a: int, b: int, c: int):
     dom = range(0, 6)
-    expected = any(_cmp(a * xv + b * yv, op, c) for xv, yv in itertools.product(dom, dom))
-
-    m = Model()
-    x = m.int("x", 0, 5)
-    y = m.int("y", 0, 5)
-    _constrain_expr(m, x, y, a, b, op, c)
-    r = _solve(m)
-    assert (r.ok if expected else r.status == "unsat")
+    for xv, yv in itertools.product(dom, dom):
+        m = Model()
+        x = m.int("x", 0, 5)
+        y = m.int("y", 0, 5)
+        _constrain_expr(m, x, y, a, b, op, c)
+        m &= (x == xv)
+        m &= (y == yv)
+        assert _solve(m).ok == _cmp(a * xv + b * yv, op, c), (op, a, b, c, xv, yv)
 
 
 @pytest.mark.parametrize("op", OPS)
@@ -74,13 +74,14 @@ def test_unified_bivariate_fastpath_matches_bruteforce_shifted_domains(op: str, 
     xdom = range(-2, 5)
     ydom = range(5, 11)
     for c in (-12, -3, 0, 4, 9, 17):
-        expected = any(_cmp(a * xv + b * yv, op, c) for xv, yv in itertools.product(xdom, ydom))
-        m = Model()
-        x = m.int("x", -2, 4)
-        y = m.int("y", 5, 10)
-        _constrain_expr(m, x, y, a, b, op, c)
-        r = _solve(m)
-        assert (r.ok if expected else r.status == "unsat"), (op, a, b, c)
+        for xv, yv in itertools.product(xdom, ydom):
+            m = Model()
+            x = m.int("x", -2, 4)
+            y = m.int("y", 5, 10)
+            _constrain_expr(m, x, y, a, b, op, c)
+            m &= (x == xv)
+            m &= (y == yv)
+            assert _solve(m).ok == _cmp(a * xv + b * yv, op, c), (op, a, b, c, xv, yv)
 
 
 @pytest.mark.parametrize("expr_builder", [
@@ -191,25 +192,34 @@ def test_unified_bivariate_fastpath_point_witness_cases(a, b, op, c, xv, yv):
 
 @pytest.mark.parametrize("a,b,c", [(1,1,5), (2,3,17), (-2,3,4), (3,-1,7)])
 def test_unified_bivariate_fastpath_stricts_equivalent_to_shifted_nonstrict(a: int, b: int, c: int):
-    dom = range(0, 5)
-    # Compare semantics only via brute force, ensuring strict lowering is correct.
-    lt_expected = any((a*x + b*y) < c for x, y in itertools.product(dom, dom))
-    gt_expected = any((a*x + b*y) > c for x, y in itertools.product(dom, dom))
+    dom = range(0, 6)
+    for xv, yv in itertools.product(dom, dom):
+        m_lt = Model(); x_lt = m_lt.int('x', 0, 5); y_lt = m_lt.int('y', 0, 5)
+        _constrain_expr(m_lt, x_lt, y_lt, a, b, '<', c)
+        m_lt &= (x_lt == xv); m_lt &= (y_lt == yv)
+        m_le = Model(); x_le = m_le.int('x', 0, 5); y_le = m_le.int('y', 0, 5)
+        _constrain_expr(m_le, x_le, y_le, a, b, '<=', c - 1)
+        m_le &= (x_le == xv); m_le &= (y_le == yv)
+        assert _solve(m_lt).ok == _solve(m_le).ok, ('<', a, b, c, xv, yv)
 
-    m1 = Model(); x1 = m1.int('x',0,5); y1 = m1.int('y',0,5); _constrain_expr(m1,x1,y1,a,b,'<',c)
-    m2 = Model(); x2 = m2.int('x',0,5); y2 = m2.int('y',0,5); _constrain_expr(m2,x2,y2,a,b,'>',c)
-    r1 = _solve(m1); r2 = _solve(m2)
-    assert (r1.ok if lt_expected else r1.status == 'unsat')
-    assert (r2.ok if gt_expected else r2.status == 'unsat')
+        m_gt = Model(); x_gt = m_gt.int('x', 0, 5); y_gt = m_gt.int('y', 0, 5)
+        _constrain_expr(m_gt, x_gt, y_gt, a, b, '>', c)
+        m_gt &= (x_gt == xv); m_gt &= (y_gt == yv)
+        m_ge = Model(); x_ge = m_ge.int('x', 0, 5); y_ge = m_ge.int('y', 0, 5)
+        _constrain_expr(m_ge, x_ge, y_ge, a, b, '>=', c + 1)
+        m_ge &= (x_ge == xv); m_ge &= (y_ge == yv)
+        assert _solve(m_gt).ok == _solve(m_ge).ok, ('>', a, b, c, xv, yv)
 
 
 @pytest.mark.parametrize("a,b,c", [(1,1,4), (2,-3,1), (3,2,11), (-2,-1,-4)])
 def test_unified_bivariate_fastpath_equality_matches_double_inequality(a: int, b: int, c: int):
-    dom = range(0, 5)
-    expected = any((a*x + b*y) == c for x, y in itertools.product(dom, dom))
-
-    m_eq = Model(); x = m_eq.int('x',0,5); y = m_eq.int('y',0,5); _constrain_expr(m_eq,x,y,a,b,'==',c)
-    m_dbl = Model(); x2 = m_dbl.int('x',0,5); y2 = m_dbl.int('y',0,5); _constrain_expr(m_dbl,x2,y2,a,b,'<=',c); _constrain_expr(m_dbl,x2,y2,a,b,'>=',c)
-    r_eq = _solve(m_eq); r_dbl = _solve(m_dbl)
-    assert (r_eq.ok if expected else r_eq.status == 'unsat')
-    assert (r_dbl.ok if expected else r_dbl.status == 'unsat')
+    dom = range(0, 6)
+    for xv, yv in itertools.product(dom, dom):
+        m_eq = Model(); x = m_eq.int('x', 0, 5); y = m_eq.int('y', 0, 5)
+        _constrain_expr(m_eq, x, y, a, b, '==', c)
+        m_eq &= (x == xv); m_eq &= (y == yv)
+        m_dbl = Model(); x2 = m_dbl.int('x', 0, 5); y2 = m_dbl.int('y', 0, 5)
+        _constrain_expr(m_dbl, x2, y2, a, b, '<=', c)
+        _constrain_expr(m_dbl, x2, y2, a, b, '>=', c)
+        m_dbl &= (x2 == xv); m_dbl &= (y2 == yv)
+        assert _solve(m_eq).ok == _solve(m_dbl).ok, (a, b, c, xv, yv)

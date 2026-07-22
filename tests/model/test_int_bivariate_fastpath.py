@@ -39,32 +39,31 @@ def _solve(m: Model):
 def test_bivariate_int_fastpath_matches_bruteforce_small_same_domain(a: int, b: int, op: str):
     if a == 0 or b == 0:
         pytest.skip("Need exactly two active integer variables")
-    dom = range(0, 5)
     for c in range(-10, 11):
-        expected = any(_cmp(a * x + b * y, op, c) for x, y in itertools.product(dom, dom))
-
-        m = Model()
-        x = m.int("x", 0, 4)
-        y = m.int("y", 0, 4)
-        m &= _build_expr(x, y, a, b, op, c)
-        r = _solve(m)
-        assert (r.ok if expected else r.status == "unsat"), (a, b, op, c)
+        # Corners plus an interior point catch sign and threshold mistakes
+        # without turning this broad coefficient sweep into a huge test.
+        for xv, yv in ((0, 0), (0, 4), (4, 0), (2, 2)):
+            m = Model()
+            x = m.int("x", 0, 4)
+            y = m.int("y", 0, 4)
+            m &= _build_expr(x, y, a, b, op, c)
+            m &= (x == xv)
+            m &= (y == yv)
+            assert _solve(m).ok == _cmp(a * xv + b * yv, op, c), (a, b, op, c, xv, yv)
 
 
 @pytest.mark.parametrize("op", ["<=", ">=", "=="])
 def test_bivariate_int_fastpath_matches_bruteforce_shifted_domains(op: str):
     a, b = 2, -3
-    xdom = range(-2, 4)
-    ydom = range(5, 10)
     for c in range(-20, 21):
-        expected = any(_cmp(a * x + b * y, op, c) for x, y in itertools.product(xdom, ydom))
-
-        m = Model()
-        x = m.int("x", -2, 3)
-        y = m.int("y", 5, 9)
-        m &= _build_expr(x, y, a, b, op, c)
-        r = _solve(m)
-        assert (r.ok if expected else r.status == "unsat"), (op, c)
+        for xv, yv in ((-2, 5), (-2, 9), (3, 5), (0, 7)):
+            m = Model()
+            x = m.int("x", -2, 3)
+            y = m.int("y", 5, 9)
+            m &= _build_expr(x, y, a, b, op, c)
+            m &= (x == xv)
+            m &= (y == yv)
+            assert _solve(m).ok == _cmp(a * xv + b * yv, op, c), (op, c, xv, yv)
 
 
 def test_bivariate_int_not_equal_fallback_semantics():
@@ -77,6 +76,36 @@ def test_bivariate_int_not_equal_fallback_semantics():
     m &= (2 * x - 3 * y != 1)
     r = _solve(m)
     assert (r.ok if expected else r.status == "unsat")
+
+
+@pytest.mark.parametrize("a,b,op,c", [
+    (1, 1, "<=", 3),
+    (2, -3, "<", -1),
+    (-2, 1, ">=", 2),
+    (3, 2, ">", 4),
+    (2, -2, "==", 0),
+])
+def test_bivariate_int_fastpath_pointwise_small_domains(a: int, b: int, op: str, c: int):
+    """Pin both operands so a satisfiable witness cannot hide a bad cut."""
+    for xv, yv in itertools.product(range(-2, 3), range(1, 6)):
+        m = Model()
+        x = m.int("x", -2, 2)
+        y = m.int("y", 1, 5)
+        m &= _build_expr(x, y, a, b, op, c)
+        m &= (x == xv)
+        m &= (y == yv)
+        assert _solve(m).ok == _cmp(a * xv + b * yv, op, c), (a, b, op, c, xv, yv)
+
+
+def test_bivariate_int_not_equal_fallback_pointwise_small_domains():
+    for xv, yv in itertools.product(range(-2, 3), repeat=2):
+        m = Model()
+        x = m.int("x", -2, 2)
+        y = m.int("y", -2, 2)
+        m &= (2 * x - 3 * y != 1)
+        m &= (x == xv)
+        m &= (y == yv)
+        assert _solve(m).ok == ((2 * xv - 3 * yv) != 1), (xv, yv)
 
 
 def test_bivariate_int_fastpath_bypasses_pb_and_card_encoders(monkeypatch):

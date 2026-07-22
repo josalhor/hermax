@@ -22,28 +22,46 @@ def _boolsum(xs):
     return out
 
 
-def _exists_sat_mixed(
-    xdom: range,
-    nbool: int,
-    a: int,
-    k: int,
-    mcoef: int,
-    op: str = "<=",
-) -> bool:
-    for xv in xdom:
-        for yv in (0, 1):
-            for bits in itertools.product((0, 1), repeat=nbool):
-                lhs = a * xv + sum(bits)
-                rhs = k + mcoef * yv
-                if op == "<=" and lhs <= rhs:
-                    return True
-                if op == "<" and lhs < rhs:
-                    return True
-                if op == ">=" and lhs >= rhs:
-                    return True
-                if op == ">" and lhs > rhs:
-                    return True
-    return False
+def _compare(lhs, op: str, rhs):
+    if op == "<=":
+        return lhs <= rhs
+    if op == "<":
+        return lhs < rhs
+    if op == ">=":
+        return lhs >= rhs
+    if op == ">":
+        return lhs > rhs
+    raise ValueError(f"Unsupported comparator {op!r}")
+
+
+def _eval_compare(lhs: int, op: str, rhs: int) -> bool:
+    if op == "<=":
+        return lhs <= rhs
+    if op == "<":
+        return lhs < rhs
+    if op == ">=":
+        return lhs >= rhs
+    if op == ">":
+        return lhs > rhs
+    raise ValueError(f"Unsupported comparator {op!r}")
+
+
+def _assert_mixed_points(a: int, k: int, mcoef: int, op: str, *, swapped: bool = False) -> None:
+    flipped = {"<=": ">=", "<": ">", ">=": "<=", ">": "<"}[op]
+    for xv, gate, bits in itertools.product(range(5), (False, True), itertools.product((False, True), repeat=3)):
+        m = Model()
+        x = m.int("x", 0, 4)
+        bs = [m.bool(f"b{i}") for i in range(3)]
+        y = m.bool("y")
+        lhs = a * x + _boolsum(bs)
+        rhs = k + mcoef * y
+        m &= _compare(rhs, flipped, lhs) if swapped else _compare(lhs, op, rhs)
+        m &= (x == xv)
+        m &= y if gate else ~y
+        for lit, bit in zip(bs, bits):
+            m &= lit if bit else ~lit
+        expected = _eval_compare(a * xv + sum(bits), op, k + mcoef * int(gate))
+        assert _solve(m).ok == expected, (a, k, mcoef, op, swapped, xv, gate, bits, expected)
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -56,14 +74,7 @@ def _exists_sat_mixed(
     (-2, 1, 3),
 ])
 def test_mixed_int_boolsum_bigm_le_matches_bruteforce(a: int, k: int, mcoef: int):
-    m = Model()
-    x = m.int("x", 0, 4)
-    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
-    y = m.bool("y")
-    m &= (a * x + _boolsum(bs) <= (k + mcoef * y))
-    r = _solve(m)
-    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, "<=")
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_mixed_points(a, k, mcoef, "<=")
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -72,14 +83,7 @@ def test_mixed_int_boolsum_bigm_le_matches_bruteforce(a: int, k: int, mcoef: int
     (-1, 2, 2),
 ])
 def test_mixed_int_boolsum_bigm_lt_matches_bruteforce(a: int, k: int, mcoef: int):
-    m = Model()
-    x = m.int("x", 0, 4)
-    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
-    y = m.bool("y")
-    m &= (a * x + _boolsum(bs) < (k + mcoef * y))
-    r = _solve(m)
-    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, "<")
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_mixed_points(a, k, mcoef, "<")
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -88,14 +92,7 @@ def test_mixed_int_boolsum_bigm_lt_matches_bruteforce(a: int, k: int, mcoef: int
     (-1, 2, 2),
 ])
 def test_mixed_int_boolsum_swapped_orientation_supported(a: int, k: int, mcoef: int):
-    m = Model()
-    x = m.int("x", 0, 4)
-    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
-    y = m.bool("y")
-    m &= ((k + mcoef * y) >= (a * x + _boolsum(bs)))
-    r = _solve(m)
-    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, "<=")
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_mixed_points(a, k, mcoef, "<=", swapped=True)
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -104,14 +101,7 @@ def test_mixed_int_boolsum_swapped_orientation_supported(a: int, k: int, mcoef: 
     (-1, 2, 2),
 ])
 def test_mixed_int_boolsum_bigm_ge_matches_bruteforce(a: int, k: int, mcoef: int):
-    m = Model()
-    x = m.int("x", 0, 4)
-    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
-    y = m.bool("y")
-    m &= (a * x + _boolsum(bs) >= (k + mcoef * y))
-    r = _solve(m)
-    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, ">=")
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_mixed_points(a, k, mcoef, ">=")
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -120,14 +110,7 @@ def test_mixed_int_boolsum_bigm_ge_matches_bruteforce(a: int, k: int, mcoef: int
     (-1, 2, 2),
 ])
 def test_mixed_int_boolsum_bigm_gt_matches_bruteforce(a: int, k: int, mcoef: int):
-    m = Model()
-    x = m.int("x", 0, 4)
-    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
-    y = m.bool("y")
-    m &= (a * x + _boolsum(bs) > (k + mcoef * y))
-    r = _solve(m)
-    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, ">")
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_mixed_points(a, k, mcoef, ">")
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -149,14 +132,7 @@ def test_mixed_int_boolsum_no_pb_no_card(monkeypatch, a: int, k: int, mcoef: int
     monkeypatch.setattr(CardEnc, "atleast", staticmethod(fail_card))
     monkeypatch.setattr(CardEnc, "equals", staticmethod(fail_card))
 
-    m = Model()
-    x = m.int("x", 0, 4)
-    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
-    y = m.bool("y")
-    m &= (a * x + _boolsum(bs) <= (k + mcoef * y))
-    r = _solve(m)
-    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, "<=")
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_mixed_points(a, k, mcoef, "<=")
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -178,14 +154,7 @@ def test_mixed_int_boolsum_swapped_no_pb_no_card(monkeypatch, a: int, k: int, mc
     monkeypatch.setattr(CardEnc, "atleast", staticmethod(fail_card))
     monkeypatch.setattr(CardEnc, "equals", staticmethod(fail_card))
 
-    m = Model()
-    x = m.int("x", 0, 4)
-    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
-    y = m.bool("y")
-    m &= ((k + mcoef * y) >= (a * x + _boolsum(bs)))
-    r = _solve(m)
-    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, "<=")
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_mixed_points(a, k, mcoef, "<=", swapped=True)
 
 
 @pytest.mark.parametrize("a,k,mcoef", [
@@ -207,14 +176,7 @@ def test_mixed_int_boolsum_ge_no_pb_no_card(monkeypatch, a: int, k: int, mcoef: 
     monkeypatch.setattr(CardEnc, "atleast", staticmethod(fail_card))
     monkeypatch.setattr(CardEnc, "equals", staticmethod(fail_card))
 
-    m = Model()
-    x = m.int("x", 0, 4)
-    bs = [m.bool("b0"), m.bool("b1"), m.bool("b2")]
-    y = m.bool("y")
-    m &= (a * x + _boolsum(bs) >= (k + mcoef * y))
-    r = _solve(m)
-    expected = _exists_sat_mixed(range(0, 4), 3, a, k, mcoef, ">=")
-    assert (r.ok if expected else r.status == "unsat")
+    _assert_mixed_points(a, k, mcoef, ">=")
 
 
 @pytest.mark.parametrize("a,k,mcoef", [

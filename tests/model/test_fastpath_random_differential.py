@@ -206,8 +206,8 @@ def test_random_diff_bivariate_fastpath():
         b = rng.choice([-3, -2, -1, 1, 2, 3])
         op = rng.choice(["<=", "<", ">=", ">", "=="])
         c = rng.randint(-14, 14)
-        pinx = rng.choice([None, rng.randint(xl, xu - 1)])
-        piny = rng.choice([None, rng.randint(yl, yu - 1)])
+        pinx = rng.choice([None, rng.randint(xl, xu)])
+        piny = rng.choice([None, rng.randint(yl, yu)])
 
         def build():
             m = Model()
@@ -254,9 +254,9 @@ def test_random_diff_trivariate_fastpath():
         yl, yu = _rand_domain(rng, min_lb=0, max_lb=2)
         zl, zu = _rand_domain(rng, min_lb=0, max_lb=3, min_span=3, max_span=8)
         op = rng.choice(["<=", "<", ">=", ">"])
-        pinx = rng.choice([None, rng.randint(xl, xu - 1)])
-        piny = rng.choice([None, rng.randint(yl, yu - 1)])
-        pinz = rng.choice([None, rng.randint(zl, zu - 1)])
+        pinx = rng.choice([None, rng.randint(xl, xu)])
+        piny = rng.choice([None, rng.randint(yl, yu)])
+        pinz = rng.choice([None, rng.randint(zl, zu)])
 
         def build():
             m = Model()
@@ -300,9 +300,9 @@ def test_random_diff_trivariate_fastpath_shifted_domains():
         zl, zu = _rand_domain(rng, min_lb=-4, max_lb=4, min_span=4, max_span=10)
         shift = rng.randint(-4, 4)
         op = rng.choice(["<=", "<"])
-        pinx = rng.choice([None, rng.randint(xl, xu - 1)])
-        piny = rng.choice([None, rng.randint(yl, yu - 1)])
-        pinz = rng.choice([None, rng.randint(zl, zu - 1)])
+        pinx = rng.choice([None, rng.randint(xl, xu)])
+        piny = rng.choice([None, rng.randint(yl, yu)])
+        pinz = rng.choice([None, rng.randint(zl, zu)])
 
         def build():
             m = Model()
@@ -408,7 +408,7 @@ def test_random_diff_int_equals_unit_bool_sum_fastpath():
         op = rng.choice(["==", "<=", ">=", "<", ">"])
         ox = rng.randint(-2, 2)
         os = rng.randint(-2, 2)
-        pinx = rng.choice([None, rng.randint(lb, ub - 1)])
+        pinx = rng.choice([None, rng.randint(lb, ub)])
         bit_pins = [rng.choice([None, True, False]) for _ in range(n)]
 
         def build():
@@ -473,7 +473,7 @@ def test_random_diff_mixed_int_boolsum_bigm_fastpath():
         k = rng.randint(-2, 8)
         mcoef = rng.randint(1, 5)
         op = rng.choice(["<=", "<"])
-        pinx = rng.choice([None, rng.randint(lb, ub - 1)])
+        pinx = rng.choice([None, rng.randint(lb, ub)])
         gate_pin = rng.choice([None, True, False])
         bit_pins = [rng.choice([None, True, False]) for _ in range(n)]
 
@@ -540,9 +540,9 @@ def test_random_diff_unary_adder_eq_fastpath():
         # with bits(v)= (ub-lb-1), choose z in [min_sum, max_sum+1).
         zl = xl + yl
         zu = xu + yu - 1
-        pinx = rng.choice([None, rng.randint(xl, xu - 1)])
-        piny = rng.choice([None, rng.randint(yl, yu - 1)])
-        pinz = rng.choice([None, rng.randint(zl, zu - 1)])
+        pinx = rng.choice([None, rng.randint(xl, xu)])
+        piny = rng.choice([None, rng.randint(yl, yu)])
+        pinz = rng.choice([None, rng.randint(zl, zu)])
 
         def build():
             m = Model()

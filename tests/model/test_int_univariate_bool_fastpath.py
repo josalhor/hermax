@@ -62,18 +62,16 @@ def _build_expr(x, b, a: int, w: int, op: str, c: int, *, neg_lit: bool = False)
 ])
 @pytest.mark.parametrize("neg_lit", [False, True])
 def test_univariate_bool_fastpath_matches_bruteforce_small_domains(op: str, a: int, w: int, c: int, neg_lit: bool):
-    xdom = range(0, 6)
-    bdom = (False, True)
-    expected = any(
-        _cmp(a * xv + w * (int((not bv) if neg_lit else bv)), op, c)
-        for xv, bv in itertools.product(xdom, bdom)
-    )
-    m = Model()
-    x = m.int("x", 0, 6)
-    b = m.bool("b")
-    m &= _build_expr(x, b, a, w, op, c, neg_lit=neg_lit)
-    r = _solve(m)
-    assert (r.ok if expected else r.status == "unsat")
+    for xv, bit_value in itertools.product(range(7), (False, True)):
+        m = Model()
+        x = m.int("x", 0, 6)
+        b = m.bool("b")
+        m &= _build_expr(x, b, a, w, op, c, neg_lit=neg_lit)
+        m &= (x == xv)
+        m &= b if bit_value else ~b
+        literal_value = int(not bit_value) if neg_lit else int(bit_value)
+        expected = _cmp(a * xv + w * literal_value, op, c)
+        assert _solve(m).ok == expected, (op, a, w, c, neg_lit, xv, bit_value)
 
 
 @pytest.mark.parametrize("a,w,op,c,xv,bv", [

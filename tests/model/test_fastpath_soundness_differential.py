@@ -1,12 +1,41 @@
 from __future__ import annotations
 
 import itertools
+import random
 
 import pytest
 
 import hermax.model as hm
 from hermax.model.encoders import _EncoderDispatch
 from hermax.model import Model
+
+
+def _compare(lhs, op: str, rhs):
+    if op == "<=":
+        return lhs <= rhs
+    if op == "<":
+        return lhs < rhs
+    if op == ">=":
+        return lhs >= rhs
+    if op == ">":
+        return lhs > rhs
+    if op == "==":
+        return lhs == rhs
+    raise ValueError(f"Unsupported comparator {op!r}")
+
+
+def _eval_compare(lhs: int, op: str, rhs: int) -> bool:
+    if op == "<=":
+        return lhs <= rhs
+    if op == "<":
+        return lhs < rhs
+    if op == ">=":
+        return lhs >= rhs
+    if op == ">":
+        return lhs > rhs
+    if op == "==":
+        return lhs == rhs
+    raise ValueError(f"Unsupported comparator {op!r}")
 
 
 def _status(m: Model) -> str:
@@ -50,7 +79,7 @@ def _assert_diff_equivalent(
     truth_fn,
 ) -> None:
     int_names = tuple(domains.keys())
-    int_ranges = [range(domains[n][0], domains[n][1]) for n in int_names]
+    int_ranges = [range(domains[n][0], domains[n][1] + 1) for n in int_names]
     bool_ranges = [[False, True] for _ in bool_names]
     for values in itertools.product(*int_ranges, *bool_ranges):
         point = {}
@@ -234,6 +263,84 @@ def test_diff_int_equals_unit_bool_sum_fastpath_soundness_with_shift():
         disable_fastpath="_try_int_equals_unit_bool_sum_fastpath",
         truth_fn=truth,
     )
+
+
+def test_boolsum_intvar_strict_rhs_regression():
+    """A Boolean sum strictly below zero must be impossible."""
+    m = Model()
+    x = m.int("x", 0, 10)
+    b = [m.bool(f"b_{idx}") for idx in range(3)]
+    m &= (b[0] + b[1] + b[2] < x)
+    m &= (x == 0)
+    assert m.solve().status == "unsat"
+
+
+@pytest.mark.parametrize("op", ("<=", "<", ">=", ">", "=="))
+@pytest.mark.parametrize("int_on_lhs", (False, True))
+@pytest.mark.parametrize("int_offset,bool_offset", ((0, 0), (1, -1), (-2, 2)))
+def test_diff_int_boolsum_fastpath_all_orientations_ops_and_offsets(
+    op: str,
+    int_on_lhs: bool,
+    int_offset: int,
+    bool_offset: int,
+):
+    """Exhaustively check every point for the supported bool-sum/IntVar shape."""
+    def build(v, b):
+        bool_sum = b["b_0"] + b["b_1"] + b["b_2"] + bool_offset
+        int_expr = v["x"] + int_offset
+        lhs, rhs = (int_expr, bool_sum) if int_on_lhs else (bool_sum, int_expr)
+        return _compare(lhs, op, rhs)
+
+    def truth(p):
+        bool_sum = int(p["b_0"]) + int(p["b_1"]) + int(p["b_2"]) + bool_offset
+        int_expr = p["x"] + int_offset
+        lhs, rhs = (int_expr, bool_sum) if int_on_lhs else (bool_sum, int_expr)
+        return _eval_compare(lhs, op, rhs)
+
+    _assert_diff_equivalent(
+        build_constraint=build,
+        domains={"x": (-1, 4)},
+        bool_names=("b_0", "b_1", "b_2"),
+        disable_fastpath="_try_int_equals_unit_bool_sum_fastpath",
+        truth_fn=truth,
+    )
+
+
+@pytest.mark.parametrize("int_on_lhs", (False, True))
+def test_diff_int_boolsum_fastpath_randomized_pointwise_orientations(int_on_lhs: bool):
+    """Exercise wider supported shapes, including negated Boolean literals."""
+    rng = random.Random(20260722)
+    for _ in range(40):
+        n_bools = rng.randint(1, 7)
+        lb = rng.randint(-3, 2)
+        ub = lb + rng.randint(1, 8)
+        int_offset = rng.randint(-3, 3)
+        bool_offset = rng.randint(-3, 3)
+        op = rng.choice(("<=", "<", ">=", ">", "=="))
+        signs = [rng.choice((False, True)) for _ in range(n_bools)]
+        x_value = rng.randint(lb, ub)
+        bool_values = [rng.choice((False, True)) for _ in range(n_bools)]
+        bool_names = tuple(f"b_{idx}" for idx in range(n_bools))
+
+        def build(v, b):
+            bool_sum = bool_offset
+            for name, negated in zip(bool_names, signs):
+                bool_sum = bool_sum + (~b[name] if negated else b[name])
+            int_expr = v["x"] + int_offset
+            lhs, rhs = (int_expr, bool_sum) if int_on_lhs else (bool_sum, int_expr)
+            return _compare(lhs, op, rhs)
+
+        point = {"x": x_value, **dict(zip(bool_names, bool_values))}
+        bool_sum_value = bool_offset + sum(
+            int(not value) if negated else int(value)
+            for value, negated in zip(bool_values, signs)
+        )
+        int_value = x_value + int_offset
+        lhs_value, rhs_value = (int_value, bool_sum_value) if int_on_lhs else (bool_sum_value, int_value)
+        expected = _eval_compare(lhs_value, op, rhs_value)
+
+        sat_fast = _point_sat(build, {"x": (lb, ub)}, point)
+        assert sat_fast == expected, ("fast", int_on_lhs, op, point, expected)
 
 
 def test_diff_mixed_int_boolsum_fastpath_soundness():

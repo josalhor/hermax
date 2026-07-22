@@ -17,9 +17,9 @@ def _solve(m: Model):
 
 @pytest.mark.parametrize("op", ["<=", "<"])
 def test_trivariate_sum_relation_matches_bruteforce_small_domains(op: str):
-    xdom = range(0, 5)
-    ydom = range(0, 5)
-    zdom = range(0, 5)
+    xdom = range(0, 6)
+    ydom = range(0, 6)
+    zdom = range(0, 6)
 
     m = Model()
     x = m.int("x", 0, 5)
@@ -103,9 +103,9 @@ def test_trivariate_sum_lt_sat_and_unsat_witnesses():
 
 @pytest.mark.parametrize("op", ["<=", "<"])
 def test_trivariate_sum_relation_matches_bruteforce_shifted_domains(op: str):
-    xdom = range(-2, 3)
-    ydom = range(1, 6)
-    zdom = range(-1, 8)
+    xdom = range(-2, 4)
+    ydom = range(1, 7)
+    zdom = range(-1, 9)
 
     for shift in (-2, 0, 3):
         for xv, yv, zv in itertools.product(xdom, ydom, zdom):

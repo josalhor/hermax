@@ -62,12 +62,12 @@ def _constrain_expr(m: Model, x, a: int, op: str, c: int):
 ])
 def test_univariate_fastpath_matches_bruteforce_small_domains(op: str, a: int, c: int):
     dom = range(0, 7)
-    expected = any(_cmp(a * xv, op, c) for xv in dom)
-    m = Model()
-    x = m.int("x", 0, 6)
-    _constrain_expr(m, x, a, op, c)
-    r = _solve(m)
-    assert (r.ok if expected else r.status == "unsat")
+    for xv in dom:
+        m = Model()
+        x = m.int("x", 0, 6)
+        _constrain_expr(m, x, a, op, c)
+        m &= (x == xv)
+        assert _solve(m).ok == _cmp(a * xv, op, c), (op, a, c, xv)
 
 
 @pytest.mark.parametrize("op", OPS)
@@ -75,12 +75,12 @@ def test_univariate_fastpath_matches_bruteforce_small_domains(op: str, a: int, c
 def test_univariate_fastpath_matches_bruteforce_shifted_domains(op: str, a: int):
     dom = range(-3, 5)
     for c in (-12, -5, -1, 0, 3, 7, 11):
-        expected = any(_cmp(a * xv, op, c) for xv in dom)
-        m = Model()
-        x = m.int("x", -3, 4)
-        _constrain_expr(m, x, a, op, c)
-        r = _solve(m)
-        assert (r.ok if expected else r.status == "unsat"), (op, a, c)
+        for xv in dom:
+            m = Model()
+            x = m.int("x", -3, 4)
+            _constrain_expr(m, x, a, op, c)
+            m &= (x == xv)
+            assert _solve(m).ok == _cmp(a * xv, op, c), (op, a, c, xv)
 
 
 @pytest.mark.parametrize("expr_builder", [
@@ -206,9 +206,9 @@ def test_univariate_fastpath_not_equal_matches_bruteforce_and_bypasses_pb(monkey
     monkeypatch.setattr(PBEnc, "equals", staticmethod(fail_pb))
 
     dom = range(-4, 5)
-    expected = any((a * xv) != c for xv in dom)
-    m = Model()
-    x = m.int("x", -4, 4)
-    m &= (a * x != c)
-    r = _solve(m)
-    assert (r.ok if expected else r.status == "unsat")
+    for xv in dom:
+        m = Model()
+        x = m.int("x", -4, 4)
+        m &= (a * x != c)
+        m &= (x == xv)
+        assert _solve(m).ok == ((a * xv) != c), (a, c, xv)

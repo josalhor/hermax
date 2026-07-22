@@ -16,9 +16,9 @@ def _solve(m: Model):
 
 
 def test_unary_adder_eq_fastpath_matches_bruteforce_small_domains():
-    xdom = range(0, 5)
-    ydom = range(0, 5)
-    zdom = range(0, 9)
+    xdom = range(0, 6)
+    ydom = range(0, 6)
+    zdom = range(0, 10)
 
     for xv, yv, zv in itertools.product(xdom, ydom, zdom):
         m = Model()
@@ -35,9 +35,9 @@ def test_unary_adder_eq_fastpath_matches_bruteforce_small_domains():
 
 
 def test_unary_adder_eq_fastpath_matches_bruteforce_shifted_domains():
-    xdom = range(3, 8)
-    ydom = range(-2, 3)
-    zdom = range(1, 10)
+    xdom = range(3, 9)
+    ydom = range(-2, 4)
+    zdom = range(1, 11)
 
     for xv, yv, zv in itertools.product(xdom, ydom, zdom):
         m = Model()
