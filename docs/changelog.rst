@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Version 1.2.2
+----------------
+
+Highlights
+~~~~~~~~~~
+
+* Fixed soundness issues in mixed Boolean/``IntVar`` comparisons and Big-M constraints with negated indicators.
+
 Version 1.2.1
 -------------
 

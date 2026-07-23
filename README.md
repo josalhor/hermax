@@ -5,6 +5,9 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/hermax.svg)](https://pypi.org/project/hermax/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Documentation Status](https://readthedocs.org/projects/hermax/badge/?version=latest)](https://hermax.readthedocs.io/en/latest/?badge=latest)
+![Windows](https://img.shields.io/badge/Windows-supported-0078D6?logo=windows)
+![Linux](https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black)
+![macOS](https://img.shields.io/badge/macOS-supported-000000?logo=apple)
 
 ![Hermax Banner](https://raw.githubusercontent.com/josalhor/hermax/main/images/banner.png)
 
