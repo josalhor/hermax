@@ -27,6 +27,7 @@ from .expressions import (
     _nonlinear_error,
     _ensure_same_model,
     _ensure_same_model_pair_fast,
+    _compare_pb_operands,
     _LazyIntExpr,
     DeferredClauseGroup,
 )
@@ -1311,10 +1312,8 @@ class IntVar:
                 clauses.append(Clause(self._model, [~sk, vk]))
                 clauses.append(Clause(self._model, [~vk, sk]))
             return IntRelation(self._model, clauses, self, value, "==", 0)
-        if isinstance(value, (Literal, Term, PBExpr, _LazyIntExpr)):
-            _ensure_same_model(self, value)
-            return PBExpr.from_item(self)._finalize_compare("==", value)
-        return False
+        result = _compare_pb_operands(self, "==", value)
+        return False if result is NotImplemented else result
 
     def __ne__(self, value):  # type: ignore[override]
         if isinstance(value, int):
@@ -1330,7 +1329,8 @@ class IntVar:
                 atoms = [*self._exact_value_atoms(v), *value._exact_value_atoms(v)]
                 clauses.append(Clause(self._model, [~lit for lit in atoms]))
             return ClauseGroup(self._model, clauses)
-        return True
+        result = _compare_pb_operands(self, "!=", value)
+        return True if result is NotImplemented else result
 
 
 class IntervalVar:

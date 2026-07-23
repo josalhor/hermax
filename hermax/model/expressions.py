@@ -617,29 +617,31 @@ class Literal:
         if isinstance(other, IntRelation):
             _ensure_same_model_pair_fast(self, other)
             return other.reify(self)
-        if not isinstance(other, Literal):
-            return False
-        if self is other:
-            return True
-        _ensure_same_model_pair_fast(self, other)
-        # Boolean equivalence: (self -> other) & (other -> self)
-        return ClauseGroup(
-            self._model,
-            [
-                Clause(self._model, [~self, other]),
-                Clause(self._model, [~other, self]),
-            ],
-        )
+        if isinstance(other, Literal):
+            if self is other:
+                return True
+            _ensure_same_model_pair_fast(self, other)
+            # Boolean equivalence: (self -> other) & (other -> self)
+            return ClauseGroup(
+                self._model,
+                [
+                    Clause(self._model, [~self, other]),
+                    Clause(self._model, [~other, self]),
+                ],
+            )
+        result = _compare_pb_operands(self, "==", other)
+        return False if result is NotImplemented else result
 
     def __ne__(self, other):  # type: ignore[override]
         if isinstance(other, IntRelation):
             _ensure_same_model_pair_fast(self, other)
             return other.reify(~self)
-        if not isinstance(other, Literal):
-            return True
-        # Keep Python inequality boolean-stable for now; modeling inequality can
-        # be added explicitly later if needed.
-        return not (self is other)
+        if isinstance(other, Literal):
+            # Keep Python inequality boolean-stable for now; modeling inequality can
+            # be added explicitly later if needed.
+            return not (self is other)
+        result = _compare_pb_operands(self, "!=", other)
+        return True if result is NotImplemented else result
 
     def __mul__(self, other):
         if isinstance(other, (Literal, Term, PBExpr, IntVar, _LazyIntExpr)):
@@ -743,7 +745,10 @@ class Term:
         return PBExpr.from_item(self).__sub__(other)
 
     def _finalize_compare(self, op: str, rhs) -> "ClauseGroup":
-        return PBExpr.from_item(self)._finalize_compare(op, rhs)
+        result = _compare_pb_operands(self, op, rhs)
+        if result is NotImplemented:
+            raise TypeError(f"Unsupported PB comparison operand: {type(rhs)!r}")
+        return result
 
     def __le__(self, rhs):
         return self._finalize_compare("<=", rhs)
@@ -756,6 +761,14 @@ class Term:
 
     def __gt__(self, rhs):
         return self._finalize_compare(">", rhs)
+
+    def __eq__(self, rhs):  # type: ignore[override]
+        result = _compare_pb_operands(self, "==", rhs)
+        return False if result is NotImplemented else result
+
+    def __ne__(self, rhs):  # type: ignore[override]
+        result = _compare_pb_operands(self, "!=", rhs)
+        return True if result is NotImplemented else result
 
 
 class _LazyIntExpr:
@@ -796,16 +809,16 @@ class _LazyIntExpr:
         return PBExpr.from_item(other).__sub__(self._as_pbexpr())
 
     def __le__(self, rhs):
-        return self._as_pbexpr().__le__(rhs)
+        return self._compare_pb("<=", rhs)
 
     def __lt__(self, rhs):
-        return self._as_pbexpr().__lt__(rhs)
+        return self._compare_pb("<", rhs)
 
     def __ge__(self, rhs):
-        return self._as_pbexpr().__ge__(rhs)
+        return self._compare_pb(">=", rhs)
 
     def __gt__(self, rhs):
-        return self._as_pbexpr().__gt__(rhs)
+        return self._compare_pb(">", rhs)
 
     def __floordiv__(self, divisor: int):
         if isinstance(divisor, (Literal, Term, PBExpr, IntVar, _LazyIntExpr)):
@@ -823,10 +836,18 @@ class _LazyIntExpr:
         return ScaleExpr(self, factor)
 
     def __eq__(self, rhs):  # type: ignore[override]
-        try:
-            return self._as_pbexpr().__eq__(rhs)
-        except TypeError:
-            return False
+        result = _compare_pb_operands(self, "==", rhs)
+        return False if result is NotImplemented else result
+
+    def __ne__(self, rhs):  # type: ignore[override]
+        result = _compare_pb_operands(self, "!=", rhs)
+        return True if result is NotImplemented else result
+
+    def _compare_pb(self, op: str, rhs):
+        result = _compare_pb_operands(self, op, rhs)
+        if result is NotImplemented:
+            raise TypeError(f"Unsupported PB comparison operand: {type(rhs)!r}")
+        return result
 
     @property
     def lb(self) -> int:  # pragma: no cover - overridden by subclasses
@@ -1321,11 +1342,10 @@ class PBExpr:
         return self
 
     def _finalize_compare(self, op: str, rhs):
-        rhs_expr = PBExpr.from_item(rhs)
-        model = _ensure_same_model(self, rhs_expr)
-        if model is None:
-            raise TypeError("Cannot compare constant-only PB expressions")
-        return PBConstraint(model, self, op, rhs_expr)
+        result = _compare_pb_operands(self, op, rhs)
+        if result is NotImplemented:
+            raise TypeError(f"Unsupported PB comparison operand: {type(rhs)!r}")
+        return result
 
     def __le__(self, rhs):
         return self._finalize_compare("<=", rhs)
@@ -1340,19 +1360,36 @@ class PBExpr:
         return self._finalize_compare(">", rhs)
 
     def __eq__(self, rhs):  # type: ignore[override]
-        try:
-            return self._finalize_compare("==", rhs)
-        except TypeError:
-            return False
+        result = _compare_pb_operands(self, "==", rhs)
+        return False if result is NotImplemented else result
 
     def __ne__(self, rhs):  # type: ignore[override]
-        try:
-            return self._finalize_compare("!=", rhs)
-        except TypeError:
-            return True
+        result = _compare_pb_operands(self, "!=", rhs)
+        return True if result is NotImplemented else result
 
     def __repr__(self) -> str:
         return f"PBExpr(terms={self.terms!r}, int_terms={self.int_terms!r}, c={self.constant})"
+
+
+def _coerce_pb_comparison_operand(value) -> PBExpr | None:
+    """Return a non-materializing PB view of a supported comparison operand."""
+    if isinstance(value, (Literal, Term, PBExpr, IntVar, _LazyIntExpr)):
+        return PBExpr.from_item(value)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return PBExpr.from_item(value)
+    return None
+
+
+def _compare_pb_operands(lhs, op: str, rhs):
+    """Build a PB comparison when both operands have a PB representation."""
+    lhs_expr = _coerce_pb_comparison_operand(lhs)
+    rhs_expr = _coerce_pb_comparison_operand(rhs)
+    if lhs_expr is None or rhs_expr is None:
+        return NotImplemented
+    model = _ensure_same_model(lhs_expr, rhs_expr)
+    if model is None:
+        return NotImplemented
+    return PBConstraint(model, lhs_expr, op, rhs_expr)
 
 
 class PBConstraint:

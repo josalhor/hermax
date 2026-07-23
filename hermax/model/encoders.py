@@ -151,7 +151,11 @@ class _EncoderDispatch:
         # Build lhs - rhs and normalize all coefficients to be positive by
         # flipping literals and shifting the constant.
         diff = lhs - rhs
-        pairs: list[tuple[int, Literal]] = []
+        # A flip can turn -w*x into w*~x, colliding with an existing ~x term.
+        # Coalesce here because structured PB backends require unique literals.
+        coefficients: dict[tuple[int, bool], int] = {}
+        literals: dict[tuple[int, bool], Literal] = {}
+        order: list[tuple[int, bool]] = []
         const = diff.constant
         for t in diff.terms:
             c = int(t.coefficient)
@@ -159,11 +163,16 @@ class _EncoderDispatch:
             if c == 0:
                 continue
             if c < 0:
-                pairs.append((-c, ~lit))
-                const += c  # c is negative:  -w*x == w*~x - w
-            else:
-                pairs.append((c, lit))
-        return pairs, const
+                lit = ~lit
+                c = -c
+                const -= c  # -w*x == w*~x - w
+            key = (lit.id, lit.polarity)
+            if key not in coefficients:
+                coefficients[key] = 0
+                literals[key] = lit
+                order.append(key)
+            coefficients[key] += c
+        return [(coefficients[key], literals[key]) for key in order if coefficients[key] != 0], const
 
     @staticmethod
     def _bound_from_zero_compare(op: str, const: int) -> tuple[str, int]:

@@ -141,6 +141,60 @@ def test_pbexpr_vs_pbexpr_equals_sat_case():
     assert r[c] is True
 
 
+def test_pb_normalization_coalesces_duplicates_created_by_complement_flip():
+    """Regression from ``tests.model_fuzzing`` case 15177_0000911_518454542."""
+    m = Model()
+    b0 = m.bool("b0")
+    b1 = m.bool("b1")
+    i0 = m.int("i0", -1, 1)
+    i1 = m.int("i1", 1, 4)
+
+    # The normalized lhs-rhs contains negative b0/b1 terms. Flipping them to
+    # positive complementary literals must merge with the existing ~b0/~b1.
+    m &= 1 + 3 * ~b0 + i1.scale(2) + 3 * ~b1 + i0 < 1 + b1 + b0 + b1
+    m &= ~b0
+    m &= ~b1
+    m &= i0 == -1
+    m &= i1 == 1
+
+    assert _solve(m).status == "unsat"
+
+
+def test_pb_complement_flip_coalescing_preserves_constant_offset_truth_table():
+    # 3*~b + x < 2*b normalizes to 5*~b + x - 2 < 0. Besides
+    # coalescing ~b, the -2 offset introduced by flipping -2*b is essential.
+    for b_value in (False, True):
+        for x_value in range(-1, 2):
+            m = Model()
+            b = m.bool("b")
+            x = m.int("x", -1, 1)
+            m &= b if b_value else ~b
+            m &= x == x_value
+            m &= 3 * ~b + x < 2 * b
+
+            expected = 3 * int(not b_value) + x_value < 2 * int(b_value)
+            assert _solve(m).ok is expected
+
+
+def test_pb_normalization_coalesces_duplicates_created_by_negated_literal_flip():
+    """Regression from ``tests.model_fuzzing`` case 15385_0002945_316809963."""
+    m = Model()
+    b0 = m.bool("b0")
+    b1 = m.bool("b1")
+    i0 = m.int("i0", -1, 1)
+    i1 = m.int("i1", 0, 3)
+
+    # -2*~b0 becomes 2*b0 - 2 during normalization and must merge with
+    # the remaining positive b0 coefficient after subtracting the RHS.
+    m &= 3 * b0 - 2 * ~b0 + i1.scale(2) < -3 + b0 + b1 + i0.scale(2)
+    m &= ~b0
+    m &= ~b1
+    m &= i0 == -1
+    m &= i1 == 0
+
+    assert _solve(m).status == "unsat"
+
+
 def test_pbexpr_equals_int_unsat_when_assignments_conflict():
     m = Model()
     a = m.bool("a")
