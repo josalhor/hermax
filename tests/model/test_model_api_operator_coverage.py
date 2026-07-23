@@ -40,10 +40,14 @@ def test_literal_eq_ne_general_behavior():
     assert isinstance(eq, ClauseGroup)
     assert len(eq._clauses) == 2
 
-    assert (a == "x") is False
-    assert (a != "x") is True
-    assert (a != b) is True
-    assert (a != a) is False
+    with pytest.raises(TypeError, match="Unsupported Literal comparison"):
+        _ = a == "x"
+    with pytest.raises(TypeError, match="Unsupported Literal comparison"):
+        _ = a != "x"
+    with pytest.raises(TypeError, match="Flatten the formula"):
+        _ = a != b
+    with pytest.raises(TypeError, match="Flatten the formula"):
+        _ = a != a
 
 
 def test_literal_implies_supports_all_targets_and_rejects_unknown():
@@ -126,5 +130,5 @@ def test_lazy_expr_mul_scale_floordiv_and_eq_paths():
     with pytest.raises(TypeError, match="Non-linear arithmetic"):
         _ = d // y
 
-    # __eq__ fallback on unsupported type.
-    assert (d == object()) is False
+    with pytest.raises(TypeError, match="Unsupported DivExpr comparison"):
+        _ = d == object()

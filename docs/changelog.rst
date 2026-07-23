@@ -1,6 +1,16 @@
 Changelog
 =========
 
+Version 1.2.3
+-------------
+
+Highlights
+~~~~~~~~~~
+
+* Fixed comparison operators that could evaluate to ``True`` or ``False`` instead of a model constraint.
+* Unsupported comparisons now raise clear errors.
+* Added numeric PB ordering comparisons.
+
 Version 1.2.2
 ----------------
 

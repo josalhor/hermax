@@ -22,7 +22,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--iterations", type=int, default=200)
     parser.add_argument("--forever", action="store_true", help="run without an iteration limit")
     parser.add_argument("--overall-timeout", type=float, default=3600.0, help="wall-clock seconds; 0 disables")
-    parser.add_argument("--depth", type=int, default=3, help="maximum linear-expression width")
+    parser.add_argument("--depth", type=int, default=3, help="maximum flat linear-expression width")
     parser.add_argument("--out-dir", default="tests/_model_fuzzing")
     parser.add_argument("--reduce", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--processes", type=int, default=1, help="worker processes; one preserves deterministic generation")
@@ -248,7 +248,7 @@ def main() -> int:
 
     print(
         f"[model-fuzz] start seed={args.seed} iterations={'inf' if args.forever else args.iterations} "
-        f"depth={args.depth} processes={args.processes}",
+        f"width={args.depth} processes={args.processes}",
         flush=True,
     )
     if args.processes == 1:

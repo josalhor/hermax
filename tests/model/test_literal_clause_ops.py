@@ -390,28 +390,22 @@ def test_literal_equality_works_with_unparenthesized_model_iand_comparison_synta
     assert r[b] is True
 
 
-def test_literal_inequality_parenthesized_pre_evaluates_to_bool_constraint_semantics():
+def test_literal_inequality_parenthesized_rejects_silent_identity_semantics():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
 
-    # Distinct literal objects => current Literal.__ne__ returns True, so this is
-    # a no-op hard constraint.
-    m &= (a != b)
-    m &= a
-    r = _solve_ok(m)
-    assert r[a] is True
+    with pytest.raises(TypeError, match="Flatten the formula"):
+        m &= (a != b)
 
 
-def test_literal_inequality_unparenthesized_pre_evaluates_to_bool_constraint_semantics():
+def test_literal_inequality_unparenthesized_rejects_silent_identity_semantics():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
 
-    m &= a != b
-    m &= a
-    r = _solve_ok(m)
-    assert r[a] is True
+    with pytest.raises(TypeError, match="Flatten the formula"):
+        m &= a != b
 
 
 def test_boolean_false_constraint_adds_empty_hard_clause_and_makes_model_unsat():

@@ -1,13 +1,17 @@
 # Hermax: MaxSAT Optimization for Python
 
-[![PyPI version](https://img.shields.io/pypi/v/hermax.svg)](https://pypi.org/project/hermax/)
-[![PyPI wheel](https://img.shields.io/pypi/wheel/hermax.svg)](https://pypi.org/project/hermax/)
-[![Python versions](https://img.shields.io/pypi/pyversions/hermax.svg)](https://pypi.org/project/hermax/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Documentation Status](https://readthedocs.org/projects/hermax/badge/?version=latest)](https://hermax.readthedocs.io/en/latest/?badge=latest)
-![Windows](https://img.shields.io/badge/Windows-supported-0078D6?logo=windows)
-![Linux](https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black)
-![macOS](https://img.shields.io/badge/macOS-supported-000000?logo=apple)
+<p align="center">
+  <a href="https://pypi.org/project/hermax/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/hermax.svg"></a>
+  <a href="https://pypi.org/project/hermax/"><img alt="PyPI wheel" src="https://img.shields.io/pypi/wheel/hermax.svg"></a>
+  <a href="https://pypi.org/project/hermax/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/hermax.svg"></a>
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
+  <a href="https://hermax.readthedocs.io/en/latest/?badge=latest"><img alt="Documentation Status" src="https://readthedocs.org/projects/hermax/badge/?version=latest"></a>
+  <br>
+  <a href="https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.SAT.2026.41"><img alt="Paper: SAT 2026" src="https://img.shields.io/badge/Paper-SAT%202026-007C7A"></a>
+  <img alt="Windows supported" src="https://img.shields.io/badge/Windows-supported-0078D6?logo=windows">
+  <img alt="Linux supported" src="https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&amp;logoColor=black">
+  <img alt="macOS supported" src="https://img.shields.io/badge/macOS-supported-000000?logo=apple">
+</p>
 
 ![Hermax Banner](https://raw.githubusercontent.com/josalhor/hermax/main/images/banner.png)
 

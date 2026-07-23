@@ -28,6 +28,7 @@ from .expressions import (
     _ensure_same_model,
     _ensure_same_model_pair_fast,
     _compare_pb_operands,
+    _unsupported_comparison_error,
     _LazyIntExpr,
     DeferredClauseGroup,
 )
@@ -388,14 +389,14 @@ class IntSetVar:
             return self._eq_group_set(other)
         if isinstance(other, (set, frozenset, list, tuple)):
             return self._eq_group_constant(other)
-        return False
+        raise _unsupported_comparison_error(self, other)
 
     def __ne__(self, other):  # type: ignore[override]
         if isinstance(other, IntSetVar):
             return self._neq_group_set(other)
         if isinstance(other, (set, frozenset, list, tuple)):
             return self._neq_group_constant(other)
-        return True
+        raise _unsupported_comparison_error(self, other)
 
 
 class EnumVar:
@@ -524,7 +525,7 @@ class EnumVar:
                 else:
                     raise TypeError("Enum equality expected literal equivalence ClauseGroup.")
             return ClauseGroup(self._model, clauses)
-        return False
+        raise _unsupported_comparison_error(self, other)
 
     def __ne__(self, other):  # type: ignore[override]
         if isinstance(other, str):
@@ -544,7 +545,7 @@ class EnumVar:
                 lits = [self._choice_lits[c] for c in self.choices] + [other._choice_lits[c] for c in self.choices]
                 clauses.append(Clause(self._model, lits))
             return ClauseGroup(self._model, clauses)
-        return True
+        raise _unsupported_comparison_error(self, other)
 
 
 class _MultiplexerInt:
@@ -1313,7 +1314,9 @@ class IntVar:
                 clauses.append(Clause(self._model, [~vk, sk]))
             return IntRelation(self._model, clauses, self, value, "==", 0)
         result = _compare_pb_operands(self, "==", value)
-        return False if result is NotImplemented else result
+        if result is NotImplemented:
+            raise _unsupported_comparison_error(self, value)
+        return result
 
     def __ne__(self, value):  # type: ignore[override]
         if isinstance(value, int):
@@ -1330,7 +1333,9 @@ class IntVar:
                 clauses.append(Clause(self._model, [~lit for lit in atoms]))
             return ClauseGroup(self._model, clauses)
         result = _compare_pb_operands(self, "!=", value)
-        return True if result is NotImplemented else result
+        if result is NotImplemented:
+            raise _unsupported_comparison_error(self, value)
+        return result
 
 
 class IntervalVar:
@@ -1930,7 +1935,7 @@ class IntVector(_BaseVector):
 
     def __ne__(self, other):  # type: ignore[override]
         if not isinstance(other, IntVector):
-            return True
+            raise _unsupported_comparison_error(self, other)
         _ensure_same_model_pair_fast(self, other)
         if len(self) != len(other):
             raise ValueError("Vector lengths differ")
