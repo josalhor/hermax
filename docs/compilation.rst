@@ -23,22 +23,13 @@ requirements
 Installing
 ----------------------
 
-
-The most reliable method is building wheels and testing that exact
-artifact:
+The most reliable method is building wheels and testing with cibuildwheel:
 
 .. code-block:: bash
 
     python -m cibuildwheel --output-dir wheelhouse
     pip install --force-reinstall wheelhouse/*.whl
 
-Alternatively, for a more iterative workflow, you can install from the source:
-
-.. code-block:: bash
-
-    pip install .
-
-This will trigger the CMake build process for all the bundled solvers.
 
 Optional CPLEX-backed MaxHS / iMaxHS
 ------------------------------------
@@ -57,24 +48,6 @@ Relevant variables:
 * ``HERMAX_ENABLE_MAXHS`` (``auto`` | ``on`` | ``off``)
 * ``HERMAX_ENABLE_IMAXHS`` (``auto`` | ``on`` | ``off``)
 
-Example forcing both on:
-
-.. code-block:: bash
-
-    export CPLEX_INC_DIR=/path/to/cplex/include
-    export CPLEX_LIB_DIR=/path/to/cplex/lib-or-bin
-    export HERMAX_ENABLE_MAXHS=on
-    export HERMAX_ENABLE_IMAXHS=on
-    pip install .
-
-Example forcing both off (recommended for generic wheel builds):
-
-.. code-block:: bash
-
-    export HERMAX_ENABLE_MAXHS=off
-    export HERMAX_ENABLE_IMAXHS=off
-    pip install .
-
 Optional OptiLog Formula Support
 --------------------------------
 
@@ -87,8 +60,3 @@ PySAT ``WCNF`` internally.
 
 This dependency is optional because OptiLog has a separate proprietary
 licensing model.
-
-CIBuildWheel
-------------
-
-`hermax` uses `cibuildwheel` for generating multi-platform wheels. The configuration is stored in `pyproject.toml`.

@@ -1523,6 +1523,48 @@ def _optional_cplex_solver_extensions() -> list[CMakeExtension]:
     return out
 
 
+CORETRAIL_ROOT = Path("mse-submission-incremental-2026/ipamir/maxsat/core-trail")
+CORETRAIL_EXTENSION_NAME = "hermax.core.coretrail_native"
+_CORETRAIL_COMPILE_ARGS = (
+    ["/O2", "/std:c++17", "/DNDEBUG", "/DGlucose=RC2Glucose"]
+    if platform.system() == "Windows"
+    else [
+        "-O3",
+        "-Wall",
+        "-std=c++17",
+        "-DNDEBUG",
+        "-DGlucose=RC2Glucose",
+        "-fvisibility=hidden",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fno-semantic-interposition",
+        "-fomit-frame-pointer",
+    ]
+)
+_CORETRAIL_LINK_ARGS = ["-Wl,--gc-sections"] if platform.system() == "Linux" else []
+
+
+CORETRAIL_EXTENSION = Extension(
+    CORETRAIL_EXTENSION_NAME,
+    [
+        str(CORETRAIL_ROOT / "src/python/module.cc"),
+        str(CORETRAIL_ROOT / "src/core/coretrail_solver.cc"),
+        str(CORETRAIL_ROOT / "src/core/glucose_backend.cc"),
+        str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/core/Solver.cc"),
+        str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/utils/Options.cc"),
+        str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/utils/System.cc"),
+    ],
+    include_dirs=[
+        str(CORETRAIL_ROOT / "include"),
+        str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1"),
+        str(CORETRAIL_ROOT / "third_party/cardenc"),
+    ],
+    extra_compile_args=_CORETRAIL_COMPILE_ARGS,
+    extra_link_args=_CORETRAIL_LINK_ARGS,
+    language="c++",
+)
+
+
 SOLVER_EXTENSIONS = _filter_solver_extensions([
     CMakeExtension('hermax.core.openwbo', sourcedir='open-wbo'),
     CMakeExtension('hermax.core.openwbo_inc', sourcedir='open-wbo-inc'),
@@ -1537,6 +1579,7 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
     CMakeExtension('hermax.core.nuwls_c_ibr', sourcedir='nuwls-c-ibr-py'),
     CMakeExtension('hermax.core.loandra', sourcedir='loandra-py'),
     CMakeExtension('hermax.core._aperture_native', sourcedir='aperture-py'),
+    CORETRAIL_EXTENSION,
     *_optional_cplex_solver_extensions(),
 ])
 

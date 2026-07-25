@@ -52,6 +52,14 @@ class SolverCase:
 
 CASES: list[SolverCase] = [
     SolverCase(
+        "CoreTrail",
+        [
+            "core/test_ipamir_solver.py::TestCoreTrailSolverConformance",
+            "core/test_ipamir_solver_hardcore.py::TestCoreTrailSolverConformance",
+            "core/test_coretrail.py",
+        ],
+    ),
+    SolverCase(
         "Aperture",
         [
             "core/test_ipamir_solver.py::TestApertureSolverConformance",

@@ -275,7 +275,7 @@ class TestIPAMIRSolver(unittest.TestCase):
         solver.signature()
 
 
-from hermax.core import ApertureSolver, UWrMaxSATSolver, EvalMaxSATLatestSolver, RC2Reentrant
+from hermax.core import ApertureSolver, CoreTrailSolver, UWrMaxSATSolver, EvalMaxSATLatestSolver, RC2Reentrant
 from hermax.core import IMaxHSSolver, MaxHSSolver
 from hermax.non_incremental import CGSS
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
@@ -395,6 +395,16 @@ class TestApertureSolverConformance(TestIPAMIRSolver):
 
     def test_solve_raise_on_abnormal(self):
         self.skipTest("")
+
+
+class TestCoreTrailSolverConformance(TestIPAMIRSolver):
+    SOLVER_CLASS = CoreTrailSolver
+
+    def test_termination_callback(self):
+        self.skipTest("CoreTrail does not expose an IPAMIR termination callback.")
+
+    def test_solve_raise_on_abnormal(self):
+        self.skipTest("CoreTrail's native backend cannot be replaced by this mock test.")
 
 class TestUWrMaxSATCompSolverTerminationCallback(TestIPAMIRSolver):
     SOLVER_CLASS = UWrMaxSATCompSolver

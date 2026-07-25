@@ -10,6 +10,7 @@ from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestSolver
 from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrSolver
 from hermax.core.imaxhs_wrapper_py import IMaxHSSolver
 from hermax.core.aperture_py import ApertureSolver
+from hermax.core.coretrail_py import CoreTrailSolver
 
 class UWrMaxSAT(UWrMaxSATSolver):
     """
@@ -70,6 +71,11 @@ class Aperture(ApertureSolver):
     pass
 
 
+class CoreTrail(CoreTrailSolver):
+    """CoreTrail incremental MaxSAT backend."""
+    pass
+
+
 # Compatible aliases for historical public names.
 UWrMaxSATComp = UWrMaxSATCompetition
 EvalMaxSATIncr = EvalMaxSATIncremental
@@ -81,6 +87,7 @@ __all__ = [
     "EvalMaxSATIncremental",
     "IMaxHS",
     "Aperture",
+    "CoreTrail",
     # "UWrMaxSATComp",
     # "EvalMaxSATIncr",
 ]

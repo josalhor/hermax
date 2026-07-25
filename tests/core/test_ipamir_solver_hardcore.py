@@ -1757,7 +1757,7 @@ from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
 from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
 from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestSolver
 from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrSolver, EvalMaxSATIncrReentrant
-from hermax.core import ApertureSolver
+from hermax.core import ApertureSolver, CoreTrailSolver
 from hermax.core.openwbo_py import OLLSolver, PartMSU3Solver, AutoOpenWBOSolver
 from hermax.non_incremental.incomplete import SPBMaxSATCFPS, OpenWBOInc, TTOpenWBOInc, NuWLSCIBR, Loandra
 from hermax.core import WMaxCDCLSolver
@@ -1886,6 +1886,13 @@ class TestApertureSolverConformance(TestIPAMIRSolverHardcore):
 
     def test_040_termination_interrupt_and_raise_flag(self):
         self.skipTest("Aperture's upstream termination callback is not IPAMIR-compliant.")
+
+
+class TestCoreTrailSolverConformance(TestIPAMIRSolverHardcore):
+    SOLVER_CLASS = CoreTrailSolver
+
+    def test_040_termination_interrupt_and_raise_flag(self):
+        self.skipTest("CoreTrail does not expose an IPAMIR termination callback.")
 
 
 class TestMaxHSSolverTerminationCallback(TestIPAMIRSolverHardcore):
