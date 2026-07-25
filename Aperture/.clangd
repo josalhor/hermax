@@ -1,0 +1,27 @@
+CompileFlags:
+  Compiler: /usr/bin/g++
+  Add:
+    - -std=c++20
+    - -Wall
+    - -I/usr/include
+    - -isystem
+    - /usr/include/c++/13
+
+Index:
+  Background: Build
+  StandardLibrary: true
+
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true
+
+Diagnostics:
+  UnusedIncludes: None
+  MissingIncludes: None
+
+Completion:
+  AllScopes: true
+
+Hover:
+  ShowAKA: true

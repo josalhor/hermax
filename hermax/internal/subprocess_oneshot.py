@@ -97,7 +97,7 @@ def _kill_process(proc: subprocess.Popen[bytes]) -> bool:
 
 def run_oneshot_worker(
     request: Dict[str, Any],
-    timeout_s: float,
+    time_limit: Optional[float],
     grace_s: float = 1.0,
     cwd: Optional[str] = None,
     env: Optional[Dict[str, str]] = None,
@@ -110,7 +110,13 @@ def run_oneshot_worker(
     killed = False
 
     try:
-        stdout_b, stderr_b = proc.communicate(input=req_bytes, timeout=max(0.0, float(timeout_s)))
+        if time_limit is None:
+            stdout_b, stderr_b = proc.communicate(input=req_bytes)
+        else:
+            stdout_b, stderr_b = proc.communicate(
+                input=req_bytes,
+                timeout=max(0.0, float(time_limit)),
+            )
     except subprocess.TimeoutExpired:
         timed_out = True
         interrupted = _interrupt_process(proc)

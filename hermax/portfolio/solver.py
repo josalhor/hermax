@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Type
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
+from hermax.core.time_limits import validate_time_limit
 from hermax.core.utils import normalize_wcnf_formula
 from hermax.internal.maxsat_cli_parse import parse_maxsat_cli_output
 from hermax.internal.model_check import check_model
@@ -34,8 +35,8 @@ class CallbackAction(Enum):
 
 
 @dataclass(frozen=True)
-class AdjustTimeout:
-    new_timeout_s: float
+class AdjustTimeLimit:
+    new_time_limit_s: float
     mode: str = "relative"  # "relative" | "absolute"
 
 
@@ -201,9 +202,13 @@ class PortfolioSolver(IPAMIRSolver):
     """
 
     SUPPORTED_POLICIES = {
-        "best_valid_until_timeout",
+        "best_valid_until_time_limit",
         "first_valid",
-        "first_optimal_or_best_until_timeout",
+        "first_optimal_or_best_until_time_limit",
+    }
+    _LEGACY_POLICY_NAMES = {
+        "best_valid_until_timeout": "best_valid_until_time_limit",
+        "first_optimal_or_best_until_timeout": "first_optimal_or_best_until_time_limit",
     }
     CALLBACK_HEARTBEAT_S = 1.0
 
@@ -212,11 +217,14 @@ class PortfolioSolver(IPAMIRSolver):
         solver_classes: Sequence[Type[IPAMIRSolver]],
         formula=None,
         *,
-        per_solver_timeout_s: float = 20.0,
-        overall_timeout_s: float = 0.0,
-        timeout_grace_s: float = 1.0,
+        per_solver_time_limit_s: float = 20.0,
+        overall_time_limit_s: float = 0.0,
+        time_limit_grace_s: float = 1.0,
+        per_solver_timeout_s: Optional[float] = None,
+        overall_timeout_s: Optional[float] = None,
+        timeout_grace_s: Optional[float] = None,
         max_workers: int = 0,
-        selection_policy: PortfolioPolicy = "first_optimal_or_best_until_timeout",
+        selection_policy: PortfolioPolicy = "first_optimal_or_best_until_time_limit",
         validate_model: bool = True,
         recompute_cost_from_model: bool = True,
         invalid_result_policy: str = "warn_drop",
@@ -226,15 +234,45 @@ class PortfolioSolver(IPAMIRSolver):
         super().__init__(formula)
         if not solver_classes:
             raise ValueError("solver_classes must be a non-empty sequence of solver classes.")
+        if selection_policy in self._LEGACY_POLICY_NAMES:
+            warnings.warn(
+                f"{selection_policy!r} is deprecated; use "
+                f"{self._LEGACY_POLICY_NAMES[selection_policy]!r}.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            selection_policy = self._LEGACY_POLICY_NAMES[selection_policy]
         if selection_policy not in self.SUPPORTED_POLICIES:
             raise ValueError(f"Unsupported selection_policy={selection_policy!r}")
         if invalid_result_policy not in {"warn_drop", "drop", "ignore", "raise"}:
             raise ValueError(f"Unsupported invalid_result_policy={invalid_result_policy!r}")
 
+        if per_solver_timeout_s is not None:
+            warnings.warn(
+                "per_solver_timeout_s is deprecated; use per_solver_time_limit_s.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            per_solver_time_limit_s = per_solver_timeout_s
+        if overall_timeout_s is not None:
+            warnings.warn(
+                "overall_timeout_s is deprecated; use overall_time_limit_s.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            overall_time_limit_s = overall_timeout_s
+        if timeout_grace_s is not None:
+            warnings.warn(
+                "timeout_grace_s is deprecated; use time_limit_grace_s.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            time_limit_grace_s = timeout_grace_s
+
         self._solver_classes: list[type] = [cls for cls in solver_classes]
-        self._per_solver_timeout_s = float(per_solver_timeout_s)
-        self._overall_timeout_s = float(overall_timeout_s)
-        self._timeout_grace_s = float(timeout_grace_s)
+        self._per_solver_time_limit_s = float(per_solver_time_limit_s)
+        self._overall_time_limit_s = float(overall_time_limit_s)
+        self._time_limit_grace_s = float(time_limit_grace_s)
         self._max_workers = int(max_workers)
         if self._max_workers < 0:
             raise ValueError("max_workers must be >= 0")
@@ -463,9 +501,9 @@ class PortfolioSolver(IPAMIRSolver):
             stdout_file=stdout_f,
             stderr_file=stderr_f,
             start_s=now,
-            deadline_s=now + self._per_solver_timeout_s,
-            timeout_s=self._per_solver_timeout_s,
-            grace_s=self._timeout_grace_s,
+            deadline_s=now + self._per_solver_time_limit_s,
+            timeout_s=self._per_solver_time_limit_s,
+            grace_s=self._time_limit_grace_s,
             request_assumptions=list(assumptions),
         )
 
@@ -687,8 +725,8 @@ class PortfolioSolver(IPAMIRSolver):
                 active.discard(int(wid))
             return overall_deadline
 
-        if isinstance(action, AdjustTimeout):
-            new_timeout = max(0.0, float(action.new_timeout_s))
+        if isinstance(action, AdjustTimeLimit):
+            new_timeout = max(0.0, float(action.new_time_limit_s))
             mode = str(action.mode).lower()
             if mode == "absolute":
                 new_deadline = t0 + new_timeout
@@ -703,9 +741,15 @@ class PortfolioSolver(IPAMIRSolver):
 
         return overall_deadline
 
-    def solve(self, assumptions: Optional[List[int]] = None, raise_on_abnormal: bool = False) -> bool:
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
         self._require_open()
         self._invalidate()
+        limit = validate_time_limit(time_limit)
         assumps = [int(a) for a in assumptions] if assumptions else []
         for lit in assumps:
             if lit == 0:
@@ -713,12 +757,17 @@ class PortfolioSolver(IPAMIRSolver):
             while abs(lit) > self._num_vars:
                 self.new_var()
 
+        t0 = time.monotonic()
+        overall_timeout = self._overall_time_limit_s if limit is None else limit
+        overall_deadline = None if overall_timeout <= 0 else (t0 + overall_timeout)
         max_parallel = self._max_workers if self._max_workers > 0 else len(self._solver_classes)
         pending_classes = list(self._solver_classes)
         workers: list[_WorkerProc] = []
         while pending_classes and len(workers) < max_parallel:
             w = self._spawn_worker(pending_classes.pop(0), assumps)
             if w is not None:
+                if overall_deadline is not None:
+                    w.deadline_s = min(float(w.deadline_s), float(overall_deadline))
                 workers.append(w)
         if not workers:
             self._status = SolveStatus.ERROR
@@ -727,8 +776,6 @@ class PortfolioSolver(IPAMIRSolver):
                 raise RuntimeError(self._last_error)
             return False
 
-        t0 = time.monotonic()
-        overall_deadline = None if self._overall_timeout_s <= 0 else (t0 + self._overall_timeout_s)
         best: Optional[dict[str, Any]] = None
         saw_trusted_unsat = False
         active = set(range(len(workers)))
@@ -740,7 +787,11 @@ class PortfolioSolver(IPAMIRSolver):
                 now = time.monotonic()
                 if overall_deadline is not None and now >= overall_deadline:
                     for i in list(active):
-                        self._timeout_worker(workers[i])
+                        worker = workers[i]
+                        self._timeout_worker(worker)
+                        cand = self._apply_worker_result(worker)
+                        if cand:
+                            best = self._choose_best(best, cand)
                         active.discard(i)
                     break
 
@@ -799,6 +850,8 @@ class PortfolioSolver(IPAMIRSolver):
                         if pending_classes:
                             nw = self._spawn_worker(pending_classes.pop(0), assumps)
                             if nw is not None:
+                                if overall_deadline is not None:
+                                    nw.deadline_s = min(float(nw.deadline_s), float(overall_deadline))
                                 workers.append(nw)
                                 active.add(len(workers) - 1)
                         progressed = True
@@ -887,9 +940,9 @@ class PortfolioSolver(IPAMIRSolver):
         st: SolveStatus = cand["status"]
         if pol == "first_valid":
             return is_feasible(st)
-        if pol == "best_valid_until_timeout":
+        if pol == "best_valid_until_time_limit":
             return False
-        if pol == "first_optimal_or_best_until_timeout":
+        if pol == "first_optimal_or_best_until_time_limit":
             return st == SolveStatus.OPTIMUM and _solver_proves_optimum(worker_class_path)
         return False
 

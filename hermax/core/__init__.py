@@ -70,6 +70,7 @@ _EXPORTS = {
     "NuWLSCIBRSolver": (".nuwls_c_ibr_py", "NuWLSCIBRSolver"),
     "LoandraSolver": (".loandra_py", "LoandraSolver"),
     "IMaxHSSolver": (".imaxhs_wrapper_py", "IMaxHSSolver"),
+    "ApertureSolver": (".aperture_py", "ApertureSolver"),
     "MaxHSSolver": (".maxhs_wrapper_py", "MaxHSSolver"),
     "RC2Reentrant": (".rc2", "RC2Reentrant"),
     "CGSSSolver": (".cgss_py", "CGSSSolver"),

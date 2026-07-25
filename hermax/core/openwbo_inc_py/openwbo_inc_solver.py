@@ -84,8 +84,10 @@ class OpenWBOIncSolver(IPAMIRSolver):
     def solve(
         self,
         assumptions: Optional[List[int]] = None,
-        raise_on_abnormal: bool = False
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
     ) -> bool:
+        self._reject_time_limit(time_limit)
         if assumptions:
             raise NotImplementedError("OpenWBO-Inc does not support assumptions.")
 

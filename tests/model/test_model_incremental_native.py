@@ -40,7 +40,7 @@ class FakeIPSolver(IPAMIRSolver):
         self.soft_relaxed.append((list(clause), int(weight), int(relaxation_lit)))
         self.set_soft(-int(relaxation_lit), int(weight))
 
-    def solve(self, assumptions: Optional[List[int]] = None, raise_on_abnormal: bool = False) -> bool:
+    def solve(self, assumptions: Optional[List[int]] = None, raise_on_abnormal: bool = False, time_limit=None) -> bool:
         self.last_assumptions = list(assumptions or [])
         self.last_raise_on_abnormal = bool(raise_on_abnormal)
         self._status = SolveStatus.OPTIMUM

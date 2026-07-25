@@ -28,6 +28,15 @@ TESTS_DIR = ROOT / "tests"
 
 def _pytest_env() -> dict[str, str]:
     env = os.environ.copy()
+    if env.get("HERMAX_TEST_INSTALLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+        # Run the repository tests against an installed wheel.  The default
+        # PYTHONPATH injection below is useful for source-tree testing, but it
+        # would shadow the wheel with ./hermax and hide native extensions that
+        # only exist in site-packages after a cibuildwheel build.
+        env.pop("PYTHONPATH", None)
+        env.setdefault("PYTHONSAFEPATH", "1")
+        env.setdefault("PYTHONFAULTHANDLER", "1")
+        return env
     root_str = str(ROOT)
     prev = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = root_str if not prev else f"{root_str}:{prev}"
@@ -42,6 +51,14 @@ class SolverCase:
 
 
 CASES: list[SolverCase] = [
+    SolverCase(
+        "Aperture",
+        [
+            "core/test_ipamir_solver.py::TestApertureSolverConformance",
+            "core/test_ipamir_solver_hardcore.py::TestApertureSolverConformance",
+            "core/test_aperture.py",
+        ],
+    ),
     SolverCase(
         "UWrMaxSAT",
         [
@@ -313,6 +330,9 @@ def evaluate_expectations(
 
 
 def collect_case_tests(case: SolverCase, extra_pytest_args: list[str]) -> list[str]:
+    import_mode = ["--import-mode=importlib"] if os.environ.get(
+        "HERMAX_TEST_INSTALLED", ""
+    ).strip().lower() in {"1", "true", "yes", "on"} else []
     cmd = [
         sys.executable,
         "-m",
@@ -320,6 +340,7 @@ def collect_case_tests(case: SolverCase, extra_pytest_args: list[str]) -> list[s
         "--rootdir=.",
         "--collect-only",
         "-q",
+        *import_mode,
         *case.selectors,
         *extra_pytest_args,
     ]
@@ -353,6 +374,8 @@ def run_case(
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", case.name)
 
     base_flags = ["-vv", "-rA"] if exhaustive else ["-q"]
+    if os.environ.get("HERMAX_TEST_INSTALLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+        base_flags.append("--import-mode=importlib")
     cmd = [
         sys.executable,
         "-m",
@@ -596,10 +619,15 @@ def main() -> int:
         case_test_status[case.name] = row
         print(f"status={status} elapsed={elapsed:.1f}s code={detail}")
         if status != "PASS":
-            excerpt = "\n".join((out or "").splitlines()[:40]).strip()
-            if excerpt:
-                print(f"--- {case.name} failure excerpt (first 40 lines) ---")
-                print(excerpt)
+            lines = (out or "").splitlines()
+            head = "\n".join(lines[:20]).strip()
+            tail = "\n".join(lines[-80:]).strip()
+            if head:
+                print(f"--- {case.name} failure excerpt (first 20 lines) ---")
+                print(head)
+                if tail and tail != head:
+                    print(f"--- {case.name} failure excerpt (last 80 lines) ---")
+                    print(tail)
                 print(f"--- end {case.name} excerpt ---")
 
     print("\nCompliance Matrix")

@@ -31,6 +31,7 @@ from .expressions import (
     _unsupported_comparison_error,
     _LazyIntExpr,
     DeferredClauseGroup,
+    _deferred_constant_constraint,
 )
 
 
@@ -1275,7 +1276,7 @@ class IntVar:
     def __eq__(self, value):  # type: ignore[override]
         if isinstance(value, int):
             if value < self.lb or value > self.ub:
-                raise ValueError(f"value {value} is outside domain [{self.lb}, {self.ub}]")
+                return _deferred_constant_constraint(self._model, False)
             if value not in self._eq_lits:
                 k = value - self.lb
                 ts = self._threshold_lits
@@ -1320,6 +1321,8 @@ class IntVar:
 
     def __ne__(self, value):  # type: ignore[override]
         if isinstance(value, int):
+            if value < self.lb or value > self.ub:
+                return _deferred_constant_constraint(self._model, True)
             return ~(self == value)
         if isinstance(value, IntVar):
             _ensure_same_model_pair_fast(self, value)

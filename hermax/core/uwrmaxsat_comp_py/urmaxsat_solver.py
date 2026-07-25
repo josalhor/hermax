@@ -34,6 +34,7 @@ class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
         cl = self._normalize_clause(clause)
         self.solver.addClause([int(x) for x in cl], None)
         self._hard_clauses.append([int(x) for x in cl])
+        self._record_hard_clause(cl)
         self._invalidate_solution()
 
 
@@ -50,6 +51,7 @@ class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
 
         if w == 0:
             self._anon_soft_by_lit.pop(int(ilit), None)
+            self._record_soft_unit(ilit, w)
             self._rebuild_backend()
             self._invalidate_solution()
             return
@@ -57,6 +59,7 @@ class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
         # Anonymous soft literal, last-wins by literal
         self.solver.addClause([int(ilit)], int(w))
         self._anon_soft_by_lit[int(ilit)] = int(w)
+        self._record_soft_unit(ilit, w)
         self._invalidate_solution()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
@@ -64,7 +67,8 @@ class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
 
     # ---------- Solve ----------
 
-    def solve(self, assumptions=None, raise_on_abnormal=False) -> bool:
+    def solve(self, assumptions=None, raise_on_abnormal=False, time_limit=None) -> bool:
+        self._validate_live_time_limit(time_limit)
         self._require_open()
         self._invalidate_solution()
         # Work around a backend crash path in UWrMaxSATComp on hard-only instances.

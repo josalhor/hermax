@@ -8,8 +8,8 @@ import pytest
 
 from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible
 from hermax.core import RC2Reentrant
-from hermax.portfolio import PortfolioSolver
-from hermax.portfolio.solver import _WorkerProc, AdjustTimeout
+from hermax.portfolio import AdjustTimeLimit, PortfolioSolver
+from hermax.portfolio.solver import _WorkerProc
 from hermax.internal.subprocess_oneshot import _dumps_frame
 
 
@@ -221,7 +221,7 @@ def test_portfolio_incumbent_callback_strict_improvement_only_and_coalesced(monk
     p.close()
 
 
-def test_portfolio_adjust_timeout_action_shortens_deadline(monkeypatch):
+def test_portfolio_adjust_time_limit_action_shortens_deadline(monkeypatch):
     p = _mk_solver(overall_timeout_s=10.0)
     workers = [_mk_alive_worker(solver_name="W0")]
     clock = _Clock(0.0)
@@ -239,8 +239,7 @@ def test_portfolio_adjust_timeout_action_shortens_deadline(monkeypatch):
 
     def on_event(ev):
         if getattr(ev, "event_type", None) == "HEARTBEAT":
-            # new_timeout_s interpreted from now by default
-            return AdjustTimeout(new_timeout_s=0.05)
+            return AdjustTimeLimit(new_time_limit_s=0.05)
         return None
 
     monkeypatch.setattr("hermax.portfolio.solver.time.monotonic", clock.monotonic)

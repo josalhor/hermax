@@ -1,0 +1,55 @@
+# Include essential metadata and docs
+include aperture/VERSION
+include LICENSE
+include aperture/docs/PYTHONAPI.md
+include CHANGELOG.md
+
+# Include C++ source files
+recursive-include aperture/_core *
+recursive-include src *
+recursive-include external/solvers *
+recursive-include external/fmt *
+
+# Include top-level build configuration
+include Makefile
+
+# Exclude unnecessary files
+global-exclude __pycache__
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude .DS_Store
+global-exclude build
+global-exclude dist
+global-exclude *.egg-info
+global-exclude aperture.ini
+global-exclude *depend.mk
+
+# Exclude binary and object files
+global-exclude *.o
+global-exclude *.or
+global-exclude *.od
+global-exclude *.oh
+global-exclude *.a
+global-exclude *.so
+
+# Exclude virtualenvs, caches and local artifacts
+global-exclude .venv
+global-exclude .cache
+global-exclude instances
+global-exclude MaxSAT-Fuzzer
+global-exclude IMPLEMENTATION_SUMMARY.md
+
+# Exclude specific external tooling artifacts and generated files
+global-exclude external/acnfuzz/acnfuzz
+global-exclude external/acnfuzz/BuggedACNFs
+global-exclude external/acnfuzz/error_log.csv
+global-exclude external/solvers/cadical/makefile
+global-exclude external/solvers/cadical/src/makefile
+global-exclude external/solvers/AE_kissat2025_MAB/makefile
+global-exclude external/solvers/AE_kissat2025_MAB/src/makefile
+global-exclude external/solvers/AE_kissat2025_MAB/build_pic/build.h
+
+# Exclude some source files intentionally omitted from distribution
+global-exclude src/cli/*
+global-exclude src/Main.cc
+global-exclude *depend.mk

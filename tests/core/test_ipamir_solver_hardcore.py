@@ -242,7 +242,7 @@ class _ModelCheckingSolverProxy:
             self._softs.append(([-b], w))
         return out
 
-    def solve(self, assumptions=None, raise_on_abnormal=False):
+    def solve(self, assumptions=None, raise_on_abnormal=False, time_limit=None):
         sat = self._solver.solve(assumptions=assumptions, raise_on_abnormal=raise_on_abnormal)
         st = self._solver.get_status()
         if not is_feasible(st):
@@ -1757,6 +1757,7 @@ from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
 from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
 from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestSolver
 from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrSolver, EvalMaxSATIncrReentrant
+from hermax.core import ApertureSolver
 from hermax.core.openwbo_py import OLLSolver, PartMSU3Solver, AutoOpenWBOSolver
 from hermax.non_incremental.incomplete import SPBMaxSATCFPS, OpenWBOInc, TTOpenWBOInc, NuWLSCIBR, Loandra
 from hermax.core import WMaxCDCLSolver
@@ -1878,6 +1879,13 @@ class TestIMaxHSSolverTerminationCallback(TestIPAMIRSolverHardcore):
 
 class TestUWrMaxSATSolverTerminationCallback(TestIPAMIRSolverHardcore):
     SOLVER_CLASS = UWrMaxSATSolver
+
+
+class TestApertureSolverConformance(TestIPAMIRSolverHardcore):
+    SOLVER_CLASS = ApertureSolver
+
+    def test_040_termination_interrupt_and_raise_flag(self):
+        self.skipTest("Aperture's upstream termination callback is not IPAMIR-compliant.")
 
 
 class TestMaxHSSolverTerminationCallback(TestIPAMIRSolverHardcore):

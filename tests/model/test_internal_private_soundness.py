@@ -163,7 +163,7 @@ class _PrivateFakeIP(IPAMIRSolver):
     def new_var(self) -> int:
         raise NotImplementedError
 
-    def solve(self, assumptions=None, raise_on_abnormal: bool = False) -> bool:
+    def solve(self, assumptions=None, raise_on_abnormal: bool = False, time_limit=None) -> bool:
         return True
 
     def get_status(self) -> SolveStatus:

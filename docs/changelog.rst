@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Version 1.2.4
+-------------
+
+Highlights
+~~~~~~~~~~
+* Added ``time_limit`` support to model, portfolio, and subprocess solve APIs.
+* Added Aperture solver wrapper with subprocess isolation and time limit support.
+
 Version 1.2.3
 -------------
 

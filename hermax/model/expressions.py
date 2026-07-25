@@ -389,6 +389,18 @@ class DeferredClauseGroup(ClauseGroup):
         return repr(self._compiled)
 
 
+def _deferred_constant_constraint(model: "Model", value: bool) -> DeferredClauseGroup:
+    """Return a lazily materialized Boolean constant formula.
+
+    Keeping constants as clause groups avoids allocating the model's internal
+    ``__true``/``__false`` literals for a comparison that may never be added.
+    In particular, gating false realizes directly as the negated gate.
+    """
+    if value:
+        return DeferredClauseGroup(model, lambda: ClauseGroup(model, []))
+    return DeferredClauseGroup(model, lambda: ClauseGroup(model, [Clause(model, [])]))
+
+
 class IntRelation(ClauseGroup):
     """ClauseGroup with relation metadata for full Boolean reification.
 
@@ -626,10 +638,16 @@ class Literal:
             return ClauseGroup(self._model, [Clause(self._model, [self]), *other])
         raise TypeError("AND only supports Literal operands.")
 
-    @staticmethod
-    def _validate_boolean_equality_constant(other) -> None:
-        if isinstance(other, int) and not isinstance(other, bool) and other not in (0, 1):
-            raise ValueError(f"value {other} is outside Boolean domain [0, 1]")
+    def _constant_boolean_comparison(self, op: str, other):
+        if not isinstance(other, int) or isinstance(other, bool) or other in (0, 1):
+            return None
+        return _deferred_constant_constraint(
+            self._model,
+            {
+                "==": False,
+                "!=": True,
+            }[op],
+        )
 
     def _finalize_pb_comparison(self, op: str, other):
         result = _compare_pb_operands(self, op, other)
@@ -667,7 +685,9 @@ class Literal:
             )
         if isinstance(other, (Clause, ClauseGroup, DeferredClauseGroup, PBConstraint)):
             raise _formula_comparison_error(self, other)
-        self._validate_boolean_equality_constant(other)
+        constant = self._constant_boolean_comparison("==", other)
+        if constant is not None:
+            return constant
         return self._finalize_pb_comparison("==", other)
 
     def __ne__(self, other):  # type: ignore[override]
@@ -678,7 +698,9 @@ class Literal:
             raise _formula_comparison_error(self, other)
         if isinstance(other, (Clause, ClauseGroup, DeferredClauseGroup, PBConstraint)):
             raise _formula_comparison_error(self, other)
-        self._validate_boolean_equality_constant(other)
+        constant = self._constant_boolean_comparison("!=", other)
+        if constant is not None:
+            return constant
         return self._finalize_pb_comparison("!=", other)
 
     def __mul__(self, other):

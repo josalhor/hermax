@@ -10,6 +10,9 @@ from pysat.formula import CNF, WCNF
 from hermax.utils import batcher_odd_even_unary_add_network
 from pysat.solvers import Solver as PySATSolver
 from hermax.non_incremental import RC2 as HermaxRC2
+from hermax.core.time_limits import validate_time_limit
+from hermax.core.interrupt_recovery import InterruptRecovery
+from hermax.internal.sat_replay import PySATReplaySolver
 
 from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
@@ -520,8 +523,8 @@ class SolveResult:
 
     @property
     def ok(self) -> bool:
-        """Return ``True`` for feasible statuses (``sat`` or ``optimum``)."""
-        return self.status in {"sat", "optimum"}
+        """Return ``True`` when a feasible assignment is available."""
+        return self.status in {"sat", "optimum", "interrupted_sat"}
 
     def __getitem__(self, obj):
         return self.assignment[obj]
@@ -780,6 +783,7 @@ class _IncrementalCoordinator:
         assumptions: Optional[Sequence[object]],
         raise_on_abnormal: bool,
         sat_upgrade: str,
+        time_limit: Optional[float],
     ) -> SolveResult:
         """Solve using current incremental state, binding backend if needed."""
         from hermax.core.ipamir_solver_interface import is_feasible
@@ -823,6 +827,11 @@ class _IncrementalCoordinator:
         self.route_deltas(len(m._hard), len(m._soft))
 
         if self.mode == "sat":
+            if time_limit is not None:
+                raise NotImplementedError(
+                    "time_limit is not supported for a live PySAT incremental backend. "
+                    "Use incremental=False for a one-shot timed solve."
+                )
             assert self.sat_solver is not None
             sat = self.sat_solver.solve(assumptions=assumptions_dimacs)
             if not sat:
@@ -832,9 +841,16 @@ class _IncrementalCoordinator:
 
         assert self.mode == "maxsat"
         assert self.ip_solver is not None
+        if m._rebuild_on_interrupt:
+            if not isinstance(self.ip_solver, InterruptRecovery):
+                raise NotImplementedError(
+                    "The selected live solver does not support interruption recovery."
+                )
+            self.ip_solver.set_rebuild_on_interrupt(True)
         self.ip_solver.solve(
             assumptions=assumptions_dimacs,
             raise_on_abnormal=bool(raise_on_abnormal),
+            time_limit=time_limit,
         )
         st = self.ip_solver.get_status()
         status = _map_ipamir_status_to_model_status(st)
@@ -899,6 +915,7 @@ class Model:
         "_next_soft_group_id",
         "_soft_raw_weight_by_id",
         "_inc_state",
+        "_rebuild_on_interrupt",
         "_obj_proxy",
         "_tier_obj_proxy",
         "_pb_clause_cache",
@@ -953,6 +970,7 @@ class Model:
         self._next_soft_group_id = 1
         self._soft_raw_weight_by_id: dict[int, float] = {}
         self._inc_state = _IncrementalCoordinator(self)
+        self._rebuild_on_interrupt = False
         self._obj_proxy = _ObjectiveProxy(self)
         self._tier_obj_proxy = _TierObjectiveProxy(self)
         self._pb_clause_cache: dict[tuple, ClauseGroup] = {}
@@ -988,6 +1006,22 @@ class Model:
     def set_merge_pb_optimization(self, enabled: bool = True) -> None:
         """Enable or disable deferred PB batch merge optimization."""
         self._merge_pb_optimization_enabled = bool(enabled)
+
+    def set_rebuild_on_interrupt(self, enabled: bool = True) -> None:
+        """Allow a live incremental backend to rebuild after interruption.
+
+        The setting is forwarded when a MaxSAT backend is bound. It is only
+        meaningful for native incremental solvers that explicitly support it.
+        """
+        if not isinstance(enabled, bool):
+            raise TypeError("enabled must be a bool.")
+        self._rebuild_on_interrupt = enabled
+        if self._inc_state.ip_solver is not None:
+            if not isinstance(self._inc_state.ip_solver, InterruptRecovery):
+                raise NotImplementedError(
+                    "The selected live solver does not support interruption recovery."
+                )
+            self._inc_state.ip_solver.set_rebuild_on_interrupt(enabled)
 
     def set_kmerge_config(self, config: KMergeConfig | None = None, **kwargs) -> None:
         """Replace or update the K-MERGE heuristic configuration."""
@@ -3070,6 +3104,7 @@ class Model:
         raise_on_abnormal: bool = False,
         sat_upgrade: str = "upgrade",
         lex_strategy: Optional[str] = None,
+        time_limit: Optional[float] = None,
     ) -> SolveResult:
         """Solve the model using built-in convenience backends.
 
@@ -3087,12 +3122,20 @@ class Model:
             clauses appear (controlled by ``sat_upgrade``).
             ``lex_strategy`` is meaningful only when ``model.tier_obj`` is active.
         """
+        limit = validate_time_limit(time_limit)
+        if not isinstance(incremental, bool):
+            raise TypeError("incremental must be a bool.")
         self._assert_lex_exclusive_usage()
         ls = None if lex_strategy is None else str(lex_strategy).lower()
         if ls is not None and ls not in {"incremental", "stratified"}:
             raise ValueError("lex_strategy must be one of: incremental, stratified")
 
         if self._tier_obj_proxy.is_active():
+            if limit is not None:
+                raise NotImplementedError(
+                    "time_limit with tier_obj is not supported yet because a single "
+                    "budget must cover several lexicographic solves."
+                )
             self._commit_pb()
             if ls is None:
                 ls = "incremental"
@@ -3142,6 +3185,7 @@ class Model:
                 assumptions=assumptions,
                 raise_on_abnormal=raise_on_abnormal,
                 sat_upgrade=sat_upgrade,
+                time_limit=limit,
             )
 
         if solver is not None:
@@ -3150,6 +3194,7 @@ class Model:
                 solver_kwargs=solver_kwargs or {},
                 assumptions=assumptions,
                 raise_on_abnormal=raise_on_abnormal,
+                time_limit=limit,
             )
 
         if self._soft:
@@ -3161,16 +3206,25 @@ class Model:
                 solver_kwargs={},
                 assumptions=assumptions,
                 raise_on_abnormal=raise_on_abnormal,
+                time_limit=limit,
             )
 
         cnf = self.to_cnf()
-        with PySATSolver(name=sat_solver_name) as s:
-            s.append_formula(cnf.clauses)
-            sat = s.solve(assumptions=self._coerce_assumptions(assumptions))
-            if not sat:
-                return SolveResult(self, status="unsat", raw_model=None, cost=None, backend=f"pysat.{sat_solver_name}")
-            model = s.get_model() or []
-            return SolveResult(self, status="sat", raw_model=model, cost=None, backend=f"pysat.{sat_solver_name}")
+        sat_solver = PySATReplaySolver(sat_solver_name)
+        sat_solver.ensure_var(cnf.nv)
+        for clause in cnf.clauses:
+            sat_solver.add_clause(clause)
+        result = sat_solver.solve(
+            assumptions=self._coerce_assumptions(assumptions),
+            time_limit=limit,
+        )
+        return SolveResult(
+            self,
+            status=result.status,
+            raw_model=result.model,
+            cost=None,
+            backend=f"pysat.{sat_solver_name}",
+        )
 
     def _solve_with_hermax_solver(
         self,
@@ -3179,6 +3233,7 @@ class Model:
         solver_kwargs: dict,
         assumptions: Optional[Sequence[object]],
         raise_on_abnormal: bool,
+        time_limit: Optional[float] = None,
         formula_override: Optional[WCNF] = None,
         objective_constant_override: Optional[int] = None,
     ) -> SolveResult:
@@ -3227,6 +3282,12 @@ class Model:
 
         created = False
         if isinstance(solver, IPAMIRSolver):
+            if time_limit is not None:
+                raise NotImplementedError(
+                    "time_limit with a solver instance is only supported by a live "
+                    "backend that implements interruption. Pass a solver class for "
+                    "one-shot execution."
+                )
             if solver_kwargs:
                 raise ValueError("solver_kwargs are only supported when passing a solver class/callable.")
             ip_solver = solver
@@ -3234,7 +3295,23 @@ class Model:
         else:
             if not callable(solver):
                 raise TypeError("solver must be an IPAMIRSolver instance, class, or callable factory.")
-            ip_solver = solver(formula=formula, **solver_kwargs)
+            if time_limit is not None:
+                if solver_kwargs:
+                    raise ValueError(
+                        "solver_kwargs are not supported for one-shot time-limited execution. "
+                        "Configure the solver class directly or use PortfolioSolver."
+                    )
+                from hermax.portfolio.solver import PortfolioSolver
+
+                ip_solver = PortfolioSolver(
+                    [solver],
+                    formula=formula,
+                    per_solver_time_limit_s=time_limit,
+                    overall_time_limit_s=time_limit,
+                    max_workers=1,
+                )
+            else:
+                ip_solver = solver(formula=formula, **solver_kwargs)
             created = True
             if not isinstance(ip_solver, IPAMIRSolver):
                 if created:
@@ -3245,6 +3322,7 @@ class Model:
             ip_solver.solve(
                 assumptions=self._coerce_assumptions(assumptions),
                 raise_on_abnormal=bool(raise_on_abnormal),
+                time_limit=time_limit,
             )
             st = ip_solver.get_status()
             status = _map_ipamir_status_to_model_status(st)

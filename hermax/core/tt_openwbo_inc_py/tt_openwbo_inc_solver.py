@@ -76,7 +76,13 @@ class TTOpenWBOIncSolver(IPAMIRSolver):
     def add_soft_unit(self, lit: int, weight: int) -> None:
         self.set_soft(int(lit), int(weight))
 
-    def solve(self, assumptions: Optional[List[int]] = None, raise_on_abnormal: bool = False) -> bool:
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
+        self._reject_time_limit(time_limit)
         if assumptions:
             raise NotImplementedError("TT-Open-WBO-Inc native wrapper does not support assumptions.")
         solve_result = bool(self.solver.solve())

@@ -8,7 +8,7 @@ instance.
 Unlike the incomplete-solver wrappers, the portfolio is a *general* front-end:
 it accepts incremental wrappers, non-incremental wrappers, and incomplete
 solvers in the same run. Each solver is executed in its own subprocess for
-robustness and timeout control.
+robustness and time-limit control.
 
 Module Description
 ------------------
@@ -35,9 +35,9 @@ Users pass Python classes for example:
 
    s = PortfolioSolver(
        [CGSSSolver, Loandra, OpenWBOInc, TTOpenWBOInc],
-       per_solver_timeout_s=5.0,
-       overall_timeout_s=10.0,
-       selection_policy="first_optimal_or_best_until_timeout",
+       per_solver_time_limit_s=5.0,
+       overall_time_limit_s=10.0,
+       selection_policy="first_optimal_or_best_until_time_limit",
    )
 
 Preset Portfolios
@@ -76,8 +76,8 @@ Example (preset subclass):
    from hermax.portfolio import PerformancePortfolioSolver
 
    s = PerformancePortfolioSolver(
-       per_solver_timeout_s=5.0,
-       overall_timeout_s=15.0,
+       per_solver_time_limit_s=5.0,
+       overall_time_limit_s=15.0,
        max_workers=4,
    )
 
@@ -90,8 +90,8 @@ Example (classmethod constructors):
    s1 = PortfolioSolver.complete(max_workers=4)
    s2 = PortfolioSolver.incomplete(selection_policy="first_valid")
    s3 = PortfolioSolver.performance(
-       per_solver_timeout_s=5.0,
-       overall_timeout_s=15.0,
+       per_solver_time_limit_s=5.0,
+       overall_time_limit_s=15.0,
        max_workers=8,
    )
 
@@ -100,9 +100,9 @@ Key options
 
 * ``selection_policy``:
 
-  * ``"best_valid_until_timeout"``
+  * ``"best_valid_until_time_limit"``
   * ``"first_valid"``
-  * ``"first_optimal_or_best_until_timeout"`` (default)
+  * ``"first_optimal_or_best_until_time_limit"`` (default)
 
 * ``max_workers`` (default ``0`` = no limit):
   maximum number of solver subprocesses run concurrently. This is a process
@@ -115,6 +115,20 @@ Key options
   Hermax/IPAMIR.
 * ``invalid_result_policy`` (default ``"warn_drop"``):
   what to do with invalid solver outputs (warn/drop/raise/ignore).
+
+Time limits
+-----------
+
+``solve(time_limit=...)`` sets a total budget for one portfolio run:
+
+.. code-block:: python
+
+   result_found = s.solve(time_limit=30)
+   if result_found:
+       print(s.get_status(), s.get_cost())
+
+An incomplete result with a valid incumbent has status
+``SolveStatus.INTERRUPTED_SAT`` and still provides a model and cost.
 
 Callback API
 ------------
@@ -162,12 +176,12 @@ The callback may return:
 * ``None`` or :class:`hermax.portfolio.CallbackAction.CONTINUE`
 * :class:`hermax.portfolio.CallbackAction.STOP`
 * :class:`hermax.portfolio.CallbackAction.DROP_CURRENT`
-* :class:`hermax.portfolio.AdjustTimeout(...)`
+* :class:`hermax.portfolio.AdjustTimeLimit(...)`
 
-``AdjustTimeout`` supports:
+``AdjustTimeLimit`` supports:
 
-* ``mode="relative"`` (default): timeout from now
-* ``mode="absolute"``: timeout from solve start
+* ``mode="relative"`` (default): time limit from now
+* ``mode="absolute"``: time limit from solve start
 
 Example
 ~~~~~~~
@@ -178,7 +192,7 @@ Example
        PortfolioSolver,
        PortfolioEvent,
        CallbackAction,
-       AdjustTimeout,
+       AdjustTimeLimit,
    )
    from hermax.non_incremental import CGSSSolver
    from hermax.non_incremental.incomplete import Loandra
@@ -189,9 +203,9 @@ Example
        if event.cost is not None and event.cost <= 50:
            return CallbackAction.STOP
        if event.cost is not None and event.cost <= 200:
-           return AdjustTimeout(new_timeout_s=3.0, mode="relative")
+           return AdjustTimeLimit(new_time_limit_s=3.0, mode="relative")
 
-   s = PortfolioSolver([CGSSSolver, Loandra], overall_timeout_s=20.0)
+   s = PortfolioSolver([CGSSSolver, Loandra], overall_time_limit_s=20.0)
    s.set_callback(monitor)
    s.solve()
 
@@ -234,7 +248,7 @@ API Details
 .. autoclass:: hermax.portfolio.PortfolioEvent
    :members:
 
-.. autoclass:: hermax.portfolio.AdjustTimeout
+.. autoclass:: hermax.portfolio.AdjustTimeLimit
    :members:
 
 .. autoclass:: hermax.portfolio.CallbackAction

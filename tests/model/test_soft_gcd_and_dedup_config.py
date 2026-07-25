@@ -28,7 +28,7 @@ class _FakeIPCost(IPAMIRSolver):
         self.soft_relaxed.append((list(clause), int(weight), int(relaxation_lit)))
         self.soft_units.append((-int(relaxation_lit), int(weight)))
 
-    def solve(self, assumptions: Optional[list[int]] = None, raise_on_abnormal: bool = False) -> bool:
+    def solve(self, assumptions: Optional[list[int]] = None, raise_on_abnormal: bool = False, time_limit=None) -> bool:
         return True
 
     def get_status(self):
@@ -109,4 +109,3 @@ def test_soft_dedup_can_be_disabled_via_model_method():
     assert len(m._soft) == 2
     assert sorted(w for w, _ in m._soft) == [5, 10]
     assert r1.soft_ids[0] != r2.soft_ids[0]
-

@@ -27,6 +27,7 @@ class UWrMaxSATSolver(NativeIncrementalSolverBase):
         self._require_open()
         cl = self._normalize_clause(clause)
         self.solver.addClause([int(x) for x in cl], None)
+        self._record_hard_clause(cl)
         self._invalidate_solution()
 
 
@@ -41,6 +42,7 @@ class UWrMaxSATSolver(NativeIncrementalSolverBase):
             )
 
         self.solver.addClause([int(ilit)], int(w))
+        self._record_soft_unit(ilit, w)
         self._anon_soft_by_lit[int(ilit)] = int(w)
         self._invalidate_solution()
 
@@ -49,13 +51,13 @@ class UWrMaxSATSolver(NativeIncrementalSolverBase):
 
     # ---------- Solve ----------
 
-    def solve(self, assumptions=None, raise_on_abnormal=False) -> bool:
+    def solve(self, assumptions=None, raise_on_abnormal=False, time_limit=None) -> bool:
+        self._validate_live_time_limit(time_limit)
         self._require_open()
         self._invalidate_solution()
         assumps = self._normalize_assumptions(assumptions)
         if assumps:
             self.solver.assume([int(x) for x in assumps])
-
         r = int(self.solver.solve())
         self._last_solve_result = r
 

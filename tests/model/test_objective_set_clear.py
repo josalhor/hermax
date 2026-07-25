@@ -26,7 +26,7 @@ class _FakeIP(IPAMIRSolver):
     def add_soft_unit(self, lit: int, weight: int) -> None:
         self.set_soft(lit, weight)
 
-    def solve(self, assumptions: Optional[list[int]] = None, raise_on_abnormal: bool = False) -> bool:
+    def solve(self, assumptions: Optional[list[int]] = None, raise_on_abnormal: bool = False, time_limit=None) -> bool:
         return True
 
     def get_status(self) -> SolveStatus:

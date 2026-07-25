@@ -79,14 +79,39 @@ def test_int_exact_equality_returns_cached_literal_in_domain():
     assert eq2_a is not eq0
 
 
-def test_int_exact_equality_out_of_domain_raises():
+@pytest.mark.parametrize("value", [-1, 5])
+@pytest.mark.parametrize("op, expected_when_enabled", [("==", "unsat"), ("!=", "sat")])
+@pytest.mark.parametrize("gate_enabled", [False, True])
+def test_int_exact_comparison_outside_domain_is_lazy_and_semantic(value, op, expected_when_enabled, gate_enabled):
+    m = Model()
+    speed = m.int("speed", lb=0, ub=4)
+    gate = m.bool("gate")
+    next_id_before = m._next_id
+    hard_before = len(m._hard)
+
+    comparison = speed == value if op == "==" else speed != value
+    # Constructing a constant comparison must not allocate __true/__false or clauses.
+    assert m._next_id == next_id_before
+    assert len(m._hard) == hard_before
+    assert m._const_lits == {}
+
+    m &= comparison.only_if(gate)
+    assert m._next_id == next_id_before
+    assert m._const_lits == {}
+    m &= gate if gate_enabled else ~gate
+    expected = expected_when_enabled if gate_enabled else "sat"
+    assert m.solve().status == expected
+    assert m._const_lits == {}
+
+
+@pytest.mark.parametrize("value", [-1, 5])
+@pytest.mark.parametrize("op, expected", [("==", "unsat"), ("!=", "sat")])
+def test_bare_int_exact_comparison_outside_domain_has_boolean_semantics(value, op, expected):
     m = Model()
     speed = m.int("speed", lb=0, ub=4)
 
-    with pytest.raises(ValueError):
-        _ = (speed == 5)
-    with pytest.raises(ValueError):
-        _ = (speed == -1)
+    m &= speed == value if op == "==" else speed != value
+    assert m.solve().status == expected
 
 
 def test_int_domain_constraints_allow_all_true_threshold_assignment_for_max_value():

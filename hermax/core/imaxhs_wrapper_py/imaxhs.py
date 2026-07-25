@@ -44,6 +44,7 @@ class IMaxHSSolver(NativeIncrementalSolverBase):
         self._require_open()
         cl = self._normalize_clause(clause)
         self.solver.addClause([int(x) for x in cl], None)
+        self._record_hard_clause(cl)
         self._invalidate_solution()
 
     def set_soft(self, lit: int, weight: int) -> None:
@@ -60,12 +61,14 @@ class IMaxHSSolver(NativeIncrementalSolverBase):
 
         self.solver.addClause([int(ilit)], int(w))
         self._anon_soft_by_lit[int(ilit)] = int(w)
+        self._record_soft_unit(ilit, w)
         self._invalidate_solution()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
         self.set_soft(int(lit), self._normalize_positive_weight(weight))
 
-    def solve(self, assumptions=None, raise_on_abnormal=False) -> bool:
+    def solve(self, assumptions=None, raise_on_abnormal=False, time_limit=None) -> bool:
+        self._validate_live_time_limit(time_limit)
         self._require_open()
         self._invalidate_solution()
         if self._terminate_cb is not None and int(self._terminate_cb()) != 0:

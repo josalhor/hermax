@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import List, Optional
+import time
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
 
@@ -26,7 +27,12 @@ class BadModelCostSolver(IPAMIRSolver):
     def add_soft_unit(self, lit: int, weight: int) -> None:
         pass
 
-    def solve(self, assumptions: Optional[List[int]] = None, raise_on_abnormal: bool = False) -> bool:
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
         self._model = [-1, -2, -3]
         self._cost = 0
         self._status = SolveStatus.OPTIMUM
@@ -57,3 +63,22 @@ class BadModelCostSolver(IPAMIRSolver):
 
     def close(self) -> None:
         pass
+
+
+class SlowTestSolver(BadModelCostSolver):
+    """Worker fixture that stays alive long enough for deadline tests."""
+
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
+        time.sleep(0.5)
+        self._status = SolveStatus.INTERRUPTED
+        self._model = None
+        self._cost = None
+        return False
+
+    def signature(self) -> str:
+        return "SlowTestSolver(test helper)"

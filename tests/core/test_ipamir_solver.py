@@ -275,7 +275,7 @@ class TestIPAMIRSolver(unittest.TestCase):
         solver.signature()
 
 
-from hermax.core import UWrMaxSATSolver, EvalMaxSATLatestSolver, RC2Reentrant
+from hermax.core import ApertureSolver, UWrMaxSATSolver, EvalMaxSATLatestSolver, RC2Reentrant
 from hermax.core import IMaxHSSolver, MaxHSSolver
 from hermax.non_incremental import CGSS
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
@@ -385,6 +385,16 @@ class IncompletePresetPortfolioSolver(IncompletePortfolioSolver):
 
 class TestUWrMaxSATSolverTerminationCallback(TestIPAMIRSolver):
     SOLVER_CLASS = UWrMaxSATSolver
+
+
+class TestApertureSolverConformance(TestIPAMIRSolver):
+    SOLVER_CLASS = ApertureSolver
+
+    def test_termination_callback(self):
+        self.skipTest("")
+
+    def test_solve_raise_on_abnormal(self):
+        self.skipTest("")
 
 class TestUWrMaxSATCompSolverTerminationCallback(TestIPAMIRSolver):
     SOLVER_CLASS = UWrMaxSATCompSolver

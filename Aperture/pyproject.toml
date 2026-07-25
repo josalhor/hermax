@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools", "wheel", "nanobind"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aperture-solver"
+authors = [
+    {name = "Yam Slonimski", email = "yamslonimski@campus.technion.ac.il"}
+]
+description = "A SAT-based optimization solver"
+readme = "aperture/docs/PYTHONAPI.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: C++",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+keywords = [
+    "SAT",
+    "MaxSAT",
+    "OBV",
+    "Black-Box",
+    "solver",
+    "optimization",
+    "constraint",
+    "satisfiability"
+]
+dynamic = ["version"]
+
+[tool.scikit-build]
+[tool.setuptools]
+packages = ["aperture"]
+
+[tool.setuptools.package-data]
+aperture = ["*.so", "py.typed", "*.pyi", "VERSION"]
+
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+
+[tool.pylint]
+max-line-length = 100

@@ -1,7 +1,7 @@
 """Portfolio solving utilities for Hermax."""
 
 from .solver import (
-    AdjustTimeout,
+    AdjustTimeLimit,
     CallbackAction,
     CompletePortfolioSolver,
     IncompletePortfolioSolver,
@@ -14,7 +14,7 @@ __all__ = [
     "PortfolioSolver",
     "PortfolioEvent",
     "CallbackAction",
-    "AdjustTimeout",
+    "AdjustTimeLimit",
     "CompletePortfolioSolver",
     "IncompletePortfolioSolver",
     "PerformancePortfolioSolver",

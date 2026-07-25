@@ -140,8 +140,17 @@ class MaxHSSolver(ReplayFormulaSolverBase):
 
         return ReplaySolveResult(status=SolveStatus.UNKNOWN, model=None, cost=None)
 
-    def solve(self, assumptions: Optional[List[int]] = None, raise_on_abnormal: bool = False) -> bool:
-        ok = super().solve(assumptions=assumptions, raise_on_abnormal=raise_on_abnormal)
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
+        ok = super().solve(
+            assumptions=assumptions,
+            raise_on_abnormal=raise_on_abnormal,
+            time_limit=time_limit,
+        )
         if self._model is not None:
             self._last_model_set = set(int(x) for x in self._model)
         return ok

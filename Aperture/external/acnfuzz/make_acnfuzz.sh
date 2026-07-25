@@ -1,0 +1,1 @@
+g++ -O3 acnfuzz.c -o acnfuzz

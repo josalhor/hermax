@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 from pysat.formula import WCNF
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
 from hermax.core.ipamir_state_mixin import IPAMIRStateMixin
+from hermax.core.formula_journal import FormulaJournal
 from hermax.core.utils import normalize_wcnf_formula
 
 
@@ -24,32 +25,28 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
     # - "store": keep as weighted non-unit in _soft_nonunit
     # - "relax": rewrite via add_soft_relaxed with a fresh relax var
     nonunit_soft_policy: str = "store"
-
     def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
         formula = normalize_wcnf_formula(formula)
         super().__init__(formula, *args, **kwargs)
         self._init_ipamir_state()
 
-        self._num_vars: int = 0
-        self._hard_clauses: List[List[int]] = []
-        self._soft_unit_by_lit: Dict[int, int] = {}
-        self._soft_nonunit: List[Tuple[List[int], int]] = []
+        self._journal = FormulaJournal()
 
         if formula is not None:
             self._load_initial_formula(formula)
 
     def new_var(self) -> int:
         self._require_open()
-        self._num_vars += 1
+        var = self._journal.new_var()
         self._invalidate_solution()
-        return self._num_vars
+        return var
 
     def add_clause(self, clause: List[int], weight: Optional[int] = None) -> None:
         self._require_open()
         cl = self._normalize_clause(clause)
 
         if weight is None:
-            self._hard_clauses.append(cl)
+            self._journal.add_hard(cl)
             self._invalidate_solution()
             return
 
@@ -61,7 +58,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
             return
 
         if self.nonunit_soft_policy == "store":
-            self._soft_nonunit.append((cl, w))
+            self._journal.add_soft_nonunit(cl, w)
             self._invalidate_solution()
             return
         if self.nonunit_soft_policy == "relax":
@@ -77,10 +74,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         w = self._normalize_nonnegative_weight(weight)
         self._ensure_var(abs(ilit))
 
-        if w == 0:
-            self._soft_unit_by_lit.pop(ilit, None)
-        else:
-            self._soft_unit_by_lit[ilit] = w
+        self._journal.set_soft(ilit, w)
         self._invalidate_solution()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
@@ -118,8 +112,23 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         return int(weight)
 
     def _ensure_var(self, var: int) -> None:
-        while var > self._num_vars:
-            self._num_vars += 1
+        self._journal.ensure_var(var)
+
+    @property
+    def _num_vars(self) -> int:
+        return self._journal.num_vars
+
+    @property
+    def _hard_clauses(self) -> List[List[int]]:
+        return self._journal.hard_clauses
+
+    @property
+    def _soft_unit_by_lit(self) -> dict[int, int]:
+        return self._journal.soft_units
+
+    @property
+    def _soft_nonunit(self) -> list[tuple[list[int], int]]:
+        return self._journal.soft_nonunit
 
     def _normalize_assumptions(self, assumptions: Optional[List[int]]) -> List[int]:
         assumps = [self._normalize_lit(a) for a in assumptions] if assumptions else []
@@ -152,19 +161,24 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         return total
 
     def _snapshot(self, assumptions_as_hard_units: Optional[List[int]] = None) -> Dict[str, object]:
-        hard = [list(cl) for cl in self._hard_clauses]
-        if assumptions_as_hard_units:
-            hard.extend([[int(a)] for a in assumptions_as_hard_units])
-        return {
-            "num_vars": int(self._num_vars),
-            "hard_clauses": hard,
-            "soft_units": [(int(l), int(w)) for l, w in self._soft_unit_by_lit.items()],
-            "soft_nonunit": [(list(cl), int(w)) for cl, w in self._soft_nonunit],
-        }
+        return self._journal.snapshot(assumptions_as_hard_units)
 
-    def solve(self, assumptions: Optional[List[int]] = None, raise_on_abnormal: bool = False) -> bool:
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
         self._require_open()
         self._invalidate_solution()
+        self._reject_time_limit(time_limit)
+        return self._solve_replay(assumptions, raise_on_abnormal)
+
+    def _solve_replay(
+        self,
+        assumptions: Optional[List[int]],
+        raise_on_abnormal: bool,
+    ) -> bool:
         assumps = self._normalize_assumptions(assumptions)
 
         result = self._run_replay_solve(assumps)
@@ -206,7 +220,5 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
 
     def close(self) -> None:
         self._closed = True
-        self._hard_clauses.clear()
-        self._soft_unit_by_lit.clear()
-        self._soft_nonunit.clear()
+        self._journal.clear()
         self._invalidate_solution()

@@ -44,8 +44,9 @@ def test_invalid_domain_error_messages_are_specific():
         m.int("y", lb=3, ub=2)
 
     z = m.int("z", lb=1, ub=4)
-    with pytest.raises(ValueError, match=r"outside domain \[1, 4\]"):
-        _ = (z == 5)
+    # Comparisons with an out-of-domain integer are well-defined constant formulas.
+    m &= z == 5
+    assert m.solve().status == "unsat"
 
 
 def test_duplicate_identifier_error_messages_are_specific():

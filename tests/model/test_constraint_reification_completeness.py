@@ -141,12 +141,39 @@ def test_literal_ordering_accepts_model_bound_pb_operands(negated, rhs_kind):
 
 
 @pytest.mark.parametrize("negated", [False, True])
-@pytest.mark.parametrize("op", ["==", "!="])
 @pytest.mark.parametrize("constant", [-1, 2])
-def test_literal_equality_rejects_out_of_domain_integer_constants(negated, op, constant):
+@pytest.mark.parametrize("op, expected_when_enabled", [("==", "unsat"), ("!=", "sat")])
+@pytest.mark.parametrize("gate_enabled", [False, True])
+def test_literal_exact_comparison_outside_boolean_domain_is_lazy_and_gateable(
+    negated, constant, op, expected_when_enabled, gate_enabled
+):
     m = Model()
     boolean = m.bool("boolean")
     literal = ~boolean if negated else boolean
+    gate = m.bool("gate")
+    next_id_before = m._next_id
+    hard_before = len(m._hard)
 
-    with pytest.raises(ValueError, match="outside Boolean domain"):
-        _ = literal == constant if op == "==" else literal != constant
+    comparison = literal == constant if op == "==" else literal != constant
+    assert m._next_id == next_id_before
+    assert len(m._hard) == hard_before
+    assert m._const_lits == {}
+
+    m &= comparison.only_if(gate)
+    assert m._next_id == next_id_before
+    assert m._const_lits == {}
+    m &= gate if gate_enabled else ~gate
+    expected = expected_when_enabled if gate_enabled else "sat"
+    assert m.solve().status == expected
+    assert m._const_lits == {}
+
+
+def test_out_of_domain_boolean_order_comparison_is_gateable():
+    for gate_enabled, expected in ((False, "sat"), (True, "unsat")):
+        m = Model()
+        a = m.bool("a")
+        gate = m.bool("gate")
+
+        m &= (a >= 2).only_if(gate)
+        m &= gate if gate_enabled else ~gate
+        assert m.solve().status == expected

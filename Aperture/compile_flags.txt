@@ -1,0 +1,23 @@
+-std=c++20
+-Wall
+-DNBUILD
+-I.
+-Isrc
+-Iexternal
+-Iexternal/fmt
+-Iexternal/solvers
+-Iexternal/solvers/cadical/src
+-Iexternal/solvers/glucose
+-Iexternal/solvers/topor
+-Iexternal/solvers/AE_kissat2025_MAB/src
+-Iexternal/googletest-main/googletest
+-Iexternal/googletest-main/googletest/include
+-Iexternal/googletest-main/googlemock
+-Iexternal/googletest-main/googlemock/include
+-I.venv/lib/python3.12/site-packages/nanobind/include
+-I.venv/lib/python3.12/site-packages/nanobind/ext/robin_map/include
+-I/usr/include/python3.12
+-isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
+-isystem /usr/local/include
+-isystem /usr/include/x86_64-linux-gnu
+-isystem /usr/include

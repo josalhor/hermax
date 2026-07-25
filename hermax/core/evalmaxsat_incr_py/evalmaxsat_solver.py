@@ -22,6 +22,7 @@ class EvalMaxSATIncrSolver(NativeIncrementalSolverBase):
         self._require_open()
         cl = self._normalize_clause(clause)
         self.solver.addClause([int(x) for x in cl], None)
+        self._record_hard_clause(cl)
         self._invalidate_solution()
 
     def set_soft(self, lit: int, weight: int) -> None:
@@ -36,13 +37,20 @@ class EvalMaxSATIncrSolver(NativeIncrementalSolverBase):
         else:
             self._soft_by_lit[int(ilit)] = int(w)
         self._pending_soft_updates[int(ilit)] = int(w)
+        self._record_soft_unit(ilit, w)
         self._invalidate_solution()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
         w = self._normalize_positive_weight(weight)
         self.set_soft(int(lit), int(w))
 
-    def solve(self, assumptions: Optional[List[int]] = None, raise_on_abnormal: bool = False) -> bool:
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
+        self._validate_live_time_limit(time_limit)
         self._require_open()
         self._invalidate_solution()
         assumps = self._normalize_assumptions(assumptions)

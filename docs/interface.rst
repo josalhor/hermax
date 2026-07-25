@@ -31,6 +31,12 @@ This explicit split is important for incremental MaxSAT, where assumptions and
 weight updates can vary between calls while preserving part of the solver state
 and learned information [1]_ [4]_ [5]_.
 
+Time limits
+-----------
+
+Some solver wrappers accept a finite positive per-call ``time_limit`` in
+seconds. Support is backend-dependent.
+
 Status
 ----------------
 

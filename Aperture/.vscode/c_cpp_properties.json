@@ -1,0 +1,26 @@
+{
+  "configurations": [
+    {
+      "name": "Linux",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/src/solvers/cadical/cadical/src",
+        "${workspaceFolder}/src/solvers/topor/topor",
+        "${workspaceFolder}/src/solvers/glucose/glucose",
+        "${workspaceFolder}/python/**",
+        "/usr/include",
+        "/usr/include/x86_64-linux-gnu",
+        "${env:HOME}/.local/lib/python3.10/site-packages/nanobind/include",
+        "${env:HOME}/.local/lib/python3.10/site-packages/nanobind/ext/robin_map/include",
+        "${workspaceFolder}/.venv/lib/python3.12/site-packages/nanobind/include",
+        "${workspaceFolder}/.venv/lib/python3.12/site-packages/nanobind/ext/robin_map/include",
+        "/usr/include/python3.10"
+      ],
+      "compilerPath": "/usr/bin/g++",
+      "cStandard": "gnu17",
+      "cppStandard": "gnu++20",
+      "intelliSenseMode": "linux-gcc-x64"
+    }
+  ],
+  "version": 4
+}

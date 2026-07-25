@@ -14,7 +14,7 @@ Some research solvers are hard to run safely in-process because they may:
 
 * call ``exit()``
 * crash
-* require hard timeout enforcement
+* require hard time-limit enforcement
 
 Hermax keeps native bindings and isolates execution in a one-shot worker
 process.
@@ -43,20 +43,19 @@ The worker:
 * returns status/model/cost/signature, then
 * exits
 
-Timeout
+Time Limits
 -----------------
 
-Timeouts are enforced in the **parent** process.
+Time limits are enforced by the parent process. Use them per solve:
 
-The child process is treated as untrusted from a control-flow perspective.
+.. code-block:: python
 
-Typical timeout sequence:
+   solver.add_clause([1])
+   if solver.solve(time_limit=10):
+       print(solver.get_status(), solver.get_cost())
 
-1. Start worker in a dedicated process group/session.
-2. Wait for response until ``timeout_s``.
-3. On timeout, send a soft interrupt (``SIGINT`` / platform equivalent).
-4. Wait ``timeout_grace_s``.
-5. Force kill if still running.
+If the worker returns a feasible incumbent before stopping, the status is
+``INTERRUPTED_SAT`` and its model and cost are available.
 
 Portfolio reuse
 ---------------

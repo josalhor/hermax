@@ -18,6 +18,8 @@ import abc
 from enum import IntEnum
 from typing import List, Optional, Callable
 
+from hermax.core.time_limits import validate_time_limit
+
 
 class SolveStatus(IntEnum):
     """Solver status codes, aligned with IPAMIR C API."""
@@ -148,7 +150,8 @@ class IPAMIRSolver(abc.ABC):
     def solve(
         self,
         assumptions: Optional[List[int]] = None,
-        raise_on_abnormal: bool = False
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
     ) -> bool:
         """
         Solve the formula under the given assumptions.
@@ -157,6 +160,7 @@ class IPAMIRSolver(abc.ABC):
             assumptions: A list of literals to be used as assumptions for this solve call.
                          These are cleared after the solve.
             raise_on_abnormal: If True, raises a RuntimeError on status INTERRUPTED or ERROR.
+            time_limit: Optional finite positive wall-clock limit in seconds.
 
         Returns:
             True if a feasible solution is found (status is SAT or OPTIMUM).
@@ -217,6 +221,10 @@ class IPAMIRSolver(abc.ABC):
     def set_terminate(self, callback: Optional[Callable[[], int]]) -> None:
         """Register callback. Optional."""
         raise NotImplementedError("set_terminate is not implemented by this solver.")
+
+    def _reject_time_limit(self, time_limit: Optional[float]) -> None:
+        if validate_time_limit(time_limit) is not None:
+            raise NotImplementedError(f"{self.signature()} does not support time_limit.")
 
     def set_callback(self, callback: Optional[Callable[[], None]]) -> None:
         """Register a generic callback. Optional."""

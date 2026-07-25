@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import warnings
 from typing import List, Optional
 
 from pysat.formula import WCNF
@@ -8,6 +9,7 @@ from hermax.core.rc2.rc2 import RC2
 
 from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult
 from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible
+from hermax.core.time_limits import validate_time_limit
 from hermax.internal.subprocess_oneshot import run_oneshot_worker
 
 
@@ -59,13 +61,29 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
         self,
         formula: Optional[WCNF] = None,
         *args,
-        timeout_s: float = 30.0,
-        timeout_grace_s: float = 1.0,
+        default_time_limit: Optional[float] = None,
+        time_limit_grace: float = 1.0,
+        timeout_s: Optional[float] = None,
+        timeout_grace_s: Optional[float] = None,
         **kwargs,
     ):
         super().__init__(formula=formula, *args, **kwargs)
-        self._timeout_s = float(timeout_s)
-        self._timeout_grace_s = float(timeout_grace_s)
+        if timeout_s is not None:
+            warnings.warn(
+                "timeout_s is deprecated; use default_time_limit.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            default_time_limit = timeout_s
+        if timeout_grace_s is not None:
+            warnings.warn(
+                "timeout_grace_s is deprecated; use time_limit_grace.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            time_limit_grace = timeout_grace_s
+        self._default_time_limit = validate_time_limit(default_time_limit)
+        self._time_limit_grace = float(time_limit_grace)
 
         self._last_signature: str = self.default_signature
         self._last_error: Optional[str] = None
@@ -73,6 +91,7 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
         self._last_worker_stdout: str = ""
         self._last_protocol_error: Optional[str] = None
         self._last_elapsed_s: float = 0.0
+        self._active_time_limit: Optional[float] = None
 
     def _invalidate_solution(self) -> None:
         super()._invalidate_solution()
@@ -92,7 +111,8 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
             "assumptions": [int(a) for a in req_assumps],
         }
 
-        run = run_oneshot_worker(req, timeout_s=self._timeout_s, grace_s=self._timeout_grace_s)
+        time_limit = self._default_time_limit if self._active_time_limit is None else self._active_time_limit
+        run = run_oneshot_worker(req, time_limit=time_limit, grace_s=self._time_limit_grace)
         self._last_elapsed_s = run.elapsed_s
         self._last_protocol_error = run.protocol_error
         self._last_worker_stderr = (run.stderr_raw or b"").decode("utf-8", errors="replace")
@@ -139,6 +159,20 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
             cost = self._coerce_int(resp.get("cost"))
 
         return ReplaySolveResult(status=st, model=model, cost=cost)
+
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
+        self._require_open()
+        self._invalidate_solution()
+        self._active_time_limit = validate_time_limit(time_limit)
+        try:
+            return self._solve_replay(assumptions, raise_on_abnormal)
+        finally:
+            self._active_time_limit = None
 
     def _compat_result_from_exit_code(
         self,
@@ -189,26 +223,6 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
                 return None, None
             out = [int(x) for x in model]
             return out, int(rc2.cost)
-
-    def solve(self, assumptions: Optional[List[int]] = None, raise_on_abnormal: bool = False) -> bool:
-        self._require_open()
-        self._invalidate_solution()
-
-        assumps = self._normalize_assumptions(assumptions)
-        result = self._run_replay_solve(assumps)
-
-        self._set_result(
-            status=result.status,
-            model=result.model,
-            cost=result.cost,
-            num_vars=self._num_vars,
-        )
-
-        if self._model is not None and is_feasible(self._status):
-            self._last_cost = self._compute_wrapper_cost(self._model)
-
-        self._maybe_raise_on_abnormal(raise_on_abnormal)
-        return is_feasible(self._status)
 
     def signature(self) -> str:
         return f"{self._last_signature} [oneshot subprocess]"

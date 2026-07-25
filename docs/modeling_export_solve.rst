@@ -318,9 +318,25 @@ implements the same IPAMIR solver interface:
        solver_kwargs={
            "solver_classes": [UWrMaxSAT],
            "max_workers": 1,
-           "selection_policy": "first_optimal_or_best_until_timeout",
+           "selection_policy": "first_optimal_or_best_until_time_limit",
        },
    )
+
+Time limits
+-----------
+
+Pass a positive number of seconds with ``time_limit`` when using a timed
+one-shot solve:
+
+.. code-block:: python
+
+   result = m.solve(incremental=False, time_limit=10)
+
+   if result.ok:
+       print(result.status, result.cost)
+
+When a search stops after finding an incumbent, ``result.status`` is
+``"interrupted_sat"`` and the decoded assignment is available.
 
 Notes:
 

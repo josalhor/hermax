@@ -1536,13 +1536,14 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
     CMakeExtension('hermax.core.spb_maxsat_c_fps', sourcedir='spb-maxsat-c-fps-py'),
     CMakeExtension('hermax.core.nuwls_c_ibr', sourcedir='nuwls-c-ibr-py'),
     CMakeExtension('hermax.core.loandra', sourcedir='loandra-py'),
+    CMakeExtension('hermax.core._aperture_native', sourcedir='aperture-py'),
     *_optional_cplex_solver_extensions(),
 ])
 
 
 setup(
     name="hermax",
-    version="1.2.3",
+    version="1.2.4",
     author="Josep Maria Salvia Hornos",
     author_email="josh.salvia@gmail.com",
     description="A Python library of incremental MaxSAT solvers",

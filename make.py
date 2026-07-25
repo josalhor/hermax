@@ -125,6 +125,13 @@ def cmd_current_wheel(args: argparse.Namespace) -> int:
     py_tag = f"cp{sys.version_info.major}{sys.version_info.minor}-*"
     env = os.environ.copy()
     env["CIBW_BUILD"] = py_tag
+    # cibuildwheel containers do not automatically inherit arbitrary host
+    # environment variables. Forward the narrow solver selection explicitly.
+    solver_include = env.get("HERMAX_SOLVER_INCLUDE", "").strip()
+    if solver_include:
+        existing = env.get("CIBW_ENVIRONMENT_LINUX", "").strip()
+        forwarded = f"HERMAX_SOLVER_INCLUDE={solver_include}"
+        env["CIBW_ENVIRONMENT_LINUX"] = f"{existing} {forwarded}".strip()
     cmd = [
         sys.executable,
         "-m",

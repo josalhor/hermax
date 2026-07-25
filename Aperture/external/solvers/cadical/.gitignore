@@ -1,0 +1,5 @@
+build
+makefile
+.aider*
+*~
+build_pic
