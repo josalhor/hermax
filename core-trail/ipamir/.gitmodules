@@ -1,0 +1,14 @@
+[submodule "maxsat/incremental-maxhs"]
+	path = maxsat/iMaxHS
+	url = https://bitbucket.org/coreo-group/incremental-maxhs
+	branch = mse22
+[submodule "maxsat/EvalMaxSAT2022"]
+	path = maxsat/EvalMaxSAT2022
+	url = https://github.com/normal-account/EvalMaxSAT2022
+	branch = incremental_track
+[submodule "maxsat/uwrmaxsat14/uwrmaxsat"]
+	path = maxsat/uwrmaxsat14/uwrmaxsat
+	url = https://github.com/marekpiotrow/UWrMaxSat.git
+[submodule "maxsat/uwrmaxsat14scip/uwrmaxsat"]
+	path = maxsat/uwrmaxsat14scip/uwrmaxsat
+	url = https://github.com/marekpiotrow/UWrMaxSat.git
