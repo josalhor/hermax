@@ -9,7 +9,7 @@ recursive-include imaxhs-py *
 recursive-include incremental-maxhs *
 recursive-include maxhs *
 recursive-include maxhs-py *
-recursive-include mse-submission-incremental-2026/ipamir/maxsat/core-trail *
+recursive-include core-trail/ipamir/maxsat/core-trail *
 recursive-include open-wbo *
 recursive-include open-wbo-inc *
 recursive-include urmaxsat-comp-py *

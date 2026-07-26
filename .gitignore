@@ -424,3 +424,4 @@ build.ninja
 /svg
 /wheelhouse-*
 /pbamo/setup.py
+/cpmpy

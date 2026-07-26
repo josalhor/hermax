@@ -57,6 +57,7 @@ CASES: list[SolverCase] = [
             "core/test_ipamir_solver.py::TestCoreTrailSolverConformance",
             "core/test_ipamir_solver_hardcore.py::TestCoreTrailSolverConformance",
             "core/test_coretrail.py",
+            "model/test_model_coretrail.py",
         ],
     ),
     SolverCase(

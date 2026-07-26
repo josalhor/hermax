@@ -1523,7 +1523,7 @@ def _optional_cplex_solver_extensions() -> list[CMakeExtension]:
     return out
 
 
-CORETRAIL_ROOT = Path("mse-submission-incremental-2026/ipamir/maxsat/core-trail")
+CORETRAIL_ROOT = Path("core-trail/ipamir/maxsat/core-trail")
 CORETRAIL_EXTENSION_NAME = "hermax.core.coretrail_native"
 _CORETRAIL_COMPILE_ARGS = (
     ["/O2", "/std:c++17", "/DNDEBUG", "/DGlucose=RC2Glucose"]

@@ -7,7 +7,9 @@ Version 1.2.4
 Highlights
 ~~~~~~~~~~
 * Added ``time_limit`` support to model, portfolio, and subprocess solve APIs.
-* Added Aperture solver wrapper with subprocess isolation and time limit support.
+* Added Aperture solver.
+* Added CoreTrail solver.
+* Fixed some ValueError issues when comparin out of domain.
 
 Version 1.2.3
 -------------

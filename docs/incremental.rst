@@ -12,6 +12,7 @@ List of Classes
    hermax.incremental.EvalMaxSAT
    hermax.incremental.EvalMaxSATIncremental
    hermax.incremental.IMaxHS
+   hermax.incremental.CoreTrail
 
 Module Description
 ------------------
@@ -32,6 +33,10 @@ The classes map to the following backends:
   ``hermax.core.evalmaxsat_incr_py.EvalMaxSATIncrSolver`` (incremental EvalMaxSAT backend [3]_).
 * :class:`hermax.incremental.IMaxHS`:
   ``hermax.core.imaxhs_wrapper_py.IMaxHSSolver`` (optional CPLEX-backed iMaxHS backend [4]_).
+* :class:`hermax.incremental.CoreTrail`:
+  ``hermax.core.coretrail_py.CoreTrailSolver``, a native core-guided MaxSAT
+  backend that preserves its search state across assumptions, hard-clause
+  additions, soft-weight updates, and interrupted solves.
 
 .. warning::
    In Hermax package builds, both ``UWrMaxSAT`` and ``UWrMaxSATCompetition``
@@ -53,6 +58,8 @@ Incremental MaxSAT behavior differs substantially across solver families [1]_:
 
 * UWrMaxSAT is a trutly incremental MaxSAT solver based on PB optimization [2]_.
 * EvalMaxSAT uses an copy and re-solve strategy [3]_.
+* CoreTrail keeps native core-guided state and supports cooperative
+  ``time_limit`` interruption followed by a later resume of the same query.
 
 API Details
 -----------
@@ -86,6 +93,13 @@ API Details
    :special-members: __init__
 
 .. autoclass:: hermax.incremental.IMaxHS
+   :members:
+   :inherited-members:
+   :undoc-members:
+   :show-inheritance:
+   :special-members: __init__
+
+.. autoclass:: hermax.incremental.CoreTrail
    :members:
    :inherited-members:
    :undoc-members:
