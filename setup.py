@@ -180,8 +180,19 @@ if %errorlevel%==0 (
         if pyc_removed:
             print(f"Removed {pyc_removed} stale bytecode file(s) before build.")
 
+    def _clean_vendored_native_builds(self):
+        """Discard vendored build products that can retain a previous toolchain."""
+        extension_names = {ext.name for ext in self.extensions}
+
+        if "hermax.core._aperture_native" in extension_names:
+            subprocess.check_call(["make", "clean-all"], cwd="Aperture")
+
+        if CORETRAIL_EXTENSION_NAME in extension_names:
+            shutil.rmtree(CORETRAIL_ROOT / "build", ignore_errors=True)
+
     def run(self):
         self._scrub_prebuilt_native_artifacts()
+        self._clean_vendored_native_builds()
         try:
             subprocess.check_call(['cmake', '--version'])
         except OSError:
@@ -1541,7 +1552,11 @@ _CORETRAIL_COMPILE_ARGS = (
         "-fomit-frame-pointer",
     ]
 )
-_CORETRAIL_LINK_ARGS = ["-Wl,--gc-sections"] if platform.system() == "Linux" else []
+_CORETRAIL_LINK_ARGS = (
+    ["-Wl,--gc-sections", "-static-libstdc++", "-static-libgcc"]
+    if platform.system() == "Linux"
+    else []
+)
 
 
 CORETRAIL_EXTENSION = Extension(

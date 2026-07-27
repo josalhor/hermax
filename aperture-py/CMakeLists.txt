@@ -39,4 +39,8 @@ target_link_libraries(_aperture_native PRIVATE
   "${APERTURE_LIB}"
   ZLIB::ZLIB
   Threads::Threads)
+if(UNIX AND NOT APPLE)
+  # Keep manylinux wheels independent of the container's libstdc++ version.
+  target_link_options(_aperture_native PRIVATE -static-libstdc++ -static-libgcc)
+endif()
 set_target_properties(_aperture_native PROPERTIES PREFIX "" OUTPUT_NAME "_aperture_native")

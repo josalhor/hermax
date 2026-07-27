@@ -190,7 +190,9 @@ $(CADICAL_PIC_LIB):
 	@echo "Building CaDiCaL PIC library..."
 	rm -rf $(CADICAL_DIR)/build_pic
 	mkdir $(CADICAL_DIR)/build_pic
-	cd $(CADICAL_DIR)/build_pic && ../configure -fPIC && $(MAKE)
+	# CaDiCaL's configure appends flags to inherited CFLAGS without a separator.
+	# Do not pass Hermax's C-only flags into this C++ sub-build.
+	cd $(CADICAL_DIR)/build_pic && CFLAGS= ../configure -fPIC && $(MAKE)
 	@echo "CaDiCaL PIC library built successfully"
 
 $(KISSAT_PIC_LIB):
@@ -212,7 +214,9 @@ $(GLUCOSE_PIC_LIB):
 
 $(TOPOR_PIC_LIB):
 	@echo "Building Topor PIC library..."
-	cd $(TOPOR_DIR) && $(MAKE) librh
+	# Topor is C++; do not let Hermax's CFLAGS override its C++20 defaults.
+	cd $(TOPOR_DIR) && $(MAKE) librh \
+		CFLAGS="$(CXXFLAGS) -DSKIP_ZLIB -Wall -Wno-parentheses -std=c++20"
 	find $(TOPOR_DIR) -maxdepth 1 -name "*.oh" ! -name "Main.oh" | sort | xargs ar rcs $@
 	@echo "Topor PIC library built successfully"
 
