@@ -185,7 +185,10 @@ if %errorlevel%==0 (
         extension_names = {ext.name for ext in self.extensions}
 
         if "hermax.core._aperture_native" in extension_names:
-            subprocess.check_call(["make", "clean-all"], cwd="Aperture")
+            if platform.system() == "Windows":
+                self._make(["clean-all"], cwd="Aperture", env=self.get_base_env())
+            else:
+                subprocess.check_call(["make", "clean-all"], cwd="Aperture")
 
         if CORETRAIL_EXTENSION_NAME in extension_names:
             shutil.rmtree(CORETRAIL_ROOT / "build", ignore_errors=True)
@@ -299,6 +302,7 @@ if %errorlevel%==0 (
                 cmake_args.append(f"-DCMAKE_OBJCOPY={objcopy_exe}")
             cmake_args += [
                 "-DCMAKE_VERBOSE_MAKEFILE=ON",
+                "-DCMAKE_SUPPRESS_REGENERATION=ON",
             ]
 
 
@@ -1160,13 +1164,13 @@ class CMakeBuildURMaxSAT(CMakeBuild):
             os.path.join(uwr_dir, "config.mk"),
         ):
             try:
-                self._bash(["bash", "-lc", "echo PATH=$PATH; which g++; g++ -dumpmachine; g++ --version | head -n 2"], cwd=cominisatps_simp_dir, env=env_sat)
-                self._bash(
-                    ["bash", "-lc", "rm -f -- *.or lib_release.a lib.a depend.mk 2>/dev/null || true"],
-                    cwd=cominisatps_simp_dir,
-                    env=env_sat
-                )
-
+                if platform.system() != "Windows":
+                    self._bash(["bash", "-lc", "echo PATH=$PATH; which g++; g++ -dumpmachine; g++ --version | head -n 2"], cwd=cominisatps_simp_dir, env=env_sat)
+                    self._bash(
+                        ["bash", "-lc", "rm -f -- *.or lib_release.a lib.a depend.mk 2>/dev/null || true"],
+                        cwd=cominisatps_simp_dir,
+                        env=env_sat
+                    )
                 self._make(["clean"], cwd=cominisatps_simp_dir, env=env_sat)
                 self._make(["libr"], cwd=cominisatps_simp_dir, env=env_sat)
             except Exception as e:
@@ -1194,11 +1198,12 @@ class CMakeBuildURMaxSAT(CMakeBuild):
                 f.write(f"MINISAT_LIB=-L{posix(cominisatps_simp_dir)} -l_release\n")
 
             self._make(["clean"], cwd=uwr_dir, env=env)
-            self._bash(["pwd"], cwd=uwr_dir, env=env)
-            self._bash(["cat", "config.mk"], cwd=uwr_dir, env=env)
-            self._bash(["ls", "-la", "cominisatps"], cwd=uwr_dir, env=env)
-            self._bash(["ls", "-la", "cominisatps/minisat"], cwd=uwr_dir, env=env)
-            self._bash(["file", "cominisatps/minisat"], cwd=uwr_dir, env=env)  # MSYS2 has `file`
+            if platform.system() != "Windows":
+                self._bash(["pwd"], cwd=uwr_dir, env=env)
+                self._bash(["cat", "config.mk"], cwd=uwr_dir, env=env)
+                self._bash(["ls", "-la", "cominisatps"], cwd=uwr_dir, env=env)
+                self._bash(["ls", "-la", "cominisatps/minisat"], cwd=uwr_dir, env=env)
+                self._bash(["file", "cominisatps/minisat"], cwd=uwr_dir, env=env)  # MSYS2 has `file`
             def materialize_minisat_tree(cominisatps_dir: str):
                 if platform.system() != "Windows":
                     return
@@ -1300,8 +1305,12 @@ class CMakeBuildURMaxSAT(CMakeBuild):
             uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
             self._ranlib(uwr_a, env=env2)
             cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
-            self._bash(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
-            self._bash(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
+            if platform.system() == "Windows":
+                subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
+                subprocess.check_call(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
+            else:
+                self._bash(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
+                self._bash(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
 
 ROOT = Path(__file__).resolve().parent
@@ -1559,25 +1568,28 @@ _CORETRAIL_LINK_ARGS = (
 )
 
 
-CORETRAIL_EXTENSION = Extension(
-    CORETRAIL_EXTENSION_NAME,
-    [
-        str(CORETRAIL_ROOT / "src/python/module.cc"),
-        str(CORETRAIL_ROOT / "src/core/coretrail_solver.cc"),
-        str(CORETRAIL_ROOT / "src/core/glucose_backend.cc"),
-        str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/core/Solver.cc"),
-        str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/utils/Options.cc"),
-        str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/utils/System.cc"),
-    ],
-    include_dirs=[
-        str(CORETRAIL_ROOT / "include"),
-        str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1"),
-        str(CORETRAIL_ROOT / "third_party/cardenc"),
-    ],
-    extra_compile_args=_CORETRAIL_COMPILE_ARGS,
-    extra_link_args=_CORETRAIL_LINK_ARGS,
-    language="c++",
-)
+if platform.system() == "Windows":
+    CORETRAIL_EXTENSION = CMakeExtension(CORETRAIL_EXTENSION_NAME, sourcedir=str(CORETRAIL_ROOT))
+else:
+    CORETRAIL_EXTENSION = Extension(
+        CORETRAIL_EXTENSION_NAME,
+        [
+            str(CORETRAIL_ROOT / "src/python/module.cc"),
+            str(CORETRAIL_ROOT / "src/core/coretrail_solver.cc"),
+            str(CORETRAIL_ROOT / "src/core/glucose_backend.cc"),
+            str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/core/Solver.cc"),
+            str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/utils/Options.cc"),
+            str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/utils/System.cc"),
+        ],
+        include_dirs=[
+            str(CORETRAIL_ROOT / "include"),
+            str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1"),
+            str(CORETRAIL_ROOT / "third_party/cardenc"),
+        ],
+        extra_compile_args=_CORETRAIL_COMPILE_ARGS,
+        extra_link_args=_CORETRAIL_LINK_ARGS,
+        language="c++",
+    )
 
 
 SOLVER_EXTENSIONS = _filter_solver_extensions([

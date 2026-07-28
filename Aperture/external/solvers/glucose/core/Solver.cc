@@ -426,7 +426,11 @@ Solver::~Solver() {}
 ****************************************************************/
 
 void Solver::write_char(unsigned char ch) {
+#if defined(__MINGW32__)
+  if (putc((int)ch, certifiedOutput) == EOF) exit(1);
+#else
   if (putc_unlocked((int)ch, certifiedOutput) == EOF) exit(1);
+#endif
 }
 
 void Solver::write_lit(int n) {

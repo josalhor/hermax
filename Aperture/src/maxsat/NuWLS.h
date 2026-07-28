@@ -2,8 +2,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#if !defined(__MINGW32__)
 #include <sys/times.h>  //these two h files are for timing in linux
 #include <unistd.h>
+#endif
 
 #include <chrono>
 #include <cmath>
@@ -42,6 +44,17 @@ struct varlit {
   bool sense;      // is 1 for true literals, 0 for false literals.
 };
 
+#if defined(__MINGW32__)
+static std::chrono::steady_clock::time_point nuwls_start_time;
+static double nuwls_get_runtime() {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                       nuwls_start_time)
+      .count();
+}
+static void nuwls_start_timing() {
+  nuwls_start_time = std::chrono::steady_clock::now();
+}
+#else
 static struct tms nuwls_start_time;
 static double nuwls_get_runtime() {
   struct tms stop;
@@ -51,6 +64,7 @@ static double nuwls_get_runtime() {
          sysconf(_SC_CLK_TCK);
 }
 static void nuwls_start_timing() { times(&nuwls_start_time); }
+#endif
 
 class NUWLS {
  public:

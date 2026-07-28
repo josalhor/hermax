@@ -47,6 +47,9 @@ extern double memUsedPeak();  // Peak-memory in mega bytes (returns 0 for
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <time.h>
+#if defined(__MINGW32__)
+#include <sys/time.h>
+#endif
 
 static inline double ApertureGlucose::cpuTime(void) {
   return (double)clock() / CLOCKS_PER_SEC;
@@ -69,7 +72,11 @@ static inline double ApertureGlucose::cpuTime(void) {
 // for that
 static inline double ApertureGlucose::realTime() {
   struct timeval tv;
+#if defined(__MINGW32__)
+  mingw_gettimeofday(&tv, NULL);
+#else
   gettimeofday(&tv, NULL);
+#endif
   return (double)tv.tv_sec + (double)tv.tv_usec / 1000000;
 }
 

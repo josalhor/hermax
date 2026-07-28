@@ -126,6 +126,9 @@ struct CallWhenLeavingScope {
 
 // Blocks a given signal until the end of the scope.
 struct SigScopeBlocker {
+#if defined(__MINGW32__)
+  explicit SigScopeBlocker(int) {}
+#else
   SigScopeBlocker(int signal_to_block) {
     sigemptyset(&new_mask_);
     sigaddset(&new_mask_, signal_to_block);
@@ -136,6 +139,7 @@ struct SigScopeBlocker {
 
  private:
   sigset_t old_mask_, new_mask_;
+#endif
 };
 
 using Clock = std::chrono::steady_clock;

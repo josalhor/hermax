@@ -50,6 +50,14 @@ void kissat_init_signal_handler (void (*h) (int sig)) {
 #undef SIGNAL
 }
 
+#if defined(__MINGW32__)
+
+void kissat_init_alarm (void (*handler) (void)) { (void) handler; }
+
+void kissat_reset_alarm (void) {}
+
+#else
+
 static volatile bool caught_alarm;
 static volatile bool alarm_handler_set;
 static void (*volatile SIGALRM_handler) (int);
@@ -84,3 +92,5 @@ void kissat_reset_alarm (void) {
   handle_alarm = 0;
   (void) signal (SIGALRM, SIGALRM_handler);
 }
+
+#endif

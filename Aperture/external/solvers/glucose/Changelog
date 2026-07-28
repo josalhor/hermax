@@ -1,3 +1,7 @@
+Version 4.2.1
+ - Lazy Clause Minimisation (IJCAI'17 paper By Chu Min Li etal.
+ - cmake and makefile modes
+
 Version 4.1
  - Adaptative (activated by default) strategies. See SAT 2016 paper.
 
@@ -5,7 +9,7 @@ Version 4.0
  - Add a Multithread version, called syrup (many glucose ;-)
    See SAT14 paper: Lazy Clause Exchange Policy for parallel SAT solvers.
 
- - Can work indepentently in sequential or with many cores
+ - Can work independently in sequential or with many cores
 
 Version 3.0 (2013)
  - Add incremental features. 

@@ -3,9 +3,12 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#if !defined(__MINGW32__)
 #include <sys/times.h>  //these two h files are for timing in linux
 #include <unistd.h>
+#endif
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -50,6 +53,17 @@ struct varlit {
   bool sense;      // is 1 for true literals, 0 for false literals.
 };
 
+#if defined(__MINGW32__)
+static std::chrono::steady_clock::time_point start_time;
+static double get_runtime() {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                       start_time)
+      .count();
+}
+static void start_timing() {
+  start_time = std::chrono::steady_clock::now();
+}
+#else
 static struct tms start_time;
 static double get_runtime() {
   struct tms stop;
@@ -59,6 +73,7 @@ static double get_runtime() {
          sysconf(_SC_CLK_TCK);
 }
 static void start_timing() { times(&start_time); }
+#endif
 
 class NUWEIGHTING {
  public:

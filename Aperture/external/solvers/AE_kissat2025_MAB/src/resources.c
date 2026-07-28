@@ -1,5 +1,16 @@
 #include "resources.h"
 
+#if defined(__MINGW32__)
+
+#include <time.h>
+#include <windows.h>
+
+double kissat_wall_clock_time (void) {
+  return 1e-3 * GetTickCount64 ();
+}
+
+#else
+
 #include <sys/time.h>
 
 double kissat_wall_clock_time (void) {
@@ -8,6 +19,8 @@ double kissat_wall_clock_time (void) {
     return 0;
   return 1e-6 * tv.tv_usec + tv.tv_sec;
 }
+
+#endif
 
 #ifndef QUIET
 
@@ -18,6 +31,19 @@ double kissat_wall_clock_time (void) {
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
+
+#if defined(__MINGW32__)
+
+double kissat_process_time (void) {
+  return (double) clock () / CLOCKS_PER_SEC;
+}
+
+uint64_t kissat_maximum_resident_set_size (void) { return 0; }
+
+uint64_t kissat_current_resident_set_size (void) { return 0; }
+
+#else
+
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -66,6 +92,8 @@ uint64_t kissat_current_resident_set_size (void) {
   fclose (file);
   return scanned == 2 ? rss * sysconf (_SC_PAGESIZE) : 0;
 }
+
+#endif
 
 #endif
 

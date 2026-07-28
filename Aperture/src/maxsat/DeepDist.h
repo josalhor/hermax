@@ -2,9 +2,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#if !defined(__MINGW32__)
 #include <sys/times.h>
 #include <unistd.h>
+#endif
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -38,6 +41,17 @@ struct lit {
   bool sense;      // is 1 for true literals, 0 for false literals.
 };
 
+#if defined(__MINGW32__)
+static std::chrono::steady_clock::time_point dd_start_time;
+static double dd_get_runtime() {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                       dd_start_time)
+      .count();
+}
+static void dd_start_timing() {
+  dd_start_time = std::chrono::steady_clock::now();
+}
+#else
 static struct tms dd_start_time;
 static double dd_get_runtime() {
   struct tms stop;
@@ -47,6 +61,7 @@ static double dd_get_runtime() {
          sysconf(_SC_CLK_TCK);
 }
 static void dd_start_timing() { times(&dd_start_time); }
+#endif
 
 class Decimation {
  public:

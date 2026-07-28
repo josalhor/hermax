@@ -171,6 +171,7 @@ run-tests: $(TEST_EXEC)
 # Python
 
 CADICAL_PIC_LIB := $(CADICAL_DIR)/build_pic/libcadical.a
+CADICAL_BUILD_TARGET ?=
 GLUCOSE_PIC_LIB := $(GLUCOSE_DIR)/core/libglucose_pic.a
 KISSAT_PIC_LIB  := $(KISSAT_DIR)/build_pic/libkissat.a
 TOPOR_PIC_LIB   := $(TOPOR_DIR)/libtopor_pic.a
@@ -192,7 +193,7 @@ $(CADICAL_PIC_LIB):
 	mkdir $(CADICAL_DIR)/build_pic
 	# CaDiCaL's configure appends flags to inherited CFLAGS without a separator.
 	# Do not pass Hermax's C-only flags into this C++ sub-build.
-	cd $(CADICAL_DIR)/build_pic && CFLAGS= ../configure -fPIC && $(MAKE)
+	cd $(CADICAL_DIR)/build_pic && CFLAGS= ../configure -fPIC && $(MAKE) $(CADICAL_BUILD_TARGET)
 	@echo "CaDiCaL PIC library built successfully"
 
 $(KISSAT_PIC_LIB):

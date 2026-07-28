@@ -7,8 +7,10 @@
 #include <iostream>
 
 #ifdef _WIN32
+#if !defined(__MINGW32__)
 #include <psapi.h>
 #include <windows.h>
+#endif
 
 #else
 #include <stdio.h>
@@ -19,9 +21,13 @@
 
 namespace ApertureBasicMemUsage {
 static size_t GetPeakRSS() {
-#ifdef _WIN32
-  PROCESS_MEMORY_COUNTERS info;
-  GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info));
+#if defined(_WIN32) && defined(__MINGW32__)
+  return 0;
+
+#elif defined(_WIN32)
+  PROCESS_MEMORY_COUNTERS info{};
+  info.cb = sizeof(info);
+  if (!GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info))) return 0;
   return (size_t)info.PeakWorkingSetSize;
 
 #else
@@ -34,9 +40,13 @@ static size_t GetPeakRSS() {
 static size_t GetPeakRSSMb() { return GetPeakRSS() >> (size_t)20; }
 
 static size_t GetCurrentRSS() {
-#ifdef _WIN32
-  PROCESS_MEMORY_COUNTERS info;
-  GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info));
+#if defined(_WIN32) && defined(__MINGW32__)
+  return 0;
+
+#elif defined(_WIN32)
+  PROCESS_MEMORY_COUNTERS info{};
+  info.cb = sizeof(info);
+  if (!GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info))) return 0;
   return (size_t)info.WorkingSetSize;
 
 #else

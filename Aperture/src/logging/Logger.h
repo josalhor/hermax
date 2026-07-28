@@ -6,7 +6,11 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#if defined(__MINGW32__)
+#include <process.h>
+#else
 #include <unistd.h>
+#endif
 
 #include <fstream>
 #include <optional>
@@ -397,7 +401,13 @@ class Logger {
     time(&now);
     struct tm* current = localtime(&now);
 
-    ss << (void*)this << '_' << getpid() << '_';
+    ss << (void*)this << '_'
+#if defined(__MINGW32__)
+       << _getpid()
+#else
+       << getpid()
+#endif
+       << '_';
     if (current != NULL) {
       ss << current->tm_mday << "." << (current->tm_mon + 1) << "."
          << 1900 + current->tm_year << '_' << current->tm_hour << "_"
