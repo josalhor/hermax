@@ -1593,6 +1593,9 @@ else:
 
 
 SOLVER_EXTENSIONS = _filter_solver_extensions([
+    *_optional_cplex_solver_extensions(),
+    CMakeExtension('hermax.core._aperture_native', sourcedir='aperture-py'),
+    CORETRAIL_EXTENSION,
     CMakeExtension('hermax.core.openwbo', sourcedir='open-wbo'),
     CMakeExtension('hermax.core.openwbo_inc', sourcedir='open-wbo-inc'),
     CMakeExtension('hermax.core.tt_openwbo_inc', sourcedir='tt-open-wbo-inc-py'),
@@ -1605,9 +1608,6 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
     CMakeExtension('hermax.core.spb_maxsat_c_fps', sourcedir='spb-maxsat-c-fps-py'),
     CMakeExtension('hermax.core.nuwls_c_ibr', sourcedir='nuwls-c-ibr-py'),
     CMakeExtension('hermax.core.loandra', sourcedir='loandra-py'),
-    CMakeExtension('hermax.core._aperture_native', sourcedir='aperture-py'),
-    CORETRAIL_EXTENSION,
-    *_optional_cplex_solver_extensions(),
 ])
 
 

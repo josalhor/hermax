@@ -11,6 +11,7 @@ LDFLAGS := -lz
 PROJECT_ROOT := $(CURDIR)
 SRC_DIR := $(PROJECT_ROOT)/src
 BUILD_DIR := $(PROJECT_ROOT)/build
+HOST_OS := $(shell uname -s)
 EXTERNAL_DIR := $(PROJECT_ROOT)/external
 SOLVERS_DIR := $(EXTERNAL_DIR)/solvers
 
@@ -82,6 +83,11 @@ $(TARGET_EXEC): $(OBJ_FILES) $(SOLVER_LIBS)
 TARGET_LIBS := $(BUILD_DIR)/libaperture.a
 LIB_OBJS := $(filter-out %Main.o %main.o,$(OBJ_FILES))
 
+ifeq ($(HOST_OS),Darwin)
+$(TARGET_LIBS): $(SOLVER_LIBS) $(LIB_OBJS)
+	@echo "Building merged static library..."
+	libtool -static -o $@ $^
+else
 $(TARGET_LIBS): $(SOLVER_LIBS) $(LIB_OBJS)
 	@echo "Building merged static library..."
 	$(file > $(BUILD_DIR)/.merge.mri,CREATE $@)
@@ -91,6 +97,7 @@ $(TARGET_LIBS): $(SOLVER_LIBS) $(LIB_OBJS)
 	$(file >> $(BUILD_DIR)/.merge.mri,END)
 	ar -M < $(BUILD_DIR)/.merge.mri
 	@rm -f $(BUILD_DIR)/.merge.mri
+endif
 
 # Main Rules
 
@@ -221,6 +228,11 @@ $(TOPOR_PIC_LIB):
 	find $(TOPOR_DIR) -maxdepth 1 -name "*.oh" ! -name "Main.oh" | sort | xargs ar rcs $@
 	@echo "Topor PIC library built successfully"
 
+ifeq ($(HOST_OS),Darwin)
+$(TARGET_PIC_LIB): $(SOLVER_PIC_LIBS) $(LIB_PIC_OBJS)
+	@echo "Building merged PIC static library..."
+	libtool -static -o $@ $^
+else
 $(TARGET_PIC_LIB): $(SOLVER_PIC_LIBS) $(LIB_PIC_OBJS)
 	@echo "Building merged PIC static library..."
 	$(file > $(BUILD_DIR)/.merge_pic.mri,CREATE $@)
@@ -230,6 +242,7 @@ $(TARGET_PIC_LIB): $(SOLVER_PIC_LIBS) $(LIB_PIC_OBJS)
 	$(file >> $(BUILD_DIR)/.merge_pic.mri,END)
 	ar -M < $(BUILD_DIR)/.merge_pic.mri
 	@rm -f $(BUILD_DIR)/.merge_pic.mri
+endif
 
 lib-pic:
 	$(MAKE) $(TARGET_PIC_LIB) RES_FLAGS="$(RELEASE_FLAGS)"
