@@ -211,12 +211,14 @@ $(KISSAT_PIC_LIB):
 
 $(GLUCOSE_PIC_LIB):
 	@echo "Building Glucose PIC library..."
+	# Glucose is C++; do not inherit Hermax's C-only CFLAGS.
 	cd $(GLUCOSE_DIR)/core && \
 	$(MAKE) -f ../mtl/template.mk librh \
 	LIB=glucose \
 	MROOT=.. \
 	DEPDIR="core utils" \
-	EXEC=glucose
+	EXEC=glucose \
+	CFLAGS="$(CXXFLAGS) -Wall -Wno-parentheses -std=c++20"
 	find $(GLUCOSE_DIR) -name "*.oh" ! -name "Main.oh" | sort | xargs ar rcs $@
 	@echo "Glucose PIC library built successfully"
 
