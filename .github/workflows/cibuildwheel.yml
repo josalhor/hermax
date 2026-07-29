@@ -40,7 +40,16 @@ jobs:
         run: python -m pip install --upgrade pip "cibuildwheel[uv]"
 
       - name: Build wheels
-        run: python -m cibuildwheel --output-dir wheelhouse
+        shell: bash
+        env:
+          CIBW_BUILD_VERBOSITY: "3"
+          PYTHONUNBUFFERED: "1"
+        run: |
+          mkdir -p logs
+          set -o pipefail
+          python -m cibuildwheel --output-dir wheelhouse \
+            2>&1 | tee "logs/cibuildwheel-${{ matrix.os }}.log"
+
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
