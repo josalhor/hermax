@@ -4,6 +4,12 @@ from hermax.core.aperture_py import ApertureSolver
 from hermax.core.ipamir_solver_interface import SolveStatus
 
 
+pytestmark = pytest.mark.skipif(
+    not ApertureSolver.is_available(),
+    reason="ApertureSolver is not available in this build.",
+)
+
+
 def test_aperture_incremental_weighted_maxsat():
     solver = ApertureSolver()
     try:
