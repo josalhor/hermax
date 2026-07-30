@@ -1594,7 +1594,7 @@ else:
 
 SOLVER_EXTENSIONS = _filter_solver_extensions([
     *_optional_cplex_solver_extensions(),
-    CMakeExtension('hermax.core._aperture_native', sourcedir='aperture-py'),
+    # CMakeExtension('hermax.core._aperture_native', sourcedir='aperture-py'),
     CORETRAIL_EXTENSION,
     CMakeExtension('hermax.core.openwbo', sourcedir='open-wbo'),
     CMakeExtension('hermax.core.openwbo_inc', sourcedir='open-wbo-inc'),
