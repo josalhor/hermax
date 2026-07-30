@@ -11,7 +11,7 @@ def _require_loandra():
 
 def test_loandra_basic_weighted_smoke():
     _require_loandra()
-    s = Loandra(timeout_s=4.0, timeout_grace_s=0.5)
+    s = Loandra(default_time_limit=4.0, time_limit_grace=0.5)
     s.add_clause([1])          # hard
     s.add_soft_unit(-1, 3)     # pay if x1 = true
     ok = s.solve()
@@ -27,7 +27,7 @@ def test_loandra_basic_weighted_smoke():
 
 def test_loandra_assumptions_emulated_by_hard_units():
     _require_loandra()
-    s = Loandra(timeout_s=4.0, timeout_grace_s=0.5)
+    s = Loandra(default_time_limit=4.0, time_limit_grace=0.5)
     s.add_clause([1, 2])
     s.add_soft_unit(-1, 5)
     s.add_soft_unit(-2, 7)

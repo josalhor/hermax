@@ -12,6 +12,7 @@ from pysat.solvers import Solver as PySATSolver
 from hermax.non_incremental import RC2 as HermaxRC2
 from hermax.core.time_limits import validate_time_limit
 from hermax.core.interrupt_recovery import InterruptRecovery
+from hermax.internal.pysat_execution import solve_pysat_with_time_limit
 from hermax.internal.sat_replay import PySATReplaySolver
 
 from typing import TYPE_CHECKING, Any
@@ -733,6 +734,44 @@ class _IncrementalCoordinator:
         self.hard_routed = len(m._hard)
         self.soft_routed = len(m._soft)
 
+    def _solve_live_sat(self, assumptions: Sequence[int], time_limit: Optional[float]) -> SolveResult:
+        """Solve on the bound PySAT instance without discarding its state."""
+        assert self.sat_solver is not None
+        try:
+            sat = solve_pysat_with_time_limit(
+                self.sat_solver,
+                assumptions=assumptions,
+                time_limit=time_limit,
+            )
+        except NotImplementedError as exc:
+            raise NotImplementedError(
+                f"PySAT backend {self.sat_solver_name!r} does not support live time-limited solving."
+            ) from exc
+        if sat is None:
+            return SolveResult(
+                self._model,
+                status="interrupted",
+                raw_model=None,
+                cost=None,
+                backend=f"pysat.{self.sat_solver_name}",
+            )
+        if not sat:
+            return SolveResult(
+                self._model,
+                status="unsat",
+                raw_model=None,
+                cost=None,
+                backend=f"pysat.{self.sat_solver_name}",
+            )
+        model = self.sat_solver.get_model() or []
+        return SolveResult(
+            self._model,
+            status="sat",
+            raw_model=model,
+            cost=None,
+            backend=f"pysat.{self.sat_solver_name}",
+        )
+
     def update_soft_weight(
         self,
         soft_id: int,
@@ -827,17 +866,7 @@ class _IncrementalCoordinator:
         self.route_deltas(len(m._hard), len(m._soft))
 
         if self.mode == "sat":
-            if time_limit is not None:
-                raise NotImplementedError(
-                    "time_limit is not supported for a live PySAT incremental backend. "
-                    "Use incremental=False for a one-shot timed solve."
-                )
-            assert self.sat_solver is not None
-            sat = self.sat_solver.solve(assumptions=assumptions_dimacs)
-            if not sat:
-                return SolveResult(m, status="unsat", raw_model=None, cost=None, backend=f"pysat.{self.sat_solver_name}")
-            model = self.sat_solver.get_model() or []
-            return SolveResult(m, status="sat", raw_model=model, cost=None, backend=f"pysat.{self.sat_solver_name}")
+            return self._solve_live_sat(assumptions_dimacs, time_limit)
 
         assert self.mode == "maxsat"
         assert self.ip_solver is not None

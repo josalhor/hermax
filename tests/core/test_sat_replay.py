@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import threading
 
-from hermax.internal.sat_replay import PySATReplaySolver, solve_pysat_with_time_limit
+from pysat.examples.genhard import PHP
+from pysat.solvers import Solver as PySATSolver
+
+from hermax.internal.pysat_execution import solve_pysat_with_time_limit
+from hermax.internal.sat_replay import PySATReplaySolver
 
 
 def test_pysat_replay_solver_uses_journaled_hard_clauses_and_assumptions():
@@ -61,3 +65,14 @@ def test_pysat_deadline_interrupts_and_clears_the_solver():
     assert result is None
     assert solver.interrupted.is_set()
     assert solver.cleared
+
+
+def test_real_pysat_deadline_preserves_live_solver_state():
+    cnf = PHP(8)
+    with PySATSolver(name="g4", bootstrap_with=cnf.clauses) as solver:
+        assert solve_pysat_with_time_limit(
+            solver,
+            assumptions=[],
+            time_limit=0.01,
+        ) is None
+        assert solver.solve() is False

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass
 from typing import Literal, Optional, Sequence
 
 from pysat.solvers import Solver as PySATSolver
 
 from hermax.core.formula_journal import FormulaJournal
-from hermax.core.time_limits import validate_time_limit
+from hermax.internal.pysat_execution import solve_pysat_with_time_limit
 
 
 SATStatus = Literal["sat", "unsat", "interrupted"]
@@ -19,37 +18,6 @@ SATStatus = Literal["sat", "unsat", "interrupted"]
 class SATReplayResult:
     status: SATStatus
     model: Optional[list[int]]
-
-
-def solve_pysat_with_time_limit(
-    solver: PySATSolver,
-    *,
-    assumptions: Sequence[int],
-    time_limit: Optional[float],
-) -> Optional[bool]:
-    """Run one PySAT call and clear any deadline-induced interruption."""
-    limit = validate_time_limit(time_limit)
-    if limit is None:
-        return solver.solve(assumptions=list(assumptions))
-
-    finished = threading.Event()
-
-    def interrupt_when_due() -> None:
-        if not finished.is_set():
-            solver.interrupt()
-
-    timer = threading.Timer(limit, interrupt_when_due)
-    timer.start()
-    try:
-        return solver.solve_limited(
-            assumptions=list(assumptions),
-            expect_interrupt=True,
-        )
-    finally:
-        finished.set()
-        timer.cancel()
-        timer.join()
-        solver.clear_interrupt()
 
 
 class PySATReplaySolver:

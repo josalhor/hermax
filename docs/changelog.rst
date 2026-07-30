@@ -1,13 +1,21 @@
 Changelog
 =========
 
+Version 1.2.5
+-------------
+
+Highlights
+~~~~~~~~~~
+* Added ``time_limit`` support for incremental pySAT.
+* Fixed an ``ERROR`` return from ``time_limit`` in MaxSAT.
+
 Version 1.2.4
 -------------
 
 Highlights
 ~~~~~~~~~~
 * Added ``time_limit`` support to model, portfolio, and subprocess solve APIs.
-* Added Aperture solver.
+* Added Aperture solver except for MacOS.
 * Added CoreTrail solver.
 * Fixed some ValueError issues when comparin out of domain.
 

@@ -1594,7 +1594,7 @@ else:
 
 SOLVER_EXTENSIONS = _filter_solver_extensions([
     *_optional_cplex_solver_extensions(),
-    # CMakeExtension('hermax.core._aperture_native', sourcedir='aperture-py'),
+    CMakeExtension('hermax.core._aperture_native', sourcedir='aperture-py'),
     CORETRAIL_EXTENSION,
     CMakeExtension('hermax.core.openwbo', sourcedir='open-wbo'),
     CMakeExtension('hermax.core.openwbo_inc', sourcedir='open-wbo-inc'),
@@ -1613,7 +1613,7 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
 
 setup(
     name="hermax",
-    version="1.2.4",
+    version="1.2.5",
     author="Josep Maria Salvia Hornos",
     author_email="josh.salvia@gmail.com",
     description="A Python library of incremental MaxSAT solvers",

@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 
 
 _HEADER_STRUCT = struct.Struct(">Q")
+_TIMED_TERMINAL_STATUSES = {0, 10, 20, 30}
 
 
 def _dumps_frame(obj: Any) -> bytes:
@@ -31,6 +32,16 @@ def _loads_frame_from_bytes(data: bytes) -> Any:
     if len(payload) != nbytes:
         raise ValueError("Truncated frame payload")
     return pickle.loads(payload)
+
+
+def is_usable_response_after_time_limit(response: Optional[Dict[str, Any]]) -> bool:
+    """Whether a worker response remains meaningful after its deadline."""
+    if not isinstance(response, dict) or response.get("ok") is not True:
+        return False
+    try:
+        return int(response.get("status")) in _TIMED_TERMINAL_STATUSES
+    except (TypeError, ValueError):
+        return False
 
 
 @dataclass

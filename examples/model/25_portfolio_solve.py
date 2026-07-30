@@ -16,8 +16,8 @@ r = m.solve(
     solver=CompletePortfolioSolver,
     solver_kwargs={
         "max_workers": 1,
-        "overall_timeout_s": 3.0,
-        "per_solver_timeout_s": 2.0,
+        "overall_time_limit_s": 3.0,
+        "per_solver_time_limit_s": 2.0,
     },
 )
 assert r.ok

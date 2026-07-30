@@ -195,10 +195,10 @@ def test_model_solve_accepts_portfolio_solver_class_with_kwargs():
         solver=PortfolioSolver,
         solver_kwargs={
             "solver_classes": [RC2Reentrant],
-            "per_solver_timeout_s": 2.0,
-            "overall_timeout_s": 5.0,
+            "per_solver_time_limit_s": 2.0,
+            "overall_time_limit_s": 5.0,
             "max_workers": 1,
-            "selection_policy": "first_optimal_or_best_until_timeout",
+            "selection_policy": "first_optimal_or_best_until_time_limit",
         },
     )
     assert r.status in {"optimum", "interrupted_sat"}

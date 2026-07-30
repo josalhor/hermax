@@ -43,9 +43,9 @@ def test_portfolio_mixed_classes_on_real_data_optimum():
     p = PortfolioSolver(
         classes,
         formula=wcnf,
-        per_solver_timeout_s=5.0,
-        overall_timeout_s=8.0,
-        selection_policy="first_optimal_or_best_until_timeout",
+        per_solver_time_limit_s=5.0,
+        overall_time_limit_s=8.0,
+        selection_policy="first_optimal_or_best_until_time_limit",
     )
     ok = p.solve()
     assert ok is True
@@ -64,9 +64,9 @@ def test_portfolio_accepts_python_classes_and_handles_invalid_solver_result():
     p = PortfolioSolver(
         [BadModelCostSolver, UWrMaxSAT],
         formula=wcnf,
-        per_solver_timeout_s=5.0,
-        overall_timeout_s=8.0,
-        selection_policy="first_optimal_or_best_until_timeout",
+        per_solver_time_limit_s=5.0,
+        overall_time_limit_s=8.0,
+        selection_policy="first_optimal_or_best_until_time_limit",
         validate_model=True,
         recompute_cost_from_model=True,
         invalid_result_policy="warn_drop",
@@ -88,8 +88,8 @@ def test_portfolio_first_valid_policy_can_return_incomplete_result():
     p = PortfolioSolver(
         [Loandra, UWrMaxSAT],
         formula=wcnf,
-        per_solver_timeout_s=5.0,
-        overall_timeout_s=8.0,
+        per_solver_time_limit_s=5.0,
+        overall_time_limit_s=8.0,
         selection_policy="first_valid",
     )
     ok = p.solve()
@@ -105,8 +105,8 @@ def test_portfolio_only_invalid_backends_reports_failure():
     p = PortfolioSolver(
         [BadModelCostSolver],
         formula=wcnf,
-        per_solver_timeout_s=3.0,
-        overall_timeout_s=5.0,
+        per_solver_time_limit_s=3.0,
+        overall_time_limit_s=5.0,
         validate_model=True,
         recompute_cost_from_model=True,
         invalid_result_policy="warn_drop",
@@ -129,8 +129,8 @@ def test_portfolio_invalid_policy_raise_raises():
     p = PortfolioSolver(
         [BadModelCostSolver],
         formula=wcnf,
-        per_solver_timeout_s=3.0,
-        overall_timeout_s=5.0,
+        per_solver_time_limit_s=3.0,
+        overall_time_limit_s=5.0,
         validate_model=True,
         recompute_cost_from_model=True,
         invalid_result_policy="raise",
@@ -154,10 +154,10 @@ def test_performance_portfolio_max_workers_1_runs_on_real_data():
     wcnf = _load_small_wcnf("ram_k3_n9.ra1.wcnf")
     p = PerformancePortfolioSolver(
         formula=wcnf,
-        per_solver_timeout_s=4.0,
-        overall_timeout_s=10.0,
+        per_solver_time_limit_s=4.0,
+        overall_time_limit_s=10.0,
         max_workers=1,
-        selection_policy="first_optimal_or_best_until_timeout",
+        selection_policy="first_optimal_or_best_until_time_limit",
         # Keep runtime reasonable in partial/minimal builds.
         exclude=[BadModelCostSolver],
     )

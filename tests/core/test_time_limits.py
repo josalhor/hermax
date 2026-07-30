@@ -1,4 +1,5 @@
 import math
+import threading
 import time
 
 import pytest
@@ -10,6 +11,50 @@ from hermax.model import Model
 from hermax.model.core import SolveResult
 from hermax.portfolio import PortfolioSolver
 from hermax.portfolio._test_solvers import SlowTestSolver
+
+
+class _LiveInterruptiblePySAT:
+    """Minimal PySAT double that verifies a limited live call remains reusable."""
+
+    instances: list["_LiveInterruptiblePySAT"] = []
+
+    def __init__(self, *, name: str):
+        self.name = name
+        self.clauses: list[list[int]] = []
+        self.interrupted = threading.Event()
+        self.clear_calls = 0
+        self.limited_calls = 0
+        self.solve_calls = 0
+        type(self).instances.append(self)
+
+    def append_formula(self, clauses):
+        self.clauses.extend([list(clause) for clause in clauses])
+
+    def add_clause(self, clause):
+        self.clauses.append(list(clause))
+
+    def solve_limited(self, assumptions, expect_interrupt):
+        self.limited_calls += 1
+        assert expect_interrupt is True
+        assert self.interrupted.wait(timeout=1.0)
+        return None
+
+    def interrupt(self):
+        self.interrupted.set()
+
+    def clear_interrupt(self):
+        self.clear_calls += 1
+        self.interrupted.clear()
+
+    def solve(self, assumptions):
+        self.solve_calls += 1
+        return True
+
+    def get_model(self):
+        return [1]
+
+    def delete(self):
+        pass
 
 
 class _FakeNativeSolver(NativeIncrementalSolverBase):
@@ -119,12 +164,25 @@ def test_interrupted_sat_result_is_feasible():
     assert result.ok
 
 
-def test_live_model_limit_does_not_change_to_one_shot_execution():
+def test_live_model_limit_interrupts_and_keeps_the_same_sat_backend(monkeypatch):
+    _LiveInterruptiblePySAT.instances.clear()
+    monkeypatch.setattr("hermax.model.core.PySATSolver", _LiveInterruptiblePySAT)
     model = Model()
-    model &= model.bool("x")
+    x = model.bool("x")
+    model &= x
 
-    with pytest.raises(NotImplementedError, match="live PySAT incremental"):
-        model.solve(incremental=True, time_limit=1.0)
+    interrupted = model.solve(incremental=True, time_limit=0.01)
+    assert interrupted.status == "interrupted"
+
+    resumed = model.solve(incremental=True)
+    assert resumed.status == "sat"
+    assert resumed.assignment[x] is True
+
+    assert len(_LiveInterruptiblePySAT.instances) == 1
+    backend = _LiveInterruptiblePySAT.instances[0]
+    assert backend.limited_calls == 1
+    assert backend.clear_calls == 1
+    assert backend.solve_calls == 1
 
 
 def test_one_shot_pysat_model_accepts_a_time_limit():

@@ -22,6 +22,7 @@ from hermax.internal.subprocess_oneshot import (
     _loads_frame_from_bytes,
     _worker_cmd,
     _popen_kwargs,
+    is_usable_response_after_time_limit,
 )
 
 
@@ -507,6 +508,19 @@ class PortfolioSolver(IPAMIRSolver):
             request_assumptions=list(assumptions),
         )
 
+    def _spawn_next_available_worker(
+        self,
+        pending_classes: list[type],
+        assumptions: list[int],
+        now: Optional[float] = None,
+    ) -> Optional[_WorkerProc]:
+        """Start the next available solver, skipping unavailable candidates."""
+        while pending_classes:
+            worker = self._spawn_worker(pending_classes.pop(0), assumptions, now)
+            if worker is not None:
+                return worker
+        return None
+
     def _finalize_worker(self, w: _WorkerProc) -> None:
         if w.done:
             return
@@ -599,8 +613,11 @@ class PortfolioSolver(IPAMIRSolver):
             "killed": w.killed,
         }
 
-        if w.timed_out and w.response is None:
+        if w.timed_out and not is_usable_response_after_time_limit(w.response):
             detail["status"] = "TIMEOUT"
+            if w.response is not None:
+                detail["timeout_error_type"] = w.response.get("error_type")
+                detail["timeout_error"] = w.response.get("error")
             self._last_run_details.append(detail)
             return None
 
@@ -764,7 +781,7 @@ class PortfolioSolver(IPAMIRSolver):
         pending_classes = list(self._solver_classes)
         workers: list[_WorkerProc] = []
         while pending_classes and len(workers) < max_parallel:
-            w = self._spawn_worker(pending_classes.pop(0), assumps)
+            w = self._spawn_next_available_worker(pending_classes, assumps)
             if w is not None:
                 if overall_deadline is not None:
                     w.deadline_s = min(float(w.deadline_s), float(overall_deadline))
@@ -847,13 +864,12 @@ class PortfolioSolver(IPAMIRSolver):
                             # trust UNSAT only if parsed/structured candidate was unavailable -> no.
                             pass
                         active.discard(i)
-                        if pending_classes:
-                            nw = self._spawn_worker(pending_classes.pop(0), assumps)
-                            if nw is not None:
-                                if overall_deadline is not None:
-                                    nw.deadline_s = min(float(nw.deadline_s), float(overall_deadline))
-                                workers.append(nw)
-                                active.add(len(workers) - 1)
+                        nw = self._spawn_next_available_worker(pending_classes, assumps)
+                        if nw is not None:
+                            if overall_deadline is not None:
+                                nw.deadline_s = min(float(nw.deadline_s), float(overall_deadline))
+                            workers.append(nw)
+                            active.add(len(workers) - 1)
                         progressed = True
 
                 now2 = time.monotonic()

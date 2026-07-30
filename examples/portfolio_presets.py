@@ -7,8 +7,8 @@ x1 = vpool.id("x1")
 x2 = vpool.id("x2")
 
 complete_portfolio = PortfolioSolver.complete(
-    per_solver_timeout_s=2.0,
-    overall_timeout_s=4.0,
+    per_solver_time_limit_s=2.0,
+    overall_time_limit_s=4.0,
     max_workers=2,
 )
 
@@ -26,8 +26,8 @@ if ok:
 
 
 performance_portfolio = PortfolioSolver.performance(
-    per_solver_timeout_s=2.0,
-    overall_timeout_s=4.0,
+    per_solver_time_limit_s=2.0,
+    overall_time_limit_s=4.0,
     max_workers=2,
     selection_policy="first_valid",
 )

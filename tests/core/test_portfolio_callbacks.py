@@ -9,7 +9,7 @@ import pytest
 from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible
 from hermax.core import RC2Reentrant
 from hermax.portfolio import AdjustTimeLimit, PortfolioSolver
-from hermax.portfolio.solver import _WorkerProc
+from hermax.portfolio.solver import _INCOMPLETE_WORKER_CLASSES, _WorkerProc
 from hermax.internal.subprocess_oneshot import _dumps_frame
 
 
@@ -43,6 +43,7 @@ def _mk_done_worker(
     model: Optional[list[int]],
     start_s: float = 0.0,
     timeout_s: float = 30.0,
+    worker_class_path: str = "tests.fake",
 ) -> _WorkerProc:
     out = tempfile.TemporaryFile()
     err = tempfile.TemporaryFile()
@@ -57,7 +58,7 @@ def _mk_done_worker(
     err.seek(0)
     return _WorkerProc(
         solver_name=solver_name,
-        worker_class_path="tests.fake",
+        worker_class_path=worker_class_path,
         proc=_FakeProc(0),
         stdout_file=out,
         stderr_file=err,
@@ -91,13 +92,13 @@ def _mk_alive_worker(
     )
 
 
-def _mk_solver(*, overall_timeout_s: float = 2.5) -> PortfolioSolver:
+def _mk_solver(*, overall_time_limit_s: float = 2.5) -> PortfolioSolver:
     return PortfolioSolver(
         [RC2Reentrant, RC2Reentrant],
         formula=None,
-        per_solver_timeout_s=30.0,
-        overall_timeout_s=float(overall_timeout_s),
-        selection_policy="best_valid_until_timeout",
+        per_solver_time_limit_s=30.0,
+        overall_time_limit_s=float(overall_time_limit_s),
+        selection_policy="best_valid_until_time_limit",
         validate_model=False,
         recompute_cost_from_model=False,
     )
@@ -123,7 +124,7 @@ def test_portfolio_set_callback_accepts_legacy_zero_arg_and_event_forms():
 
 
 def test_portfolio_callback_exception_is_interpreted_as_stop(monkeypatch):
-    p = _mk_solver(overall_timeout_s=10.0)
+    p = _mk_solver(overall_time_limit_s=10.0)
     workers = [_mk_alive_worker(solver_name="W0"), _mk_alive_worker(solver_name="W1")]
     clock = _Clock(0.0)
     timed_out = {"n": 0}
@@ -155,7 +156,7 @@ def test_portfolio_callback_exception_is_interpreted_as_stop(monkeypatch):
 
 
 def test_portfolio_heartbeat_default_interval_is_one_second(monkeypatch):
-    p = _mk_solver(overall_timeout_s=2.2)
+    p = _mk_solver(overall_time_limit_s=2.2)
     workers = [_mk_alive_worker(solver_name="W0")]
     clock = _Clock(0.0)
     heartbeats = {"n": 0}
@@ -186,7 +187,7 @@ def test_portfolio_heartbeat_default_interval_is_one_second(monkeypatch):
 
 
 def test_portfolio_incumbent_callback_strict_improvement_only_and_coalesced(monkeypatch):
-    p = _mk_solver(overall_timeout_s=5.0)
+    p = _mk_solver(overall_time_limit_s=5.0)
     workers = [
         _mk_done_worker(solver_name="W0", status=SolveStatus.INTERRUPTED_SAT, cost=20, model=[1]),
         _mk_done_worker(solver_name="W1", status=SolveStatus.INTERRUPTED_SAT, cost=10, model=[1]),
@@ -222,7 +223,7 @@ def test_portfolio_incumbent_callback_strict_improvement_only_and_coalesced(monk
 
 
 def test_portfolio_adjust_time_limit_action_shortens_deadline(monkeypatch):
-    p = _mk_solver(overall_timeout_s=10.0)
+    p = _mk_solver(overall_time_limit_s=10.0)
     workers = [_mk_alive_worker(solver_name="W0")]
     clock = _Clock(0.0)
     timed_out = {"n": 0}
@@ -251,4 +252,56 @@ def test_portfolio_adjust_time_limit_action_shortens_deadline(monkeypatch):
     ok = p.solve()
     assert ok is False
     assert timed_out["n"] >= 1
+    p.close()
+
+
+def test_portfolio_replacement_skips_unavailable_candidates(monkeypatch):
+    incomplete_path = next(iter(_INCOMPLETE_WORKER_CLASSES))
+    classes = [type(f"Solver{i}", (), {}) for i in range(5)]
+    p = PortfolioSolver(
+        classes,
+        formula=None,
+        max_workers=2,
+        validate_model=False,
+        recompute_cost_from_model=False,
+    )
+    outcomes = [
+        _mk_done_worker(
+            solver_name="incomplete-1",
+            status=SolveStatus.UNSAT,
+            cost=None,
+            model=None,
+            worker_class_path=incomplete_path,
+        ),
+        _mk_done_worker(
+            solver_name="incomplete-2",
+            status=SolveStatus.UNSAT,
+            cost=None,
+            model=None,
+            worker_class_path=incomplete_path,
+        ),
+        None,
+        None,
+        _mk_done_worker(
+            solver_name="complete",
+            status=SolveStatus.UNSAT,
+            cost=None,
+            model=None,
+            worker_class_path="tests.complete",
+        ),
+    ]
+    spawned: list[type] = []
+    clock = _Clock(0.0)
+
+    def spawn(self, cls, assumptions, now=None):
+        spawned.append(cls)
+        return outcomes.pop(0)
+
+    monkeypatch.setattr(PortfolioSolver, "_spawn_worker", spawn)
+    monkeypatch.setattr("hermax.portfolio.solver.time.monotonic", clock.monotonic)
+    monkeypatch.setattr("hermax.portfolio.solver.time.sleep", clock.sleep)
+
+    assert p.solve() is False
+    assert p.get_status() == SolveStatus.UNSAT
+    assert spawned == classes
     p.close()

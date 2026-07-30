@@ -1925,7 +1925,7 @@ class TestSPBMaxSATCFPSIncomplete(TestIPAMIRSolverHardcore):
     SOLVER_CLASS = SPBMaxSATCFPS
 
     def setUp(self):
-        self.solver = self._wrap_solver(self.SolverClass(timeout_s=4.0, timeout_grace_s=0.5))
+        self.solver = self._wrap_solver(self.SolverClass(default_time_limit=4.0, time_limit_grace=0.5))
 
     def test_024_reported_model_and_cost_self_consistency(self):
         self.skipTest("SPB-MaxSAT-c-FPS subprocess wrapper may time out on this weighted self-consistency case.")
@@ -1962,7 +1962,7 @@ class TestOpenWBOIncIncomplete(TestIPAMIRSolverHardcore):
     SOLVER_CLASS = OpenWBOInc
 
     def setUp(self):
-        self.solver = self._wrap_solver(self.SolverClass(timeout_s=4.0, timeout_grace_s=0.5))
+        self.solver = self._wrap_solver(self.SolverClass(default_time_limit=4.0, time_limit_grace=0.5))
 
     def test_040_termination_interrupt_and_raise_flag(self):
         self.skipTest("OpenWBOInc subprocess wrapper does not support set_terminate.")
@@ -1975,7 +1975,7 @@ class TestTTOpenWBOIncIncomplete(TestIPAMIRSolverHardcore):
     SOLVER_CLASS = TTOpenWBOInc
 
     def setUp(self):
-        self.solver = self._wrap_solver(self.SolverClass(timeout_s=4.0, timeout_grace_s=0.5))
+        self.solver = self._wrap_solver(self.SolverClass(default_time_limit=4.0, time_limit_grace=0.5))
 
     def test_040_termination_interrupt_and_raise_flag(self):
         self.skipTest("TTOpenWBOInc subprocess wrapper does not support set_terminate.")
@@ -1988,7 +1988,7 @@ class TestNuWLSCIBRIncomplete(TestIPAMIRSolverHardcore):
     SOLVER_CLASS = NuWLSCIBR
 
     def setUp(self):
-        self.solver = self._wrap_solver(self.SolverClass(timeout_s=4.0, timeout_grace_s=0.5))
+        self.solver = self._wrap_solver(self.SolverClass(default_time_limit=4.0, time_limit_grace=0.5))
 
     def test_024_reported_model_and_cost_self_consistency(self):
         self.skipTest("NuWLS-c-IBR subprocess wrapper may crash on this weighted self-consistency case.")
@@ -2035,10 +2035,10 @@ class HardcorePortfolioSolver(PortfolioSolver):
         if Loandra.is_available():
             solver_classes.append(Loandra)
         defaults = dict(
-            per_solver_timeout_s=6.0,
-            overall_timeout_s=12.0,
-            timeout_grace_s=0.5,
-            selection_policy="first_optimal_or_best_until_timeout",
+            per_solver_time_limit_s=6.0,
+            overall_time_limit_s=12.0,
+            time_limit_grace_s=0.5,
+            selection_policy="first_optimal_or_best_until_time_limit",
             validate_model=True,
             recompute_cost_from_model=True,
             invalid_result_policy="warn_drop",
@@ -2055,11 +2055,11 @@ class HardcoreCompletePortfolioSolver(CompletePortfolioSolver):
 
     def __init__(self, formula=None, **kwargs):
         defaults = dict(
-            per_solver_timeout_s=6.0,
-            overall_timeout_s=12.0,
-            timeout_grace_s=0.5,
+            per_solver_time_limit_s=6.0,
+            overall_time_limit_s=12.0,
+            time_limit_grace_s=0.5,
             max_workers=2,
-            selection_policy="first_optimal_or_best_until_timeout",
+            selection_policy="first_optimal_or_best_until_time_limit",
             validate_model=True,
             recompute_cost_from_model=True,
             invalid_result_policy="warn_drop",
@@ -2076,11 +2076,11 @@ class HardcorePerformancePortfolioSolver(PerformancePortfolioSolver):
 
     def __init__(self, formula=None, **kwargs):
         defaults = dict(
-            per_solver_timeout_s=6.0,
-            overall_timeout_s=12.0,
-            timeout_grace_s=0.5,
+            per_solver_time_limit_s=6.0,
+            overall_time_limit_s=12.0,
+            time_limit_grace_s=0.5,
             max_workers=2,
-            selection_policy="first_optimal_or_best_until_timeout",
+            selection_policy="first_optimal_or_best_until_time_limit",
             validate_model=True,
             recompute_cost_from_model=True,
             invalid_result_policy="warn_drop",
@@ -2097,9 +2097,9 @@ class HardcoreIncompletePortfolioSolver(IncompletePortfolioSolver):
 
     def __init__(self, formula=None, **kwargs):
         defaults = dict(
-            per_solver_timeout_s=4.0,
-            overall_timeout_s=10.0,
-            timeout_grace_s=0.5,
+            per_solver_time_limit_s=4.0,
+            overall_time_limit_s=10.0,
+            time_limit_grace_s=0.5,
             max_workers=2,
             selection_policy="first_valid",
             validate_model=True,
@@ -2115,7 +2115,7 @@ class TestLoandraIncomplete(TestIPAMIRSolverHardcore):
     SOLVER_CLASS = Loandra
 
     def setUp(self):
-        self.solver = self._wrap_solver(self.SolverClass(timeout_s=4.0, timeout_grace_s=0.5))
+        self.solver = self._wrap_solver(self.SolverClass(default_time_limit=4.0, time_limit_grace=0.5))
 
     def test_040_termination_interrupt_and_raise_flag(self):
         self.skipTest("Loandra subprocess wrapper does not support set_terminate.")

@@ -15,6 +15,7 @@ from tests.time_limit_worker_solvers import (
     FastOptimalSolver,
     IgnoreSigintSolver,
     NoResponseSolver,
+    SigintErrorSolver,
     SigintIncumbentSolver,
 )
 
@@ -28,6 +29,18 @@ class _FixtureReplaySolver(OneShotSubprocessReplaySolverBase):
 class _NoResponseReplaySolver(OneShotSubprocessReplaySolverBase):
     worker_solver_class_path = "tests.time_limit_worker_solvers.NoResponseSolver"
     default_signature = "no-response-replay"
+    timeout_error_prefix = "fixture"
+
+
+class _SigintErrorReplaySolver(OneShotSubprocessReplaySolverBase):
+    worker_solver_class_path = "tests.time_limit_worker_solvers.SigintErrorSolver"
+    default_signature = "sigint-error-replay"
+    timeout_error_prefix = "fixture"
+
+
+class _ErrorReplaySolver(OneShotSubprocessReplaySolverBase):
+    worker_solver_class_path = "tests.time_limit_worker_solvers.ErrorSolver"
+    default_signature = "error-replay"
     timeout_error_prefix = "fixture"
 
 
@@ -58,6 +71,18 @@ def test_oneshot_worker_returns_incumbent_after_sigint():
     assert run.response["status"] == int(SolveStatus.INTERRUPTED_SAT)
     assert run.response["model"] == [1]
     assert run.response["cost"] == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="SIGINT process-group behavior is POSIX-specific")
+def test_oneshot_worker_reports_a_structured_error_after_sigint():
+    run = run_oneshot_worker(_request(SigintErrorSolver), time_limit=0.2, grace_s=0.5)
+
+    assert run.timed_out
+    assert run.interrupted
+    assert not run.killed
+    assert run.response is not None
+    assert run.response["ok"] is False
+    assert run.response["error_type"] == "KeyboardInterrupt"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="SIGINT process-group behavior is POSIX-specific")
@@ -111,6 +136,28 @@ def test_replay_wrapper_reports_a_missing_worker_response_as_error():
         solver.close()
 
 
+def test_replay_wrapper_keeps_a_predeadline_structured_error():
+    solver = _ErrorReplaySolver()
+    try:
+        solver.add_clause([1])
+        assert not solver.solve(time_limit=1.0)
+        assert solver.get_status() == SolveStatus.ERROR
+    finally:
+        solver.close()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="SIGINT process-group behavior is POSIX-specific")
+def test_replay_wrapper_maps_a_timed_structured_error_to_interrupted():
+    solver = _SigintErrorReplaySolver()
+    try:
+        solver.add_clause([1])
+        assert not solver.solve(time_limit=0.2)
+        assert solver.get_status() == SolveStatus.INTERRUPTED
+        assert solver._last_error == "timeout: KeyboardInterrupt"
+    finally:
+        solver.close()
+
+
 @pytest.mark.skipif(os.name == "nt", reason="SIGINT process-group behavior is POSIX-specific")
 def test_portfolio_preserves_a_timed_incumbent():
     solver = PortfolioSolver(
@@ -157,6 +204,37 @@ def test_portfolio_reports_killed_and_crashed_workers_without_a_result():
 
 
 @pytest.mark.skipif(os.name == "nt", reason="SIGINT process-group behavior is POSIX-specific")
+def test_portfolio_maps_a_timed_structured_error_to_interrupted():
+    solver = PortfolioSolver(
+        [SigintErrorSolver],
+        per_solver_time_limit_s=1.0,
+        overall_time_limit_s=1.0,
+        time_limit_grace_s=0.5,
+    )
+    solver.add_clause([1])
+    try:
+        assert not solver.solve(time_limit=0.2)
+        assert solver.get_status() == SolveStatus.INTERRUPTED
+        assert solver.last_run_details[0]["timed_out"]
+        assert solver.last_run_details[0]["status"] == "TIMEOUT"
+        assert solver.last_run_details[0]["timeout_error_type"] == "KeyboardInterrupt"
+    finally:
+        solver.close()
+
+
+def test_portfolio_keeps_a_predeadline_structured_error():
+    solver = PortfolioSolver([ErrorSolver])
+    solver.add_clause([1])
+    try:
+        assert not solver.solve(time_limit=1.0)
+        assert solver.get_status() == SolveStatus.ERROR
+        assert not solver.last_run_details[0]["timed_out"]
+        assert solver.last_run_details[0]["status"] == "ERR"
+    finally:
+        solver.close()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="SIGINT process-group behavior is POSIX-specific")
 def test_model_maps_a_timed_incumbent_to_interrupted_sat():
     model = Model()
     x = model.bool("x")
@@ -171,6 +249,21 @@ def test_model_maps_a_timed_incumbent_to_interrupted_sat():
     assert result.ok
     assert result.status == "interrupted_sat"
     assert result.assignment[x] is True
+
+
+@pytest.mark.skipif(os.name == "nt", reason="SIGINT process-group behavior is POSIX-specific")
+def test_model_maps_a_timed_structured_error_to_interrupted():
+    model = Model()
+    model &= model.bool("x")
+
+    result = model.solve(
+        solver=SigintErrorSolver,
+        incremental=False,
+        time_limit=0.2,
+    )
+
+    assert not result.ok
+    assert result.status == "interrupted"
 
 
 def test_model_reports_a_crashed_one_shot_worker_as_error():

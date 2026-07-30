@@ -93,6 +93,14 @@ class IgnoreSigintSolver(_WorkerSolver):
         return False
 
 
+class SigintErrorSolver(_WorkerSolver):
+    """Lets SIGINT raise KeyboardInterrupt, which the worker reports as an error."""
+
+    def solve(self, assumptions=None, raise_on_abnormal=False, time_limit=None):
+        while True:
+            time.sleep(0.01)
+
+
 class CrashSolver(_WorkerSolver):
     def solve(self, assumptions=None, raise_on_abnormal=False, time_limit=None):
         os._exit(86)

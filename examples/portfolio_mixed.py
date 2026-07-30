@@ -17,10 +17,10 @@ wcnf.append([-b], weight=2)  # soft literal -B: pay 2 if B=True
 portfolio = PortfolioSolver(
     [CGSSSolver, Loandra],
     formula=wcnf,
-    per_solver_timeout_s=3.0,
-    overall_timeout_s=5.0,
+    per_solver_time_limit_s=3.0,
+    overall_time_limit_s=5.0,
     max_workers=2,
-    selection_policy="first_optimal_or_best_until_timeout",
+    selection_policy="first_optimal_or_best_until_time_limit",
 )
 
 ok = portfolio.solve()

@@ -10,7 +10,7 @@ from hermax.core.rc2.rc2 import RC2
 from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult
 from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible
 from hermax.core.time_limits import validate_time_limit
-from hermax.internal.subprocess_oneshot import run_oneshot_worker
+from hermax.internal.subprocess_oneshot import is_usable_response_after_time_limit, run_oneshot_worker
 
 
 class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
@@ -118,8 +118,9 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
         self._last_worker_stderr = (run.stderr_raw or b"").decode("utf-8", errors="replace")
         self._last_worker_stdout = (run.stdout_raw or b"").decode("utf-8", errors="replace")
 
-        if run.timed_out and run.response is None:
-            self._last_error = "timeout"
+        if run.timed_out and not is_usable_response_after_time_limit(run.response):
+            response_error = None if run.response is None else run.response.get("error") or run.response.get("error_type")
+            self._last_error = "timeout" if response_error is None else f"timeout: {response_error}"
             return ReplaySolveResult(status=SolveStatus.INTERRUPTED, model=None, cost=None)
 
         if run.response is None:
