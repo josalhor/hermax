@@ -43,6 +43,7 @@ def _cibw_cplex_env(
     extra: list[str],
 ) -> tuple[dict[str, str], list[str]]:
     env = os.environ.copy()
+    env.setdefault("HERMAX_REUSE_NATIVE_CORES", "1")
     cplex_studio, cplex_inc_dir, cplex_lib_dir = _require_cplex_env(env)
 
     env["CIBW_CONTAINER_ENGINE"] = f"podman; create_args: --volume {cplex_studio}:{cplex_studio}:ro"
@@ -51,6 +52,7 @@ def _cibw_cplex_env(
         f"CPLEX_LIB_DIR={cplex_lib_dir} "
         "HERMAX_ENABLE_MAXHS=on "
         "HERMAX_ENABLE_IMAXHS=on "
+        f"HERMAX_REUSE_NATIVE_CORES={env['HERMAX_REUSE_NATIVE_CORES']} "
         "SKIP_MAXHS=0 "
         "SKIP_IMAXHS=0 "
         f"HERMAX_CIBW_TEST_PROFILE={env.get('HERMAX_CIBW_TEST_PROFILE', 'full')} "
@@ -80,6 +82,25 @@ def _remove_path(path: Path) -> None:
     else:
         path.unlink()
     print(f"removed {path.relative_to(ROOT)}")
+
+
+def _forward_wheel_build_env(env: dict[str, str]) -> None:
+    """Pass host build switches explicitly into Linux wheel containers."""
+    # Keep the archive cache opt-outable, but enable it for normal wheel builds.
+    env.setdefault("HERMAX_REUSE_NATIVE_CORES", "1")
+
+    # Linux wheels run in a container, so explicitly whitelist host variables.
+    # Do not override CIBW_ENVIRONMENT_LINUX: doing so replaces the toolchain
+    # settings declared in pyproject.toml. macOS and Windows builds run on the
+    # host and inherit these values normally.
+    key = "CIBW_ENVIRONMENT_PASS_LINUX"
+    names = env.get(key, "").split()
+    for name in ("HERMAX_REUSE_NATIVE_CORES", "HERMAX_SOLVER_INCLUDE"):
+        if name == "HERMAX_SOLVER_INCLUDE" and not env.get(name, "").strip():
+            continue
+        if name not in names:
+            names.append(name)
+    env[key] = " ".join(names)
 
 
 def _iter_build_artifacts() -> list[Path]:
@@ -125,13 +146,8 @@ def cmd_current_wheel(args: argparse.Namespace) -> int:
     py_tag = f"cp{sys.version_info.major}{sys.version_info.minor}-*"
     env = os.environ.copy()
     env["CIBW_BUILD"] = py_tag
-    # cibuildwheel containers do not automatically inherit arbitrary host
-    # environment variables. Forward the narrow solver selection explicitly.
-    solver_include = env.get("HERMAX_SOLVER_INCLUDE", "").strip()
-    if solver_include:
-        existing = env.get("CIBW_ENVIRONMENT_LINUX", "").strip()
-        forwarded = f"HERMAX_SOLVER_INCLUDE={solver_include}"
-        env["CIBW_ENVIRONMENT_LINUX"] = f"{existing} {forwarded}".strip()
+    # cibuildwheel does not automatically inherit arbitrary host variables.
+    _forward_wheel_build_env(env)
     cmd = [
         sys.executable,
         "-m",
@@ -145,6 +161,8 @@ def cmd_current_wheel(args: argparse.Namespace) -> int:
 
 def cmd_wheels(args: argparse.Namespace) -> int:
     WHEELHOUSE.mkdir(exist_ok=True)
+    env = os.environ.copy()
+    _forward_wheel_build_env(env)
     cmd = [
         sys.executable,
         "-m",
@@ -153,18 +171,20 @@ def cmd_wheels(args: argparse.Namespace) -> int:
         str(WHEELHOUSE),
     ]
     cmd.extend(args.extra)
-    return _run(cmd)
+    return _run(cmd, env=env)
 
 
 def cmd_cibw_full_cplex(args: argparse.Namespace) -> int:
     WHEELHOUSE.mkdir(exist_ok=True)
     env, cmd = _cibw_cplex_env(current_python_only=False, extra=args.extra)
+    _forward_wheel_build_env(env)
     return _run(cmd, env=env)
 
 
 def cmd_cibw_full_cplex_current(args: argparse.Namespace) -> int:
     WHEELHOUSE.mkdir(exist_ok=True)
     env, cmd = _cibw_cplex_env(current_python_only=True, extra=args.extra)
+    _forward_wheel_build_env(env)
     return _run(cmd, env=env)
 
 

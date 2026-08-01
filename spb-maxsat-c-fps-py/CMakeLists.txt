@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(hermax.core.spb_maxsat_c_fps LANGUAGES CXX)
 
-find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -49,27 +46,52 @@ set(SPB_SOURCES
     "${SPB_ROOT}/solvers/glucose4.1/utils/System.cc"
 )
 
-pybind11_add_module(spb_maxsat_c_fps MODULE NO_EXTRAS
-    python/spb_maxsat_c_fps_bindings.cpp
-    ${SPB_SOURCES}
-)
+if(HERMAX_CORE_ARCHIVE)
+    add_library(spb_maxsat_c_fps_core STATIC IMPORTED GLOBAL)
+    set_target_properties(spb_maxsat_c_fps_core PROPERTIES IMPORTED_LOCATION "${HERMAX_CORE_ARCHIVE}")
+else()
+    add_library(spb_maxsat_c_fps_core STATIC ${SPB_SOURCES})
+endif()
 
-target_include_directories(spb_maxsat_c_fps PRIVATE
-    "${SPB_ROOT}"
-    "${SPB_ROOT}/solvers/glucose4.1"
-)
+if(NOT HERMAX_CORE_ARCHIVE)
+    target_include_directories(spb_maxsat_c_fps_core PUBLIC
+        "${SPB_ROOT}"
+        "${SPB_ROOT}/solvers/glucose4.1"
+    )
 
-target_link_libraries(spb_maxsat_c_fps PRIVATE Python3::Module pybind11::module)
+    if (NOT MSVC)
+        target_compile_options(spb_maxsat_c_fps_core PRIVATE -fpermissive)
+    endif()
+
+    target_compile_definitions(spb_maxsat_c_fps_core PRIVATE
+        __STDC_LIMIT_MACROS
+        __STDC_FORMAT_MACROS
+        NSPACE=Glucose
+        SOLVERNAME="Glucose4.1"
+        VERSION=core
+    )
+endif()
+
+if(HERMAX_CORE_ONLY)
+    return()
+endif()
+
+find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(pybind11 REQUIRED)
+
+pybind11_add_module(spb_maxsat_c_fps MODULE NO_EXTRAS python/spb_maxsat_c_fps_bindings.cpp)
+target_include_directories(spb_maxsat_c_fps PRIVATE "${SPB_ROOT}" "${SPB_ROOT}/solvers/glucose4.1")
 if (NOT MSVC)
     target_compile_options(spb_maxsat_c_fps PRIVATE -fpermissive)
 endif()
-
-add_definitions(-D__STDC_LIMIT_MACROS -D__STDC_FORMAT_MACROS)
 target_compile_definitions(spb_maxsat_c_fps PRIVATE
+    __STDC_LIMIT_MACROS
+    __STDC_FORMAT_MACROS
     NSPACE=Glucose
     SOLVERNAME="Glucose4.1"
     VERSION=core
 )
+target_link_libraries(spb_maxsat_c_fps PRIVATE Python3::Module pybind11::module spb_maxsat_c_fps_core)
 
 find_library(GMP_LIBRARY gmp)
 find_library(GMPXX_LIBRARY gmpxx)

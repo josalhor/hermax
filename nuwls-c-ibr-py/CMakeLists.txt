@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(hermax.core.nuwls_c_ibr LANGUAGES CXX)
 
-find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -48,27 +45,52 @@ set(NUWLS_SOURCES
     "${NUWLS_ROOT}/solvers/glucose4.1/utils/System.cc"
 )
 
-pybind11_add_module(nuwls_c_ibr MODULE NO_EXTRAS
-    python/nuwls_c_ibr_bindings.cpp
-    ${NUWLS_SOURCES}
-)
+if(HERMAX_CORE_ARCHIVE)
+    add_library(nuwls_c_ibr_core STATIC IMPORTED GLOBAL)
+    set_target_properties(nuwls_c_ibr_core PROPERTIES IMPORTED_LOCATION "${HERMAX_CORE_ARCHIVE}")
+else()
+    add_library(nuwls_c_ibr_core STATIC ${NUWLS_SOURCES})
+endif()
 
-target_include_directories(nuwls_c_ibr PRIVATE
-    "${NUWLS_ROOT}"
-    "${NUWLS_ROOT}/solvers/glucose4.1"
-)
+if(NOT HERMAX_CORE_ARCHIVE)
+    target_include_directories(nuwls_c_ibr_core PUBLIC
+        "${NUWLS_ROOT}"
+        "${NUWLS_ROOT}/solvers/glucose4.1"
+    )
 
-target_link_libraries(nuwls_c_ibr PRIVATE Python3::Module pybind11::module)
+    if (NOT MSVC)
+        target_compile_options(nuwls_c_ibr_core PRIVATE -fpermissive)
+    endif()
+
+    target_compile_definitions(nuwls_c_ibr_core PRIVATE
+        __STDC_LIMIT_MACROS
+        __STDC_FORMAT_MACROS
+        NSPACE=Glucose
+        SOLVERNAME="Glucose4.1"
+        VERSION=core
+    )
+endif()
+
+if(HERMAX_CORE_ONLY)
+    return()
+endif()
+
+find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(pybind11 REQUIRED)
+
+pybind11_add_module(nuwls_c_ibr MODULE NO_EXTRAS python/nuwls_c_ibr_bindings.cpp)
+target_include_directories(nuwls_c_ibr PRIVATE "${NUWLS_ROOT}" "${NUWLS_ROOT}/solvers/glucose4.1")
 if (NOT MSVC)
     target_compile_options(nuwls_c_ibr PRIVATE -fpermissive)
 endif()
-
-add_definitions(-D__STDC_LIMIT_MACROS -D__STDC_FORMAT_MACROS)
 target_compile_definitions(nuwls_c_ibr PRIVATE
+    __STDC_LIMIT_MACROS
+    __STDC_FORMAT_MACROS
     NSPACE=Glucose
     SOLVERNAME="Glucose4.1"
     VERSION=core
 )
+target_link_libraries(nuwls_c_ibr PRIVATE Python3::Module pybind11::module nuwls_c_ibr_core)
 
 find_library(GMP_LIBRARY gmp)
 find_library(GMPXX_LIBRARY gmpxx)

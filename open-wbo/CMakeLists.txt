@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(hermax.core.openwbo LANGUAGES CXX)
 
-# --- Find Python correctly ---
-find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
-
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,24 +33,48 @@ set(SOURCES
     solvers/glucose4.1/simp/SimpSolver.cc
 )
 
-# Create the Python module
-pybind11_add_module(openwbo MODULE NO_EXTRAS openwbo_bindings.cpp ${SOURCES})
+if(HERMAX_CORE_ARCHIVE)
+    add_library(openwbo_core STATIC IMPORTED GLOBAL)
+    set_target_properties(openwbo_core PROPERTIES IMPORTED_LOCATION "${HERMAX_CORE_ARCHIVE}")
+else()
+    add_library(openwbo_core STATIC ${SOURCES})
+endif()
 
-target_include_directories(openwbo PRIVATE
-    .
-    solvers/glucose4.1
-)
+if(NOT HERMAX_CORE_ARCHIVE)
+    target_include_directories(openwbo_core PUBLIC
+        .
+        solvers/glucose4.1
+    )
+    target_compile_definitions(openwbo_core PRIVATE
+        __STDC_LIMIT_MACROS
+        __STDC_FORMAT_MACROS
+        SIMP
+        NSPACE=Glucose
+    )
 
-# Use the modern link targets
-target_link_libraries(openwbo PRIVATE Python3::Module pybind11::module)
+    # Force-include a shim header
+    target_compile_options(openwbo_core PRIVATE
+        -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h
+    )
+endif()
 
+# The binding includes solver headers too, so keep the original module-wide
+# definitions when linking a prebuilt solver archive.
 add_definitions(-D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -D SIMP)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNSPACE=Glucose")
 
-# Force-include a shim header
-target_compile_options(openwbo PRIVATE
-    -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h
-)
+if(HERMAX_CORE_ONLY)
+    return()
+endif()
+
+find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(pybind11 REQUIRED)
+
+# Create the ABI-specific Python module from the reusable solver core.
+pybind11_add_module(openwbo MODULE NO_EXTRAS openwbo_bindings.cpp)
+target_include_directories(openwbo PRIVATE . solvers/glucose4.1)
+target_compile_options(openwbo PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h)
+target_link_libraries(openwbo PRIVATE Python3::Module pybind11::module openwbo_core)
 
 # Link against GMP library (and gmpxx for headers)
 find_library(GMP_LIBRARY gmp)

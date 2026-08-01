@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(hermax.core.loandra LANGUAGES CXX)
 
-find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
-
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -34,15 +31,40 @@ list(FILTER SOURCES EXCLUDE REGEX "/algorithms/Alg_OLL_ITER\\.cc$")
 list(FILTER GLUCOSE_SOURCES EXCLUDE REGEX "solvers/glucose4\\.1/simp/Main\\.cc$")
 list(APPEND SOURCES ${GLUCOSE_SOURCES})
 
-pybind11_add_module(loandra MODULE NO_EXTRAS python/loandra_bindings.cpp ${SOURCES})
-target_link_libraries(loandra PRIVATE Python3::Module pybind11::module)
+if(HERMAX_CORE_ARCHIVE)
+    add_library(loandra_core STATIC IMPORTED GLOBAL)
+    set_target_properties(loandra_core PROPERTIES IMPORTED_LOCATION "${HERMAX_CORE_ARCHIVE}")
+else()
+    add_library(loandra_core STATIC ${SOURCES})
+endif()
+if(NOT HERMAX_CORE_ARCHIVE)
+    target_compile_definitions(loandra_core PRIVATE
+        __STDC_LIMIT_MACROS
+        __STDC_FORMAT_MACROS
+        SIMP
+        NSPACE=Glucose
+    )
 
+    target_compile_options(loandra_core PRIVATE
+        -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h
+    )
+endif()
+
+# The Python binding includes solver headers and needs the same macros as the
+# original single-target compilation.
 add_definitions(-D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -D SIMP)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNSPACE=Glucose")
 
-target_compile_options(loandra PRIVATE
-    -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h
-)
+if(HERMAX_CORE_ONLY)
+    return()
+endif()
+
+find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(pybind11 REQUIRED)
+
+pybind11_add_module(loandra MODULE NO_EXTRAS python/loandra_bindings.cpp)
+target_compile_options(loandra PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h)
+target_link_libraries(loandra PRIVATE Python3::Module pybind11::module loandra_core)
 
 find_library(GMP_LIBRARY gmp)
 find_library(GMPXX_LIBRARY gmpxx)

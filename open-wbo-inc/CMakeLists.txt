@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(hermax.core.openwbo_inc LANGUAGES CXX)
 
-# --- Find Python correctly ---
-find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
-
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,19 +30,41 @@ list(FILTER SOURCES EXCLUDE REGEX "/Main\\.cc$")
 list(FILTER GLUCOSE_SOURCES EXCLUDE REGEX "solvers/glucose4\\.1/simp/Main\\.cc$")
 list(APPEND SOURCES ${GLUCOSE_SOURCES})
 
-# Create the Python module
-pybind11_add_module(openwbo_inc MODULE NO_EXTRAS openwbo_bindings.cpp ${SOURCES})
+if(HERMAX_CORE_ARCHIVE)
+    add_library(openwbo_inc_core STATIC IMPORTED GLOBAL)
+    set_target_properties(openwbo_inc_core PROPERTIES IMPORTED_LOCATION "${HERMAX_CORE_ARCHIVE}")
+else()
+    add_library(openwbo_inc_core STATIC ${SOURCES})
+endif()
+if(NOT HERMAX_CORE_ARCHIVE)
+    target_compile_definitions(openwbo_inc_core PRIVATE
+        __STDC_LIMIT_MACROS
+        __STDC_FORMAT_MACROS
+        SIMP
+        NSPACE=Glucose
+    )
 
-# Use modern link targets
-target_link_libraries(openwbo_inc PRIVATE Python3::Module pybind11::module)
+    # Force-include a shim header
+    target_compile_options(openwbo_inc_core PRIVATE
+        -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h
+    )
+endif()
 
+# Keep the binding compilation environment identical to the original
+# single-target build when the solver core is imported from the cache.
 add_definitions(-D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -D SIMP)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNSPACE=Glucose")
 
-# Force-include a shim header
-target_compile_options(openwbo_inc PRIVATE
-    -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h
-)
+if(HERMAX_CORE_ONLY)
+    return()
+endif()
+
+find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(pybind11 REQUIRED)
+
+pybind11_add_module(openwbo_inc MODULE NO_EXTRAS openwbo_bindings.cpp)
+target_compile_options(openwbo_inc PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h)
+target_link_libraries(openwbo_inc PRIVATE Python3::Module pybind11::module openwbo_inc_core)
 
 # Link against GMP
 find_library(GMP_LIBRARY gmp)

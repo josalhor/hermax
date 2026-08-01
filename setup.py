@@ -11,6 +11,8 @@ import pybind11
 import sysconfig
 import glob
 import tempfile
+import hashlib
+import json
 
 from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext
@@ -39,11 +41,194 @@ def _run_logged(cmd, *, cwd, env, log_path):
 
 
 class CMakeBuild(build_ext):
-    def _ensure_linux_compiler_wrappers(self, real_cc: str, real_cxx: str):
+    def _native_core_reuse_enabled(self):
+        """Reuse non-Python solver archives only when wheel builds opt in."""
+        return os.environ.get("HERMAX_REUSE_NATIVE_CORES", "").strip() == "1"
+
+    def _native_core_cache_dir(self, env):
+        """Return a cache directory isolated by platform, toolchain, and flags."""
+        real_cc = env.get("HERMAX_REAL_CC", env.get("CC", ""))
+        real_cxx = env.get("HERMAX_REAL_CXX", env.get("CXX", ""))
+
+        def compiler_version(compiler):
+            try:
+                result = subprocess.run(
+                    [compiler, "--version"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                return "unavailable"
+            return (result.stdout or result.stderr).splitlines()[0] if (result.stdout or result.stderr) else "unknown"
+
+        fingerprint = {
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "cc": real_cc,
+            "cxx": real_cxx,
+            "cc_version": compiler_version(real_cc),
+            "cxx_version": compiler_version(real_cxx),
+            "cflags": env.get("CFLAGS", ""),
+            "cxxflags": env.get("CXXFLAGS", ""),
+            "generator": env.get("CMAKE_GENERATOR", ""),
+            "deployment_target": env.get("MACOSX_DEPLOYMENT_TARGET", ""),
+            "msystem": env.get("MSYSTEM", ""),
+            "mingw_prefix": env.get("MINGW_PREFIX", ""),
+        }
+        encoded = json.dumps(fingerprint, sort_keys=True).encode("utf-8")
+        key = hashlib.sha256(encoded).hexdigest()[:20]
+        path = Path(tempfile.gettempdir()) / "hermax-native-cores" / key
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _native_source_fingerprint(self, source_roots):
+        """Fingerprint inputs without trusting a stale source-tree archive."""
+        digest = hashlib.sha256()
+        ignored = {".git", "__pycache__"}
+        for source_root in sorted(map(os.path.abspath, source_roots)):
+            for root, dirs, files in os.walk(source_root):
+                dirs[:] = sorted(
+                    directory
+                    for directory in dirs
+                    if directory not in ignored and not directory.startswith("build")
+                )
+                for filename in sorted(files):
+                    path = os.path.join(root, filename)
+                    try:
+                        stat_result = os.stat(path)
+                    except OSError:
+                        continue
+                    digest.update(os.path.relpath(path, source_root).encode("utf-8"))
+                    digest.update(str(stat_result.st_mtime_ns).encode("ascii"))
+                    digest.update(str(stat_result.st_size).encode("ascii"))
+        return digest.hexdigest()
+
+    def _can_reuse_native_core(self, component, artifacts, env, source_roots):
+        """Check that an opted-in core was built in this matching environment."""
+        if not self._native_core_reuse_enabled():
+            return False
+        if not all(os.path.exists(path) for path in artifacts):
+            return False
+        marker = self._native_core_cache_dir(env) / f"{component}.json"
+        if not marker.exists():
+            return False
+        try:
+            metadata = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        reusable = metadata.get("source_fingerprint") == self._native_source_fingerprint(source_roots)
+        if reusable:
+            print(f"Reusing native core: {component}")
+        return reusable
+
+    def _mark_native_core(self, component, artifacts, env, source_roots):
+        if not self._native_core_reuse_enabled() or not all(os.path.exists(path) for path in artifacts):
+            return
+        marker = self._native_core_cache_dir(env) / f"{component}.json"
+        marker.write_text(
+            json.dumps(
+                {
+                    "artifacts": [os.path.abspath(path) for path in artifacts],
+                    "source_fingerprint": self._native_source_fingerprint(source_roots),
+                }
+            ),
+            encoding="utf-8",
+        )
+        print(f"Prepared native core cache: {component}")
+
+    def _cached_core_artifacts(self, component, artifact_names, env):
+        """Return stable archive locations for one platform/toolchain cache."""
+        component_dir = self._native_core_cache_dir(env) / component
+        component_dir.mkdir(parents=True, exist_ok=True)
+        return [str(component_dir / name) for name in artifact_names]
+
+    def _store_native_core(self, component, source_artifacts, env, source_roots):
+        """Copy validated static archives out of mutable solver source trees."""
+        cached_artifacts = self._cached_core_artifacts(
+            component,
+            [os.path.basename(path) for path in source_artifacts],
+            env,
+        )
+        for source, cached in zip(source_artifacts, cached_artifacts):
+            shutil.copy2(source, cached)
+        self._mark_native_core(component, cached_artifacts, env, source_roots)
+        return cached_artifacts
+
+    def _load_cached_native_core(self, component, env, source_roots):
+        marker = self._native_core_cache_dir(env) / f"{component}.json"
+        try:
+            metadata = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        artifacts = metadata.get("artifacts", [])
+        if self._can_reuse_native_core(component, artifacts, env, source_roots):
+            return artifacts
+        return None
+
+    def _prepare_cmake_native_core(self, ext, env):
+        """Build a solver-only CMake target once per platform/toolchain."""
+        spec = CMAKE_NATIVE_CORE_SPECS.get(ext.name)
+        if spec is None or not self._native_core_reuse_enabled():
+            return None
+
+        source_roots = [os.path.abspath(path) for path in spec["source_roots"]]
+        component = spec["component"]
+        cached = self._load_cached_native_core(component, env, source_roots)
+        if cached:
+            return cached[0]
+
+        cache_root = self._native_core_cache_dir(env) / component
+        build_dir = cache_root / "cmake-build"
+        archive_dir = cache_root / "archives"
+        shutil.rmtree(build_dir, ignore_errors=True)
+        shutil.rmtree(archive_dir, ignore_errors=True)
+        build_dir.mkdir(parents=True, exist_ok=True)
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        cmake_args = [
+            ext.sourcedir,
+            "-DHERMAX_CORE_ONLY=ON",
+            f"-DPython3_EXECUTABLE={sys.executable}",
+            f"-DPython3_ROOT_DIR={sys.exec_prefix}",
+            f"-Dpybind11_DIR={pybind11.get_cmake_dir()}",
+            "-DPYBIND11_FINDPYTHON=ON",
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+            "-DCMAKE_BUILD_TYPE=Release",
+            f"-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY={archive_dir}",
+            "-DCMAKE_C_STANDARD=11",
+            "-DCMAKE_CXX_STANDARD=17",
+            f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS', '')}",
+            f"-DCMAKE_C_FLAGS={env.get('CFLAGS', '')}",
+        ]
+        subprocess.check_call(["cmake", *cmake_args], cwd=build_dir, env=env)
+        subprocess.check_call(
+            ["cmake", "--build", ".", "--target", spec["target"], "--config", "Release", "-j"],
+            cwd=build_dir,
+            env=env,
+        )
+
+        archive_candidates = [
+            *archive_dir.glob(f"*{spec['target']}*.a"),
+            *archive_dir.glob(f"*{spec['target']}*.lib"),
+        ]
+        if len(archive_candidates) != 1:
+            raise RuntimeError(
+                f"Expected one archive for {ext.name}, found: {archive_candidates}"
+            )
+        archive = str(archive_candidates[0])
+        self._mark_native_core(component, [archive], env, source_roots)
+        return archive
+
+    def _ensure_unix_compiler_wrappers(self, real_cc: str, real_cxx: str):
         """
         Create stable compiler wrapper scripts that opportunistically use ccache.
         If ccache is unavailable, wrappers fall back to the real compiler.
         """
+        # Keep compiler invocations stable across the CPython builds performed
+        # by one cibuildwheel job. ccache can then reuse solver translation
+        # units while each ABI still links its own extension module.
         wrap_dir = "/tmp/hermax-toolchain"
         os.makedirs(wrap_dir, exist_ok=True)
 
@@ -185,16 +370,18 @@ if %errorlevel%==0 (
         extension_names = {ext.name for ext in self.extensions}
 
         if "hermax.core._aperture_native" in extension_names:
-            if platform.system() == "Windows":
-                self._make(["clean-all"], cwd="Aperture", env=self.get_base_env())
-            else:
-                subprocess.check_call(["make", "clean-all"], cwd="Aperture")
-
-        if CORETRAIL_EXTENSION_NAME in extension_names:
-            shutil.rmtree(CORETRAIL_ROOT / "build", ignore_errors=True)
+            env = self.get_base_env()
+            aperture_lib = os.path.join("Aperture", "build", "libaperture_pic.a")
+            if not self._can_reuse_native_core("aperture", [aperture_lib], env, ["Aperture"]):
+                if platform.system() == "Windows":
+                    self._make(["clean-all"], cwd="Aperture", env=env)
+                else:
+                    subprocess.check_call(["make", "clean-all"], cwd="Aperture", env=env)
 
     def run(self):
         self._scrub_prebuilt_native_artifacts()
+        reuse = "enabled" if self._native_core_reuse_enabled() else "disabled"
+        print(f"Native core reuse: {reuse}")
         self._clean_vendored_native_builds()
         try:
             subprocess.check_call(['cmake', '--version'])
@@ -250,6 +437,12 @@ if %errorlevel%==0 (
             f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS', '')}",
             f"-DCMAKE_C_FLAGS={env.get('CFLAGS', '')}",
         ]
+        core_archive = self._prepare_cmake_native_core(ext, env)
+        if core_archive:
+            cmake_args.append(f"-DHERMAX_CORE_ARCHIVE={core_archive}")
+        if ext.name == "hermax.internal._pblib":
+            pyint_cache = 1 if os.environ.get("HERMAX_PBLIB_PYINT_CACHE", "1") == "1" else 0
+            cmake_args.append(f"-DHERMAX_PBLIB_ENABLE_PYINT_CACHE={pyint_cache}")
         if cxx_std:
             cmake_args.append(f"-DCMAKE_CXX_STANDARD={cxx_std}")
 
@@ -308,6 +501,13 @@ if %errorlevel%==0 (
 
         subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
         subprocess.check_call(["cmake", "--build", ".", "--config", cfg], cwd=build_temp_path, env=env)
+        if ext.name == "hermax.core._aperture_native":
+            self._mark_native_core(
+                "aperture",
+                [os.path.join("Aperture", "build", "libaperture_pic.a")],
+                env,
+                ["Aperture"],
+            )
         
         self.verify_abi(ext, extdir, abi_tag)
 
@@ -522,9 +722,11 @@ if %errorlevel%==0 (
                 default_cxx = os.path.join(gcc_bin, "g++")
                 real_cc = env.get("CC", default_cc)
                 real_cxx = env.get("CXX", default_cxx)
+                env["HERMAX_REAL_CC"] = real_cc
+                env["HERMAX_REAL_CXX"] = real_cxx
                 # Use wrappers so ccache is optional and never required.
                 # This supports both CMake- and make-based sub-builds.
-                wrap_cc, wrap_cxx = self._ensure_linux_compiler_wrappers(real_cc, real_cxx)
+                wrap_cc, wrap_cxx = self._ensure_unix_compiler_wrappers(real_cc, real_cxx)
                 env["CC"] = wrap_cc
                 env["CXX"] = wrap_cxx
                 env.setdefault("AR", os.path.join(gcc_bin, "ar"))
@@ -550,6 +752,18 @@ if %errorlevel%==0 (
             common = "-fPIC -O2"
             env.setdefault("CFLAGS", f"{common} -std=gnu11")
             env.setdefault("CXXFLAGS", f"{common} -std=gnu++17")
+
+            # The macOS wheel job builds several CPython ABIs from the same
+            # source checkout. Route both CMake and legacy make projects
+            # through ccache, just as on manylinux. The wrappers fall back to
+            # clang when ccache is unavailable.
+            real_cc = env.get("CC", "clang")
+            real_cxx = env.get("CXX", "clang++")
+            env["HERMAX_REAL_CC"] = real_cc
+            env["HERMAX_REAL_CXX"] = real_cxx
+            wrap_cc, wrap_cxx = self._ensure_unix_compiler_wrappers(real_cc, real_cxx)
+            env["CC"] = wrap_cc
+            env["CXX"] = wrap_cxx
 
             return env
 
@@ -837,8 +1051,9 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         if platform.system() != "Darwin":
             return env
         e = env.copy()
-        e["CC"] = "clang"
-        e["CXX"] = "clang++"
+        e["HERMAX_REAL_CC"] = "clang"
+        e["HERMAX_REAL_CXX"] = "clang++"
+        e["CC"], e["CXX"] = self._ensure_unix_compiler_wrappers("clang", "clang++")
         e["AR"] = "/usr/bin/ar"
         e["RANLIB"] = "/usr/bin/ranlib"
         e["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:" + e.get("PATH", "")
@@ -918,7 +1133,6 @@ class CMakeBuildURMaxSAT(CMakeBuild):
             env=env,
         )
 
-        imaxhs_a = os.path.join(imaxhs_src_dir, "build", "release", "lib", "libipamirmaxhs.a")
         if not os.path.exists(imaxhs_a):
             raise RuntimeError(f"libipamirmaxhs.a not produced at {imaxhs_a}")
         self._ranlib(imaxhs_a, env=env)
@@ -967,7 +1181,6 @@ class CMakeBuildURMaxSAT(CMakeBuild):
             env=env,
         )
 
-        maxhs_a = os.path.join(maxhs_src_dir, "build", "release", "lib", "libmaxhs.a")
         if not os.path.exists(maxhs_a):
             raise RuntimeError(f"libmaxhs.a not produced at {maxhs_a}")
         self._ranlib(maxhs_a, env=env)
@@ -1001,14 +1214,17 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         os.makedirs(build_temp_path, exist_ok=True)
         env = self.get_base_env()
         eval_src_dir = os.path.abspath("EvalMaxSAT2022")
-        
-        cfg = os.path.join(eval_src_dir, "build_lib.sh")
-        with self._preserve_files(cfg):
-            st = os.stat(cfg).st_mode
-            os.chmod(cfg, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            self._bash(["./build_lib.sh"], cwd=eval_src_dir, env=env)
         eval_lib = os.path.join(eval_src_dir, "libipamirEvalMaxSAT2022.a")
+        if not self._can_reuse_native_core("evalmaxsat-incr", [eval_lib], env, [eval_src_dir]):
+            cfg = os.path.join(eval_src_dir, "build_lib.sh")
+            with self._preserve_files(cfg):
+                st = os.stat(cfg).st_mode
+                os.chmod(cfg, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                self._bash(["./build_lib.sh"], cwd=eval_src_dir, env=env)
+        if not os.path.exists(eval_lib):
+            raise RuntimeError(f"EvalMaxSAT incremental archive not produced at {eval_lib}")
         self._ranlib(eval_lib, env=env)
+        self._mark_native_core("evalmaxsat-incr", [eval_lib], env, [eval_src_dir])
         cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DEVALMAXSAT_INCR_LIB_ABS={eval_lib}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
         subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
         subprocess.check_call(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
@@ -1021,15 +1237,22 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         os.makedirs(build_temp_path, exist_ok=True)
         env = self.get_base_env()
         eval_src_dir = os.path.abspath("evalmaxsat")
-        eval_build_dir = os.path.join(eval_src_dir, f"build_{abi_tag}")
-        shutil.rmtree(eval_build_dir, ignore_errors=True)
-        os.makedirs(eval_build_dir, exist_ok=True)
-        subprocess.check_call(["cmake", "..", "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"], cwd=eval_build_dir, env=env)
-        subprocess.check_call(["cmake", "--build", ".", "--target", "clean"], cwd=eval_build_dir, env=env)
-        subprocess.check_call(["cmake", "--build", ".", "--config", "Release", "-j"], cwd=eval_build_dir, env=env)
+        if self._native_core_reuse_enabled():
+            eval_build_dir = str(self._native_core_cache_dir(env) / "evalmaxsat-latest")
+        else:
+            eval_build_dir = os.path.join(eval_src_dir, f"build_{abi_tag}")
         eval_lib = os.path.join(eval_build_dir, "lib", "EvalMaxSAT", "libEvalMaxSAT.a")
         glucose_lib = os.path.join(eval_build_dir, "lib", "glucose", "libglucose.a")
         cadical_lib = os.path.join(eval_build_dir, "lib", "cadical", "libcadical.a")
+        core_artifacts = [eval_lib, glucose_lib, cadical_lib]
+        if not self._can_reuse_native_core("evalmaxsat-latest", core_artifacts, env, [eval_src_dir]):
+            shutil.rmtree(eval_build_dir, ignore_errors=True)
+            os.makedirs(eval_build_dir, exist_ok=True)
+            subprocess.check_call(["cmake", eval_src_dir, "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"], cwd=eval_build_dir, env=env)
+            subprocess.check_call(["cmake", "--build", ".", "--config", "Release", "-j"], cwd=eval_build_dir, env=env)
+        if not all(os.path.exists(path) for path in core_artifacts):
+            raise RuntimeError("EvalMaxSAT latest build did not produce all required static archives")
+        self._mark_native_core("evalmaxsat-latest", core_artifacts, env, [eval_src_dir])
         # CMake handles ranlib automatically, but we keep it for consistency if needed
         eval_inc, malib_inc, cadical_inc, glucose_inc = [os.path.join(eval_src_dir, "lib", d, "src") for d in ["EvalMaxSAT", "MaLib", "cadical", "glucose"]]
         cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DEVALMAXSAT_LIB_ABS={eval_lib}", f"-DGLUCOSE_LIB_ABS={glucose_lib}", f"-DCADICAL_LIB_ABS={cadical_lib}", f"-DEVALMAXSAT_INC_DIR={eval_inc}", f"-DMALIB_INC_DIR={malib_inc}", f"-DCADICAL_INC_DIR={cadical_inc}", f"-DGLUCOSE_INC_DIR={glucose_inc}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
@@ -1048,85 +1271,89 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         cominisatps_dir = os.path.join(cash_dir, "cominisatps")
         cadical_dir = os.path.join(cash_dir, "cadical")
         uwr_dir = os.path.join(cash_dir, "uwrmaxsat")
-        self._make(["clean"], cwd=cominisatps_dir, env=env)
-        self._make(["lr", "-j", "LDFLAG_STATIC="], cwd=cominisatps_dir, env=env)
-        cominisatps_a = os.path.join(cominisatps_dir, "build", "release", "lib", "libcominisatps.a")
-        print('ranlib')
-        self._ranlib(cominisatps_a, env=env)
-        print('macos rebuild')
-        self._macos_rebuild_archive_if_gnu(cominisatps_a)
-        print('make clean')
-        if os.path.exists(os.path.join(cadical_dir, "Makefile")):
-            self._make(["clean"], cwd=cadical_dir, env=env)
-        
-        cfg = os.path.join(cadical_dir, "configure")
-        with self._preserve_files(cfg, os.path.join(cadical_dir, "scripts"), os.path.join(uwr_dir, "config.mk")):
-            self._prepare_shell_scripts(cfg, os.path.join(cadical_dir, "scripts"))
+        # CASHWMaxSAT also vendors SCIP, which is not part of these archives.
+        # Fingerprint only the three solver trees that feed this native core.
+        source_roots = [cominisatps_dir, cadical_dir, uwr_dir]
+        cached_artifacts = self._cached_core_artifacts(
+            "cashwmaxsat",
+            ["libcominisatps.a", "libcadical.a", "libuwrmaxsat.a"],
+            env,
+        )
+        if self._can_reuse_native_core("cashwmaxsat", cached_artifacts, env, source_roots):
+            cominisatps_a, cadical_a, uwr_a = cached_artifacts
+        else:
+            self._make(["clean"], cwd=cominisatps_dir, env=env)
+            self._make(["lr", "-j", "LDFLAG_STATIC="], cwd=cominisatps_dir, env=env)
+            built_cominisatps_a = os.path.join(
+                cominisatps_dir, "build", "release", "lib", "libcominisatps.a"
+            )
+            self._ranlib(built_cominisatps_a, env=env)
+            self._macos_rebuild_archive_if_gnu(built_cominisatps_a)
 
-            print('configure')
-            self._bash(["sh", "./configure"], cwd=cadical_dir, env=env)
-            def _materialize_cadical_sources(cadical_dir: str):
-                if platform.system() != "Windows":
-                    return
+            if os.path.exists(os.path.join(cadical_dir, "Makefile")):
+                self._make(["clean"], cwd=cadical_dir, env=env)
 
-                src = os.path.join(cadical_dir, "src")
-                build = os.path.join(cadical_dir, "build")
-                build_src = os.path.join(build, "src")
+            cfg = os.path.join(cadical_dir, "configure")
+            with self._preserve_files(
+                cfg,
+                os.path.join(cadical_dir, "scripts"),
+                os.path.join(uwr_dir, "config.mk"),
+            ):
+                self._prepare_shell_scripts(cfg, os.path.join(cadical_dir, "scripts"))
+                self._bash(["sh", "./configure"], cwd=cadical_dir, env=env)
 
-                # If build/src is missing (common on Windows symlink failure), copy it.
-                if not os.path.isdir(build_src):
-                    shutil.copytree(src, build_src)
+                if platform.system() == "Windows":
+                    src = os.path.join(cadical_dir, "src")
+                    build_src = os.path.join(cadical_dir, "build", "src")
+                    if not os.path.isdir(build_src):
+                        shutil.copytree(src, build_src)
+                    if not any(
+                        os.path.exists(os.path.join(build_src, name))
+                        for name in ("cadical.cpp", "cadical.cc", "cadical.cxx")
+                    ):
+                        shutil.rmtree(build_src, ignore_errors=True)
+                        shutil.copytree(src, build_src)
 
-                # Extra sanity: ensure at least one expected file exists
-                # (pick a file that exists in your cadical version)
-                if not any(os.path.exists(os.path.join(build_src, fn)) for fn in ["cadical.cpp", "cadical.cc", "cadical.cxx"]):
-                    # fallback: copy again, but if this still fails, you need to list src dir
-                    shutil.rmtree(build_src, ignore_errors=True)
-                    shutil.copytree(src, build_src)
+                self._make(["-j", "libcadical.a"], cwd=os.path.join(cadical_dir, "build"), env=env)
+                built_cadical_a = os.path.join(cadical_dir, "build", "libcadical.a")
+                self._ranlib(built_cadical_a, env=env)
+                self._macos_rebuild_archive_if_gnu(built_cadical_a)
 
-            print('materialize')
-            _materialize_cadical_sources(cadical_dir)
-            print('cadical -j')
-            # self._make(["cadical", "-j"], cwd=cadical_dir, env=env)
-            build_dir = os.path.join(cadical_dir, "build")
-            self._make(["-j", "libcadical.a"], cwd=build_dir, env=env)
+                if os.path.exists(os.path.join(uwr_dir, "config.mk")):
+                    os.remove(os.path.join(uwr_dir, "config.mk"))
+                self._bash(["cp", "config.cadical", "config.mk"], cwd=uwr_dir, env=env)
+                env_uwr = env.copy()
+                env_uwr["MAXPRE"] = ""
+                env_uwr["USESCIP"] = ""
+                self._make(["clean"], cwd=uwr_dir, env=env_uwr)
+                self._make(
+                    ["build/release/lib/libuwrmaxsat.a", "-j", "LDFLAG_STATIC="],
+                    cwd=uwr_dir,
+                    env=env_uwr,
+                )
+                built_uwr_a = os.path.join(
+                    uwr_dir, "build", "release", "lib", "libuwrmaxsat.a"
+                )
+                self._ranlib(built_uwr_a, env=env_uwr)
+                self._macos_rebuild_archive_if_gnu(built_uwr_a)
 
-            cadical_a = os.path.join(cadical_dir, "build", "libcadical.a")
-            self._ranlib(cadical_a, env=env)
-            self._macos_rebuild_archive_if_gnu(cadical_a)
-            if os.path.exists(os.path.join(uwr_dir, "config.mk")):
-                os.remove(os.path.join(uwr_dir, "config.mk"))
-            print('cp')
-            self._bash(["cp", "config.cadical", "config.mk"], cwd=uwr_dir, env=env)
-            env_uwr = env.copy()
-            env_uwr["MAXPRE"] = ""
-            env_uwr["USESCIP"] = "" 
-            print('make clean')
-            self._make(["clean"], cwd=uwr_dir, env=env_uwr)
-            # print('make r')
-            self._make(["build/release/lib/libuwrmaxsat.a", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env_uwr)
-            uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
-            print ('ranlib')
-            self._ranlib(uwr_a, env=env_uwr)
-            self._macos_rebuild_archive_if_gnu(uwr_a)
-            cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+            # Preserve-files restoration must complete before fingerprinting.
+            cominisatps_a, cadical_a, uwr_a = self._store_native_core(
+                "cashwmaxsat",
+                [built_cominisatps_a, built_cadical_a, built_uwr_a],
+                env,
+                source_roots,
+            )
 
-
-            # project_root = 'C:\\Users\\joshs\\Desktop\\'
-            # log_dir = os.path.join(project_root, "_cibw_logs")
-            # os.makedirs(log_dir, exist_ok=True)
-
-            # cfg_log   = os.path.join(log_dir, f"cmake_config_{abi_tag}.log")
-            # build_log = os.path.join(log_dir, f"cmake_build_{abi_tag}.log")
-            
-            print('cmake1')
-            subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
-            print('cmake2')
-            subprocess.check_call(["cmake", "--build", ".", "--verbose"], cwd=build_temp_path, env=env)
+        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+        subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
+        subprocess.check_call(["cmake", "--build", ".", "--verbose"], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
 
     def build_urmaxsat_comp(self, ext):
-        import urllib.request, zipfile
+        import urllib.request
+        import zipfile
+
         abi_tag = sysconfig.get_config_var("SOABI") or f"cp{sys.version_info.major}{sys.version_info.minor}"
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
         build_temp_path = os.path.join(self.build_temp, f"build_{ext.name}_{abi_tag}")
@@ -1154,114 +1381,86 @@ class CMakeBuildURMaxSAT(CMakeBuild):
             if not os.path.exists(hdr):
                 raise RuntimeError(f"Missing header: {hdr}")
 
-        env_sat = env.copy()
-        env_sat["MROOT"] = ".."
-        if "CFLAGS" in env_sat and "-std=gnu11" in env_sat["CFLAGS"]:
-            env_sat["CFLAGS"] = env_sat["CFLAGS"].replace("-std=gnu11", "")
+        source_roots = [uwr_dir]
+        cached_artifacts = self._cached_core_artifacts(
+            "urmaxsat-comp", ["lib_release.a", "libuwrmaxsat.a"], env
+        )
+        if self._can_reuse_native_core("urmaxsat-comp", cached_artifacts, env, source_roots):
+            cominisatps_a, uwr_a = cached_artifacts
+        else:
+            env_sat = env.copy()
+            env_sat["MROOT"] = ".."
+            if "CFLAGS" in env_sat and "-std=gnu11" in env_sat["CFLAGS"]:
+                env_sat["CFLAGS"] = env_sat["CFLAGS"].replace("-std=gnu11", "")
 
-        with self._preserve_files(
-            os.path.join(cominisatps_simp_dir, "depend.mk"),
-            os.path.join(uwr_dir, "config.mk"),
-        ):
-            try:
+            with self._preserve_files(
+                os.path.join(cominisatps_simp_dir, "depend.mk"),
+                os.path.join(uwr_dir, "config.mk"),
+            ):
                 if platform.system() != "Windows":
-                    self._bash(["bash", "-lc", "echo PATH=$PATH; which g++; g++ -dumpmachine; g++ --version | head -n 2"], cwd=cominisatps_simp_dir, env=env_sat)
                     self._bash(
                         ["bash", "-lc", "rm -f -- *.or lib_release.a lib.a depend.mk 2>/dev/null || true"],
                         cwd=cominisatps_simp_dir,
-                        env=env_sat
+                        env=env_sat,
                     )
                 self._make(["clean"], cwd=cominisatps_simp_dir, env=env_sat)
                 self._make(["libr"], cwd=cominisatps_simp_dir, env=env_sat)
-            except Exception as e:
-                print(e)
-                raise
-            cominisatps_a = os.path.join(cominisatps_simp_dir, "lib_release.a")
-            self._ranlib(cominisatps_a, env=env_sat)
-            # Critical: must happen BEFORE CMake tries to link this archive.
-            self._macos_rebuild_archive_if_gnu(cominisatps_a)
-            def posix(p): return p.replace("\\", "/")
+                built_cominisatps_a = os.path.join(cominisatps_simp_dir, "lib_release.a")
+                self._ranlib(built_cominisatps_a, env=env_sat)
+                self._macos_rebuild_archive_if_gnu(built_cominisatps_a)
 
-            with open(os.path.join(uwr_dir, "config.mk"), "w") as f:
-                f.write("BUILD_DIR=build\nMAXPRE=\nUSESCIP=\nBIGWEIGHTS=\n")
-                f.write(f"MINISATP_REL={env.get('CXXFLAGS','-std=gnu++17')} -O3 -D NDEBUG -Wno-strict-aliasing -D COMINISATPS -U_ISOC23_SOURCE -D_DEFAULT_SOURCE -D_GNU_SOURCE\n")
-                f.write("MINISATP_FPIC=-fPIC\n")
+                def posix(path):
+                    return path.replace("\\", "/")
 
-                f.write(
-                    "MINISAT_INCLUDE="
-                    f"-I{posix(cominisatps_dir)} "
-                    f"-I{posix(os.path.join(cominisatps_dir,'minisat'))} "
-                    f"-I{posix(os.path.join(uwr_dir,'cadical','src'))}\n"
+                with open(os.path.join(uwr_dir, "config.mk"), "w") as config:
+                    config.write("BUILD_DIR=build\nMAXPRE=\nUSESCIP=\nBIGWEIGHTS=\n")
+                    config.write(
+                        f"MINISATP_REL={env.get('CXXFLAGS', '-std=gnu++17')} -O3 -D NDEBUG "
+                        "-Wno-strict-aliasing -D COMINISATPS -U_ISOC23_SOURCE "
+                        "-D_DEFAULT_SOURCE -D_GNU_SOURCE\n"
+                    )
+                    config.write("MINISATP_FPIC=-fPIC\n")
+                    config.write(
+                        "MINISAT_INCLUDE="
+                        f"-I{posix(cominisatps_dir)} "
+                        f"-I{posix(os.path.join(cominisatps_dir, 'minisat'))} "
+                        f"-I{posix(os.path.join(uwr_dir, 'cadical', 'src'))}\n"
+                    )
+                    config.write(f"MINISAT_LIB=-L{posix(cominisatps_simp_dir)} -l_release\n")
+
+                if platform.system() == "Windows":
+                    minisat_root = os.path.join(cominisatps_dir, "minisat")
+                    if not os.path.isdir(minisat_root):
+                        raise RuntimeError(f"Expected directory: {minisat_root}")
+                    for name in ("core", "mtl", "simp", "utils"):
+                        src = os.path.join(cominisatps_dir, name)
+                        dst = os.path.join(minisat_root, name)
+                        if not os.path.isdir(src):
+                            raise RuntimeError(f"Missing expected source dir: {src}")
+                        if os.path.exists(dst) and not os.path.isdir(dst):
+                            os.remove(dst)
+                        if not os.path.isdir(dst):
+                            shutil.copytree(src, dst)
+
+                self._make(["clean"], cwd=uwr_dir, env=env)
+                self._make(["lr", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env)
+                built_uwr_a = os.path.join(
+                    uwr_dir, "build", "release", "lib", "libuwrmaxsat.a"
                 )
+                self._ranlib(built_uwr_a, env=env)
+                self._macos_rebuild_archive_if_gnu(built_uwr_a)
 
-                # cominisatps/simp contains lib_release.a
-                f.write(f"MINISAT_LIB=-L{posix(cominisatps_simp_dir)} -l_release\n")
+            # Preserve-files restoration must complete before fingerprinting.
+            cominisatps_a, uwr_a = self._store_native_core(
+                "urmaxsat-comp",
+                [built_cominisatps_a, built_uwr_a],
+                env,
+                source_roots,
+            )
 
-            self._make(["clean"], cwd=uwr_dir, env=env)
-            if platform.system() != "Windows":
-                self._bash(["pwd"], cwd=uwr_dir, env=env)
-                self._bash(["cat", "config.mk"], cwd=uwr_dir, env=env)
-                self._bash(["ls", "-la", "cominisatps"], cwd=uwr_dir, env=env)
-                self._bash(["ls", "-la", "cominisatps/minisat"], cwd=uwr_dir, env=env)
-                self._bash(["file", "cominisatps/minisat"], cwd=uwr_dir, env=env)  # MSYS2 has `file`
-            def materialize_minisat_tree(cominisatps_dir: str):
-                if platform.system() != "Windows":
-                    return
-                minisat_root = os.path.join(cominisatps_dir, "minisat")
-                if not os.path.isdir(minisat_root):
-                    raise RuntimeError(f"Expected directory: {minisat_root}")
-
-                for name in ["core", "mtl", "simp", "utils"]:
-                    src = os.path.join(cominisatps_dir, name)
-                    dst = os.path.join(minisat_root, name)
-
-                    if not os.path.isdir(src):
-                        raise RuntimeError(f"Missing expected source dir: {src}")
-
-                    # If dst is a file (zip-flattened symlink), remove it.
-                    if os.path.exists(dst) and not os.path.isdir(dst):
-                        os.remove(dst)
-
-                    # If dst is missing, create it by copying the real directory.
-                    if not os.path.isdir(dst):
-                        shutil.copytree(src, dst)
-
-            materialize_minisat_tree(cominisatps_dir)
-        
-
-            self._make(["lr", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env)
-            uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
-            self._ranlib(uwr_a, env=env)
-            self._macos_rebuild_archive_if_gnu(uwr_a)
-            cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
-        # project_root = 'C:\\Users\\joshs\\Desktop\\'
-        # log_dir = os.path.join(project_root, "_cibw_logs")
-        # os.makedirs(log_dir, exist_ok=True)
-
-        # cfg_log   = os.path.join(log_dir, f"cmake_config_{abi_tag}.log")
-        # build_log = os.path.join(log_dir, f"cmake_build_{abi_tag}.log")
-
-        # configure must run in build_temp_path
-        try:
-            subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
-
-            # build must run in build_temp_path, not uwr_dir
-            subprocess.check_call(["cmake", "--build", ".", "--verbose"], cwd=build_temp_path, env=env)
-        except Exception as e:
-            print(e)
-            raise
-        # subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
-        # # subprocess.check_call(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
-        # # subprocess.check_call(["cmake", "--build", ".", "--verbose"], cwd=build_temp_path, env=env)
-        # subprocess.check_call(
-        #     ["cmake", "--build", ".", "--verbose"],
-        #     cwd=build_temp_path,
-        #     env=env,
-        #     stdout=open(os.path.join(build_temp_path, "cmake_build.log"), "w", encoding="utf-8"),
-        #     stderr=subprocess.STDOUT,
-        # )
-
-
+        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+        subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
+        subprocess.check_call(["cmake", "--build", ".", "--verbose"], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
 
     def build_urmaxsat(self, ext):
@@ -1274,67 +1473,50 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         source_root = os.path.abspath(ext.sourcedir)
         cadical_dir = os.path.join(source_root, "cadical")
         uwr_dir = os.path.join(source_root, "uwrmaxsat")
-        with self._preserve_files(
-            os.path.join(cadical_dir, "configure"),
-            os.path.join(cadical_dir, "scripts"),
-            os.path.join(uwr_dir, "config.mk"),
-        ):
-            if os.path.exists(os.path.join(cadical_dir, "Makefile")):
-                self._make(["clean"], cwd=cadical_dir, env=env)
-            self._prepare_shell_scripts(os.path.join(cadical_dir, "configure"), os.path.join(cadical_dir, "scripts"))
-            self._bash(["sh", "./configure"], cwd=cadical_dir, env=env)
+        source_roots = [cadical_dir, uwr_dir]
+        cached_artifacts = self._cached_core_artifacts(
+            "urmaxsat", ["libcadical.a", "libuwrmaxsat.a"], env
+        )
+        if self._can_reuse_native_core("urmaxsat", cached_artifacts, env, source_roots):
+            cadical_a, uwr_a = cached_artifacts
+        else:
+            with self._preserve_files(
+                os.path.join(cadical_dir, "configure"),
+                os.path.join(cadical_dir, "scripts"),
+                os.path.join(uwr_dir, "config.mk"),
+            ):
+                if os.path.exists(os.path.join(cadical_dir, "Makefile")):
+                    self._make(["clean"], cwd=cadical_dir, env=env)
+                self._prepare_shell_scripts(os.path.join(cadical_dir, "configure"), os.path.join(cadical_dir, "scripts"))
+                self._bash(["sh", "./configure"], cwd=cadical_dir, env=env)
 
-            self._make(["cadical", "-j"], cwd=cadical_dir, env=env)
-            cadical_a = os.path.join(cadical_dir, "build", "libcadical.a")
-            self._ranlib(cadical_a, env=env)
-            self._bash(["cp", "config.cadical", "config.mk"], cwd=uwr_dir, env=env)
-            env2 = env.copy()
-            env2["MAXPRE"] = ""
-            env2["USESCIP"] = "" 
+                self._make(["cadical", "-j"], cwd=cadical_dir, env=env)
+                built_cadical_a = os.path.join(cadical_dir, "build", "libcadical.a")
+                self._ranlib(built_cadical_a, env=env)
+                self._bash(["cp", "config.cadical", "config.mk"], cwd=uwr_dir, env=env)
+                env2 = env.copy()
+                env2["MAXPRE"] = ""
+                env2["USESCIP"] = ""
 
-            self._make(["clean"], cwd=uwr_dir, env=env2)
-            self._bash(["pwd"], cwd=uwr_dir, env=env2)
-            self._bash(["ls", "-la"], cwd=uwr_dir, env=env2)
+                self._make(["clean"], cwd=uwr_dir, env=env2)
+                self._make(["r", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env2)
+                built_uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
+                self._ranlib(built_uwr_a, env=env2)
+            cadical_a, uwr_a = self._store_native_core(
+                "urmaxsat", [built_cadical_a, built_uwr_a], env, source_roots
+            )
 
-            # Show what Make thinks the key vars are
-            # self._bash(["make", "-pn"], cwd=uwr_dir, env=env2)
-
-            # Targeted grep (less spam)
-            # subprocess.check_call([r"mingw32-make -pn | egrep '^(CXX|CXXFLAGS|MINISAT_INCLUDE|includedir|prefix)[[:space:]]*[:?]?='"], cwd=uwr_dir, env=env2)
-            self._make(["r", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env2)
-            uwr_a = os.path.join(uwr_dir, "build", "release", "lib", "libuwrmaxsat.a")
-            self._ranlib(uwr_a, env=env2)
-            cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
-            if platform.system() == "Windows":
-                subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
-                subprocess.check_call(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
-            else:
-                self._bash(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
-                self._bash(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
+        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+        if platform.system() == "Windows":
+            subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
+            subprocess.check_call(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
+        else:
+            self._bash(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
+            self._bash(["cmake", "--build", ".", "-j"], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
 
 ROOT = Path(__file__).resolve().parent
 README_TEXT = (ROOT / "README.md").read_text(encoding="utf-8")
-PBLIB_ROOT_DIR = os.path.join("pblib", "pblib", "pblib")
-PBLIB_ENC_DIR = os.path.join(PBLIB_ROOT_DIR, "encoder")
-PBLIB_BINDINGS_DIR = os.path.join("pblib", "src")
-PBLIB_SRCS = sorted(glob.glob(os.path.join(PBLIB_ROOT_DIR, "*.cpp")))
-PBLIB_SRCS.extend(sorted(glob.glob(os.path.join(PBLIB_ENC_DIR, "*.cpp"))))
-PBLIB_BINDING_SRCS = [os.path.join(PBLIB_BINDINGS_DIR, "pblib_capi.cpp"), *PBLIB_SRCS]
-PBAMO_DIR = "pbamo"
-PBAMO_INCLUDE_DIR = os.path.join(PBAMO_DIR, "include")
-PBAMO_SRC_DIR = os.path.join(PBAMO_DIR, "src")
-PBAMO_BINDING_SRCS = [
-    os.path.join(PBAMO_SRC_DIR, "pbamo_capi.cpp"),
-    os.path.join(PBAMO_SRC_DIR, "mdd.cpp"),
-    os.path.join(PBAMO_SRC_DIR, "gswc.cpp"),
-    os.path.join(PBAMO_SRC_DIR, "ggpw.cpp"),
-    os.path.join(PBAMO_SRC_DIR, "gmto.cpp"),
-    os.path.join(PBAMO_SRC_DIR, "rggt.cpp"),
-    os.path.join(PBAMO_SRC_DIR, "registry.cpp"),
-]
-
-
 def _parse_csv_env(name: str) -> set[str]:
     raw = (os.environ.get(name, "") or "").strip()
     if not raw:
@@ -1545,51 +1727,61 @@ def _optional_cplex_solver_extensions() -> list[CMakeExtension]:
 
 CORETRAIL_ROOT = Path("core-trail/ipamir/maxsat/core-trail")
 CORETRAIL_EXTENSION_NAME = "hermax.core.coretrail_native"
-_CORETRAIL_COMPILE_ARGS = (
-    ["/O2", "/std:c++17", "/DNDEBUG", "/DGlucose=RC2Glucose"]
-    if platform.system() == "Windows"
-    else [
-        "-O3",
-        "-Wall",
-        "-std=c++17",
-        "-DNDEBUG",
-        "-DGlucose=RC2Glucose",
-        "-fvisibility=hidden",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-fno-semantic-interposition",
-        "-fomit-frame-pointer",
-    ]
-)
-_CORETRAIL_LINK_ARGS = (
-    ["-Wl,--gc-sections", "-static-libstdc++", "-static-libgcc"]
-    if platform.system() == "Linux"
-    else []
-)
-
-
-if platform.system() == "Windows":
-    CORETRAIL_EXTENSION = CMakeExtension(CORETRAIL_EXTENSION_NAME, sourcedir=str(CORETRAIL_ROOT))
-else:
-    CORETRAIL_EXTENSION = Extension(
-        CORETRAIL_EXTENSION_NAME,
-        [
-            str(CORETRAIL_ROOT / "src/python/module.cc"),
-            str(CORETRAIL_ROOT / "src/core/coretrail_solver.cc"),
-            str(CORETRAIL_ROOT / "src/core/glucose_backend.cc"),
-            str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/core/Solver.cc"),
-            str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/utils/Options.cc"),
-            str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1/utils/System.cc"),
-        ],
-        include_dirs=[
-            str(CORETRAIL_ROOT / "include"),
-            str(CORETRAIL_ROOT / "third_party/glucose-syrup-4.1"),
-            str(CORETRAIL_ROOT / "third_party/cardenc"),
-        ],
-        extra_compile_args=_CORETRAIL_COMPILE_ARGS,
-        extra_link_args=_CORETRAIL_LINK_ARGS,
-        language="c++",
-    )
+CMAKE_NATIVE_CORE_SPECS = {
+    "hermax.core.openwbo": {
+        "component": "openwbo",
+        "target": "openwbo_core",
+        "source_roots": ["open-wbo"],
+    },
+    "hermax.core.openwbo_inc": {
+        "component": "openwbo-inc",
+        "target": "openwbo_inc_core",
+        "source_roots": ["open-wbo-inc"],
+    },
+    "hermax.core.tt_openwbo_inc": {
+        "component": "tt-openwbo-inc",
+        "target": "tt_openwbo_inc_core",
+        "source_roots": ["tt-open-wbo-inc-py", "tt-open-wbo-inc/code"],
+    },
+    "hermax.core.loandra": {
+        "component": "loandra",
+        "target": "loandra_core",
+        "source_roots": ["loandra-py", "Loandra/code"],
+    },
+    "hermax.core.nuwls_c_ibr": {
+        "component": "nuwls-c-ibr",
+        "target": "nuwls_c_ibr_core",
+        "source_roots": ["nuwls-c-ibr-py", "NuWLS-c-IBR/code"],
+    },
+    "hermax.core.spb_maxsat_c_fps": {
+        "component": "spb-maxsat-c-fps",
+        "target": "spb_maxsat_c_fps_core",
+        "source_roots": ["spb-maxsat-c-fps-py", "SPB-MaxSAT-c-FPS/code"],
+    },
+    "hermax.core.wmaxcdcl": {
+        "component": "wmaxcdcl",
+        "target": "wmaxcdcl_core",
+        "source_roots": ["wmaxcdcl-py", "WMaxCDCL_Paper/WMaxCDCL/code"],
+    },
+    "hermax.internal._pblib": {
+        "component": "pblib",
+        "target": "pblib_core",
+        "source_roots": ["pblib"],
+    },
+    "hermax.internal._pbamo": {
+        "component": "pbamo",
+        "target": "pbamo_core",
+        "source_roots": ["pbamo"],
+    },
+    CORETRAIL_EXTENSION_NAME: {
+        "component": "coretrail",
+        "target": "coretrail_core",
+        "source_roots": [str(CORETRAIL_ROOT)],
+    },
+}
+CORETRAIL_EXTENSION = CMakeExtension(CORETRAIL_EXTENSION_NAME, sourcedir=str(CORETRAIL_ROOT))
+PBLIB_EXTENSION = CMakeExtension("hermax.internal._pblib", sourcedir="pblib")
+PBAMO_EXTENSION = CMakeExtension("hermax.internal._pbamo", sourcedir="pbamo")
 
 
 SOLVER_EXTENSIONS = _filter_solver_extensions([
@@ -1613,7 +1805,7 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
 
 setup(
     name="hermax",
-    version="1.2.5",
+    version="1.2.6",
     author="Josep Maria Salvia Hornos",
     author_email="josh.salvia@gmail.com",
     description="A Python library of incremental MaxSAT solvers",
@@ -1654,49 +1846,8 @@ setup(
             ),
             language="c++",
         ),
-        Extension(
-            "hermax.internal._pblib",
-            PBLIB_BINDING_SRCS,
-            include_dirs=[
-                PBLIB_ROOT_DIR,
-                PBLIB_ENC_DIR,
-                PBLIB_BINDINGS_DIR,
-                *[
-                    p
-                    for p in [
-                        sysconfig.get_paths().get("include"),
-                        sysconfig.get_paths().get("platinclude"),
-                    ]
-                    if p
-                ],
-            ],
-            extra_compile_args=(
-                ([ "/O2", "/std:c++17"] if platform.system() == "Windows"
-                 else ["-O3", "-Wall", "-std=c++17", "-DNDEBUG"])
-                + [f"-DHERMAX_PBLIB_ENABLE_PYINT_CACHE={1 if os.environ.get('HERMAX_PBLIB_PYINT_CACHE', '1') == '1' else 0}"]
-            ),
-            language="c++",
-        ),
-        Extension(
-            "hermax.internal._pbamo",
-            PBAMO_BINDING_SRCS,
-            include_dirs=[
-                PBAMO_INCLUDE_DIR,
-                PBAMO_SRC_DIR,
-                *[
-                    p
-                    for p in [
-                        sysconfig.get_paths().get("include"),
-                        sysconfig.get_paths().get("platinclude"),
-                    ]
-                    if p
-                ],
-            ],
-            extra_compile_args=(
-                (["/O2", "/std:c++17"] if platform.system() == "Windows" else ["-O3", "-Wall", "-std=c++17", "-DNDEBUG"])
-            ),
-            language="c++",
-        ),
+        PBLIB_EXTENSION,
+        PBAMO_EXTENSION,
         *SOLVER_EXTENSIONS,
     ],
     cmdclass={'build_ext': CMakeBuildURMaxSAT},
