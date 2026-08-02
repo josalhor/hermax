@@ -35,19 +35,19 @@ def _build_pbamo() -> None:
         pass
 
     sources = [
-        ROOT / "pbamo" / "src" / "pbamo_capi.cpp",
-        ROOT / "pbamo" / "src" / "mdd.cpp",
-        ROOT / "pbamo" / "src" / "gswc.cpp",
-        ROOT / "pbamo" / "src" / "ggpw.cpp",
-        ROOT / "pbamo" / "src" / "gmto.cpp",
-        ROOT / "pbamo" / "src" / "rggt.cpp",
-        ROOT / "pbamo" / "src" / "registry.cpp",
+        ROOT / "encodings" / "pbamo" / "src" / "pbamo_capi.cpp",
+        ROOT / "encodings" / "pbamo" / "src" / "mdd.cpp",
+        ROOT / "encodings" / "pbamo" / "src" / "gswc.cpp",
+        ROOT / "encodings" / "pbamo" / "src" / "ggpw.cpp",
+        ROOT / "encodings" / "pbamo" / "src" / "gmto.cpp",
+        ROOT / "encodings" / "pbamo" / "src" / "rggt.cpp",
+        ROOT / "encodings" / "pbamo" / "src" / "registry.cpp",
     ]
     ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
     if not ext_suffix:
         pytest.skip("Python EXT_SUFFIX is unavailable for building _pbamo.")
     output = ROOT / "hermax" / "internal" / f"_pbamo{ext_suffix}"
-    include_dir = ROOT / "pbamo" / "include"
+    include_dir = ROOT / "encodings" / "pbamo" / "include"
     py_paths = sysconfig.get_paths()
     include_flags = []
     for inc in [str(include_dir), py_paths.get("include"), py_paths.get("platinclude")]:

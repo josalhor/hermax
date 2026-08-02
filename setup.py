@@ -371,12 +371,12 @@ if %errorlevel%==0 (
 
         if "hermax.core._aperture_native" in extension_names:
             env = self.get_base_env()
-            aperture_lib = os.path.join("Aperture", "build", "libaperture_pic.a")
-            if not self._can_reuse_native_core("aperture", [aperture_lib], env, ["Aperture"]):
+            aperture_lib = os.path.join("solvers", "Aperture", "build", "libaperture_pic.a")
+            if not self._can_reuse_native_core("aperture", [aperture_lib], env, ["solvers/Aperture"]):
                 if platform.system() == "Windows":
-                    self._make(["clean-all"], cwd="Aperture", env=env)
+                    self._make(["clean-all"], cwd="solvers/Aperture", env=env)
                 else:
-                    subprocess.check_call(["make", "clean-all"], cwd="Aperture", env=env)
+                    subprocess.check_call(["make", "clean-all"], cwd="solvers/Aperture", env=env)
 
     def run(self):
         self._scrub_prebuilt_native_artifacts()
@@ -504,9 +504,9 @@ if %errorlevel%==0 (
         if ext.name == "hermax.core._aperture_native":
             self._mark_native_core(
                 "aperture",
-                [os.path.join("Aperture", "build", "libaperture_pic.a")],
+                [os.path.join("solvers", "Aperture", "build", "libaperture_pic.a")],
                 env,
-                ["Aperture"],
+                ["solvers/Aperture"],
             )
         
         self.verify_abi(ext, extdir, abi_tag)
@@ -1119,7 +1119,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         env = self._darwin_make_env(env)
         cplex_inc_dir, cplex_lib_dir = self._resolve_cplex_paths()
 
-        imaxhs_src_dir = os.path.abspath("incremental-maxhs/src")
+        imaxhs_src_dir = os.path.abspath("solvers/incremental-maxhs/src")
         self._make(["clean"], cwd=imaxhs_src_dir, env=env)
         self._make(
             [
@@ -1167,7 +1167,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         env = self._darwin_make_env(env)
         cplex_inc_dir, cplex_lib_dir = self._resolve_cplex_paths()
 
-        maxhs_src_dir = os.path.abspath("maxhs")
+        maxhs_src_dir = os.path.abspath("solvers/maxhs")
         self._make(["clean"], cwd=maxhs_src_dir, env=env)
         self._make(
             [
@@ -1213,7 +1213,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         build_temp_path = os.path.join(self.build_temp, f"build_{ext.name}_{abi_tag}")
         os.makedirs(build_temp_path, exist_ok=True)
         env = self.get_base_env()
-        eval_src_dir = os.path.abspath("EvalMaxSAT2022")
+        eval_src_dir = os.path.abspath("solvers/EvalMaxSAT2022")
         eval_lib = os.path.join(eval_src_dir, "libipamirEvalMaxSAT2022.a")
         if not self._can_reuse_native_core("evalmaxsat-incr", [eval_lib], env, [eval_src_dir]):
             cfg = os.path.join(eval_src_dir, "build_lib.sh")
@@ -1236,7 +1236,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         build_temp_path = os.path.join(self.build_temp, f"build_{ext.name}_{abi_tag}")
         os.makedirs(build_temp_path, exist_ok=True)
         env = self.get_base_env()
-        eval_src_dir = os.path.abspath("evalmaxsat")
+        eval_src_dir = os.path.abspath("solvers/evalmaxsat")
         if self._native_core_reuse_enabled():
             eval_build_dir = str(self._native_core_cache_dir(env) / "evalmaxsat-latest")
         else:
@@ -1267,7 +1267,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         os.makedirs(build_temp_path, exist_ok=True)
         env = self.get_base_env()
         env = self._darwin_make_env(env)
-        cash_dir = os.path.abspath("CASHWMaxSAT")
+        cash_dir = os.path.abspath("solvers/CASHWMaxSAT")
         cominisatps_dir = os.path.join(cash_dir, "cominisatps")
         cadical_dir = os.path.join(cash_dir, "cadical")
         uwr_dir = os.path.join(cash_dir, "uwrmaxsat")
@@ -1700,8 +1700,8 @@ if _CPLEX_LIB_DIR_DETECTED:
 
 def _optional_cplex_solver_extensions() -> list[CMakeExtension]:
     entries = [
-        ("maxhs", "SKIP_MAXHS", CMakeExtension("hermax.core.maxhs_py", sourcedir="maxhs-py")),
-        ("imaxhs", "SKIP_IMAXHS", CMakeExtension("hermax.core.imaxhs_py", sourcedir="imaxhs-py")),
+        ("maxhs", "SKIP_MAXHS", CMakeExtension("hermax.core.maxhs_py", sourcedir="bindings/maxhs-py")),
+        ("imaxhs", "SKIP_IMAXHS", CMakeExtension("hermax.core.imaxhs_py", sourcedir="bindings/imaxhs-py")),
     ]
     out: list[CMakeExtension] = []
 
@@ -1725,53 +1725,53 @@ def _optional_cplex_solver_extensions() -> list[CMakeExtension]:
     return out
 
 
-CORETRAIL_ROOT = Path("core-trail/ipamir/maxsat/core-trail")
+CORETRAIL_ROOT = Path("solvers/core-trail/ipamir/maxsat/core-trail")
 CORETRAIL_EXTENSION_NAME = "hermax.core.coretrail_native"
 CMAKE_NATIVE_CORE_SPECS = {
     "hermax.core.openwbo": {
         "component": "openwbo",
         "target": "openwbo_core",
-        "source_roots": ["open-wbo"],
+        "source_roots": ["solvers/open-wbo"],
     },
     "hermax.core.openwbo_inc": {
         "component": "openwbo-inc",
         "target": "openwbo_inc_core",
-        "source_roots": ["open-wbo-inc"],
+        "source_roots": ["solvers/open-wbo-inc"],
     },
     "hermax.core.tt_openwbo_inc": {
         "component": "tt-openwbo-inc",
         "target": "tt_openwbo_inc_core",
-        "source_roots": ["tt-open-wbo-inc-py", "tt-open-wbo-inc/code"],
+        "source_roots": ["bindings/tt-open-wbo-inc-py", "solvers/tt-open-wbo-inc/code"],
     },
     "hermax.core.loandra": {
         "component": "loandra",
         "target": "loandra_core",
-        "source_roots": ["loandra-py", "Loandra/code"],
+        "source_roots": ["bindings/loandra-py", "solvers/Loandra/code"],
     },
     "hermax.core.nuwls_c_ibr": {
         "component": "nuwls-c-ibr",
         "target": "nuwls_c_ibr_core",
-        "source_roots": ["nuwls-c-ibr-py", "NuWLS-c-IBR/code"],
+        "source_roots": ["bindings/nuwls-c-ibr-py", "solvers/NuWLS-c-IBR/code"],
     },
     "hermax.core.spb_maxsat_c_fps": {
         "component": "spb-maxsat-c-fps",
         "target": "spb_maxsat_c_fps_core",
-        "source_roots": ["spb-maxsat-c-fps-py", "SPB-MaxSAT-c-FPS/code"],
+        "source_roots": ["bindings/spb-maxsat-c-fps-py", "solvers/SPB-MaxSAT-c-FPS/code"],
     },
     "hermax.core.wmaxcdcl": {
         "component": "wmaxcdcl",
         "target": "wmaxcdcl_core",
-        "source_roots": ["wmaxcdcl-py", "WMaxCDCL_Paper/WMaxCDCL/code"],
+        "source_roots": ["bindings/wmaxcdcl-py", "solvers/WMaxCDCL_Paper/WMaxCDCL/code"],
     },
     "hermax.internal._pblib": {
         "component": "pblib",
         "target": "pblib_core",
-        "source_roots": ["pblib"],
+        "source_roots": ["encodings/pblib"],
     },
     "hermax.internal._pbamo": {
         "component": "pbamo",
         "target": "pbamo_core",
-        "source_roots": ["pbamo"],
+        "source_roots": ["encodings/pbamo"],
     },
     CORETRAIL_EXTENSION_NAME: {
         "component": "coretrail",
@@ -1780,26 +1780,26 @@ CMAKE_NATIVE_CORE_SPECS = {
     },
 }
 CORETRAIL_EXTENSION = CMakeExtension(CORETRAIL_EXTENSION_NAME, sourcedir=str(CORETRAIL_ROOT))
-PBLIB_EXTENSION = CMakeExtension("hermax.internal._pblib", sourcedir="pblib")
-PBAMO_EXTENSION = CMakeExtension("hermax.internal._pbamo", sourcedir="pbamo")
+PBLIB_EXTENSION = CMakeExtension("hermax.internal._pblib", sourcedir="encodings/pblib")
+PBAMO_EXTENSION = CMakeExtension("hermax.internal._pbamo", sourcedir="encodings/pbamo")
 
 
 SOLVER_EXTENSIONS = _filter_solver_extensions([
     *_optional_cplex_solver_extensions(),
-    CMakeExtension('hermax.core._aperture_native', sourcedir='aperture-py'),
+    CMakeExtension('hermax.core._aperture_native', sourcedir='bindings/aperture-py'),
     CORETRAIL_EXTENSION,
-    CMakeExtension('hermax.core.openwbo', sourcedir='open-wbo'),
-    CMakeExtension('hermax.core.openwbo_inc', sourcedir='open-wbo-inc'),
-    CMakeExtension('hermax.core.tt_openwbo_inc', sourcedir='tt-open-wbo-inc-py'),
-    CMakeExtension('hermax.core.urmaxsat_py', sourcedir='urmaxsat-py'),
-    CMakeExtension('hermax.core.urmaxsat_comp_py', sourcedir='urmaxsat-comp-py'),
-    CMakeExtension('hermax.core.cashwmaxsat', sourcedir='cashwmaxsat-py'),
-    CMakeExtension('hermax.core.evalmaxsat_latest', sourcedir='evalmaxsat-latest-py'),
-    CMakeExtension('hermax.core.evalmaxsat_incr', sourcedir='evalmaxsat-incr-py'),
-    CMakeExtension('hermax.core.wmaxcdcl', sourcedir='wmaxcdcl-py'),
-    CMakeExtension('hermax.core.spb_maxsat_c_fps', sourcedir='spb-maxsat-c-fps-py'),
-    CMakeExtension('hermax.core.nuwls_c_ibr', sourcedir='nuwls-c-ibr-py'),
-    CMakeExtension('hermax.core.loandra', sourcedir='loandra-py'),
+    CMakeExtension('hermax.core.openwbo', sourcedir='solvers/open-wbo'),
+    CMakeExtension('hermax.core.openwbo_inc', sourcedir='solvers/open-wbo-inc'),
+    CMakeExtension('hermax.core.tt_openwbo_inc', sourcedir='bindings/tt-open-wbo-inc-py'),
+    CMakeExtension('hermax.core.urmaxsat_py', sourcedir='solvers/urmaxsat-py'),
+    CMakeExtension('hermax.core.urmaxsat_comp_py', sourcedir='solvers/urmaxsat-comp-py'),
+    CMakeExtension('hermax.core.cashwmaxsat', sourcedir='bindings/cashwmaxsat-py'),
+    CMakeExtension('hermax.core.evalmaxsat_latest', sourcedir='bindings/evalmaxsat-latest-py'),
+    CMakeExtension('hermax.core.evalmaxsat_incr', sourcedir='bindings/evalmaxsat-incr-py'),
+    CMakeExtension('hermax.core.wmaxcdcl', sourcedir='bindings/wmaxcdcl-py'),
+    CMakeExtension('hermax.core.spb_maxsat_c_fps', sourcedir='bindings/spb-maxsat-c-fps-py'),
+    CMakeExtension('hermax.core.nuwls_c_ibr', sourcedir='bindings/nuwls-c-ibr-py'),
+    CMakeExtension('hermax.core.loandra', sourcedir='bindings/loandra-py'),
 ])
 
 
@@ -1828,9 +1828,9 @@ setup(
     ext_modules=[
         Extension(
             "hermax_pycard",
-            ["cardenc/pycard.cc"],
+            ["encodings/cardenc/pycard.cc"],
             include_dirs=[
-                "cardenc",
+                "encodings/cardenc",
                 *[
                     p
                     for p in [

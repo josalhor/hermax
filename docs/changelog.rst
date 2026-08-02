@@ -1,6 +1,13 @@
 Changelog
 =========
 
+Version 1.2.6
+-------------
+
+Highlights
+~~~~~~~~~~
+* Made multi-version wheel compilation x2-3 faster
+
 Version 1.2.5
 -------------
 
