@@ -4,6 +4,14 @@ Encoding Layer API
 The ``hermax.encoder`` package provides a unified way for compiling 
 Pseudo-Boolean and Cardinality constraints efficiently.
 
+Examples
+--------
+
+.. toctree::
+   :maxdepth: 1
+
+   encoder_examples
+
 PBCompiler
 ----------
 

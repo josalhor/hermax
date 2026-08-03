@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Capture transcript-style outputs for examples/model/*.py and docs-listed examples.
+"""Capture transcript-style outputs for runnable documentation examples.
 
 Each output file contains a single console-style transcript:
 
-    $ python examples/model/<file>.py
+    $ python examples/<path>/<file>.py
     <stdout...>
 
 This keeps the Sphinx docs maintainable by including generated output files
@@ -52,7 +52,7 @@ def capture_example(repo_root: Path, example_path: Path, out_dir: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Capture docs outputs for examples/model/*.py")
+    parser = argparse.ArgumentParser(description="Capture docs outputs for runnable examples")
     parser.add_argument(
         "--repo-root",
         type=Path,
@@ -68,12 +68,17 @@ def main() -> int:
     parser.add_argument(
         "--pattern",
         default="*.py",
-        help="Glob pattern under examples/model (default: *.py).",
+        help="Glob pattern under examples/model and examples/encoder (default: *.py).",
     )
     parser.add_argument(
         "--model-only",
         action="store_true",
-        help="Only capture examples/model/*.py (skip top-level examples used in docs/examples.rst).",
+        help="Only capture examples/model/*.py (skip top-level and encoder examples).",
+    )
+    parser.add_argument(
+        "--encoder-only",
+        action="store_true",
+        help="Only capture examples/encoder/*.py.",
     )
     parser.add_argument(
         "--include-cvrp-flat",
@@ -86,18 +91,22 @@ def main() -> int:
         help="Also capture examples/cvrp.py (skipped by default because symmetric optimal routes create output churn).",
     )
     args = parser.parse_args()
+    if args.model_only and args.encoder_only:
+        parser.error("--model-only and --encoder-only cannot be used together")
 
     repo_root = args.repo_root.resolve()
     out_dir = args.out_dir.resolve()
     examples_dir = repo_root / "examples" / "model"
+    encoder_dir = repo_root / "examples" / "encoder"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    model_paths = sorted(examples_dir.glob(args.pattern))
-    if not model_paths:
+    model_paths = sorted(examples_dir.glob(args.pattern)) if not args.encoder_only else []
+    encoder_paths = sorted(encoder_dir.glob(args.pattern)) if not args.model_only else []
+    if not model_paths and not encoder_paths:
         raise SystemExit(f"No examples matched under {examples_dir} with pattern {args.pattern!r}")
 
     top_level_paths: list[Path] = []
-    if not args.model_only:
+    if not args.model_only and not args.encoder_only:
         for rel in [
             "examples/quickstart_model.py",
             "examples/incremental_assumptions.py",
@@ -121,7 +130,7 @@ def main() -> int:
             if p.exists():
                 top_level_paths.append(p)
 
-    example_paths = model_paths + top_level_paths
+    example_paths = model_paths + encoder_paths + top_level_paths
 
     for path in example_paths:
         capture_example(repo_root, path.resolve(), out_dir)

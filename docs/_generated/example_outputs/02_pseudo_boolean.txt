@@ -1,0 +1,7 @@
+$ python examples/encoder/02_pseudo_boolean.py
+constraint: 2*x1 + 3*x2 + 5*x3 <= 5
+encoding: bdd
+variables: 6
+clauses: 5
+x1=x2=true: sat=True
+x1=x3=true: sat=False

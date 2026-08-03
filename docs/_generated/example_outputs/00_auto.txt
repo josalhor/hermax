@@ -1,0 +1,4 @@
+$ python examples/encoder/00_auto.py
+constraints: 3
+variables: 34
+clauses: 48

@@ -1,0 +1,9 @@
+$ python examples/encoder/03_pbamo.py
+constraint: 2*x1 + 3*x2 + 4*x3 + 7*x4 <= 8
+AMO groups: [x1, x2], [x3, x4]
+encoding: rggt
+variables: 6
+clauses: 6
+x1=x3=true: sat=True
+x1=x4=true: sat=False
+x1=x2=true: sat=False

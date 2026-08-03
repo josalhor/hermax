@@ -1,0 +1,7 @@
+$ python examples/encoder/01_cardinality.py
+constraint: x1 + x2 + x3 + x4 <= 2
+encoding: seqcounter
+variables: 8
+clauses: 8
+x1=x2=x3=true: sat=False
+x1=x3=true: sat=True
