@@ -278,6 +278,70 @@ def test_incremental_maxsat_update_soft_weight_tracked_id_calls_set_soft():
     assert any(w == 9 for _lit, w in s.soft_updates)
 
 
+def test_incremental_maxsat_nonunit_soft_update_then_hard_clause_has_correct_cost():
+    """A replay backend must not retain the pre-update copy of a soft clause."""
+    m = Model()
+    a, b, c, d = (m.bool(name) for name in "abcd")
+
+    m &= b
+    first = m.obj.add_soft(d | ~b, 1)
+    m.obj.add_soft(a | ~c, 3)
+    third = m.obj.add_soft(~d | ~c | b, 2)
+    assert m.solve(incremental=True, backend="maxsat").ok
+
+    m.obj.update_soft(first, 5)
+    m.obj.update_soft(third, 3)
+    m.obj.add_soft(~d | a | ~b, 5)
+    m &= c
+    m &= ~d
+
+    result = m.solve(incremental=True, backend="maxsat")
+    assert result.status == "optimum"
+    assert result.cost == 5
+
+
+def test_incremental_maxsat_reserves_new_vars_before_soft_relaxation():
+    """A post-bind non-unit soft clause must not reuse an original variable ID."""
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+
+    # Bind while only ``a`` is present in the backend formula.  ``b`` exists
+    # in the model but has not yet been routed to the backend.
+    m.obj.add(a, weight=1)
+    first = m.solve(incremental=True, backend="maxsat")
+    assert first.ok
+
+    # The hard clauses force ``a | b`` to be false.  The first objective
+    # prefers ``a=False`` and therefore costs zero; the correct optimum is 5.
+    m.obj.add_soft(a | b, weight=5)
+    m &= ~a
+    m &= ~b
+
+    result = m.solve(incremental=True, backend="maxsat")
+
+    assert result.ok
+    assert result.cost == 5
+
+
+def test_incremental_maxsat_new_model_var_after_bind_skips_backend_aux_ids():
+    """Model variables created after binding must not collide with auxiliaries."""
+    m = Model()
+    a = m.bool("a")
+    m.obj.add(a, weight=1)
+    assert m.solve(incremental=True, backend="maxsat").ok
+
+    b = m.bool("b")
+    m.obj.add_soft(a | b, weight=5)
+    m &= ~a
+    m &= ~b
+
+    result = m.solve(incremental=True, backend="maxsat")
+
+    assert result.ok
+    assert result.cost == 5
+
+
 def test_incremental_sat_to_maxsat_after_bind_upgrades_by_default():
     m = Model()
     a = m.bool("a")

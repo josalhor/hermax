@@ -51,7 +51,7 @@ class _CGSSBaseSolver(ReplayFormulaSolverBase):
             wcnf.append([int(x) for x in cl], weight=int(w))
         for a in assumptions:
             wcnf.append([int(a)])
-        wcnf.nv = max(int(getattr(wcnf, "nv", 0)), int(self._num_vars))
+        wcnf.nv = max(int(wcnf.nv), int(self._num_vars))
 
         try:
             backend_cls = _load_cgss_backend()
@@ -71,7 +71,7 @@ class _CGSSBaseSolver(ReplayFormulaSolverBase):
             return ReplaySolveResult(
                 status=SolveStatus.OPTIMUM,
                 model=[int(x) for x in model],
-                cost=int(getattr(backend, "cost", 0)),
+                cost=int(backend.cost),
             )
         except SystemExit:
             return ReplaySolveResult(status=SolveStatus.ERROR, model=None, cost=None)

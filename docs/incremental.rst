@@ -61,6 +61,7 @@ Incremental MaxSAT behavior differs substantially across solver families [1]_:
 * CoreTrail keeps native core-guided state and supports cooperative
   ``time_limit`` interruption followed by a later resume of the same query.
 
+
 API Details
 -----------
 

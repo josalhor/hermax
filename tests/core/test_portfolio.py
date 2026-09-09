@@ -16,10 +16,20 @@ from hermax.portfolio import (
     PortfolioSolver,
 )
 from hermax.portfolio.solver import _worker_solver_path_for_class
-from hermax.portfolio._test_solvers import BadModelCostSolver
+from hermax.portfolio._test_solvers import (
+    BadModelCostSolver,
+    ContradictoryModelSolver,
+    NonIntegerModelSolver,
+)
 
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+
+
+def test_portfolio_rejects_zero_relaxation_variable():
+    p = PortfolioSolver([BadModelCostSolver], max_workers=1)
+    with pytest.raises(ValueError, match="zero|non-zero|literal"):
+        p.add_soft_relaxed([1, 2], 1, relax_var=0)
 
 
 def _load_small_wcnf(name: str) -> WCNF:
@@ -121,6 +131,56 @@ def test_portfolio_only_invalid_backends_reports_failure():
         _ = p.get_cost()
     details = p.last_run_details
     assert any(d.get("solver") == "BadModelCostSolver" and d.get("status") == "INVALID" for d in details)
+    p.close()
+
+
+def test_portfolio_rejects_contradictory_model_literals():
+    wcnf = WCNF()
+    wcnf.hard = [[1]]
+    wcnf.nv = 1
+    p = PortfolioSolver(
+        [ContradictoryModelSolver],
+        formula=wcnf,
+        per_solver_time_limit_s=3.0,
+        overall_time_limit_s=5.0,
+        validate_model=True,
+        recompute_cost_from_model=True,
+        invalid_result_policy="drop",
+        verbose_invalid=False,
+    )
+
+    assert not p.solve()
+    assert p.get_status() in (SolveStatus.ERROR, SolveStatus.INTERRUPTED)
+    assert any(d.get("status") == "INVALID" for d in p.last_run_details)
+    p.close()
+
+
+def test_portfolio_rejects_non_integer_model_literals():
+    wcnf = WCNF()
+    wcnf.hard = [[1]]
+    wcnf.nv = 1
+    p = PortfolioSolver(
+        [NonIntegerModelSolver],
+        formula=wcnf,
+        per_solver_time_limit_s=3.0,
+        overall_time_limit_s=5.0,
+        validate_model=True,
+        invalid_result_policy="drop",
+        verbose_invalid=False,
+    )
+
+    assert not p.solve()
+    assert any(d.get("status") == "INVALID" for d in p.last_run_details)
+    p.close()
+
+
+@pytest.mark.parametrize("raw_literal", [1.5, True, "1"])
+def test_portfolio_rejects_non_integer_hard_literals(raw_literal):
+    p = PortfolioSolver([BadModelCostSolver], max_workers=1)
+
+    with pytest.raises((TypeError, ValueError)):
+        p.add_clause([raw_literal])
+
     p.close()
 
 

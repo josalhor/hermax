@@ -36,6 +36,10 @@ enum class SolverKind {
 };
 
 void apply_best_defaults(MaxSATFormula *formula) {
+    // Torc is a process-global singleton whose upstream default is verbose.
+    // The Python API is quiet by default, so configure it before constructing
+    // either the unweighted or weighted algorithm.
+    Torc::Instance()->SetMsVerbosity(0);
     Torc::Instance()->SetPrintEveryModel(0);
 
     if (formula == nullptr) {

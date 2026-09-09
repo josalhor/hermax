@@ -1,3 +1,5 @@
+import pytest
+
 from hermax.core.formula_journal import FormulaJournal
 
 
@@ -66,3 +68,24 @@ def test_journal_replays_its_canonical_state_in_order():
         ("soft", -2, 3),
         ("nonunit", [1, 2], 4),
     ]
+
+
+@pytest.mark.parametrize("operation", ["hard", "soft", "nonunit"])
+def test_formula_journal_rejects_zero_literals(operation):
+    journal = FormulaJournal()
+
+    with pytest.raises((TypeError, ValueError), match="literal|zero"):
+        if operation == "hard":
+            journal.add_hard([0])
+        elif operation == "soft":
+            journal.set_soft(0, 1)
+        else:
+            journal.add_soft_nonunit([0, 1], 1)
+
+
+@pytest.mark.parametrize("raw_literal", [1.5, True, "1"])
+def test_formula_journal_rejects_non_integer_hard_literals(raw_literal):
+    journal = FormulaJournal()
+
+    with pytest.raises((TypeError, ValueError)):
+        journal.add_hard([raw_literal])

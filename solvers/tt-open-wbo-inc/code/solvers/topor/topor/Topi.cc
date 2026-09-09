@@ -1039,7 +1039,7 @@ TToporReturnVal CTopi<TLit, TUInd, Compress>::Solve(const span<TLit> userAssumps
 
 		m_EarliestFalsifiedAssump = BadULit;
 
-		if (m_ParamVerbosity > 0) cout << m_Stat.StatStrShort();
+		// Library callers do not want Topor's CLI statistics on stdout.
 
 		if (m_Stat.m_SolveInvs == m_ParamPrintDebugModelInvocation)
 		{
@@ -1181,7 +1181,7 @@ TToporReturnVal CTopi<TLit, TUInd, Compress>::Solve(const span<TLit> userAssumps
 
 	const auto confThrAfterThisConfNumReached = confThr == numeric_limits<decltype(confThr)>::max() ? numeric_limits<decltype(m_Stat.m_Conflicts)>::max() : m_Stat.m_Conflicts + confThr;
 
-	if (m_ParamVerbosity > 0) cout << m_Stat.StatStrShort();
+	// Library callers do not want Topor's CLI statistics on stdout.
 
 	m_DecLevelOfLastAssignedAssumption = m_Assumps.cap() == 0 ? 0 : GetAssignedDecLevel(*GetAssignedLitsHighestDecLevelIt(m_Assumps.get_span_cap(), 0));
 
@@ -1679,4 +1679,3 @@ template class Topor::CTopi<int32_t, uint64_t, true>;
 */
 
 // #topor: conflict clause analysis: 1) vivification: see Kissat paper; 2) replace glue with 2glue?
-

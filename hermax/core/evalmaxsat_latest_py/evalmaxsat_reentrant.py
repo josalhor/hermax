@@ -62,9 +62,17 @@ class EvalMaxSATLatestReentrant(ReplayFormulaSolverBase):
             res = solver.solve()
             if not res:
                 return ReplaySolveResult(status=SolveStatus.UNSAT, model=None, cost=None)
+            # EvalMaxSAT exposes its internal auxiliary variables in getModel().
+            # The IPAMIR-facing wrapper must return assignments only for the
+            # variables present in the replayed formula.
+            model = [
+                int(literal)
+                for literal in solver.getModel()
+                if abs(int(literal)) <= current_max
+            ]
             return ReplaySolveResult(
                 status=SolveStatus.OPTIMUM,
-                model=[int(x) for x in solver.getModel()],
+                model=model,
                 cost=int(solver.getCost()),
             )
         except Exception:

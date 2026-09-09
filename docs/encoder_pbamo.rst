@@ -51,12 +51,15 @@ Output
 Arguments:
 
 * ``lits``: PB literals
-* ``weights``: integer PB coefficients
+* ``weights``: non-negative integer PB coefficients. ``PBCompiler`` accepts
+  signed ``PBItem`` coefficients and canonicalizes them before it reaches this
+  specialized structured API.
 * ``groups``: disjoint AMO partition over ``lits``
 * ``bound``: right-hand side of ``sum(w_i * x_i) <= bound``
 * ``encoding``: one of ``mdd``, ``gswc``, ``ggpw``, ``gmto``, ``rggt``, or
   ``best``
-* ``emit_amo``: whether to also emit pairwise AMO clauses for the groups
+* ``emit_amo``: whether the returned CNF also includes pairwise AMO clauses
+  for the partition (enabled by default)
 
 Automatic Overlap API
 ---------------------

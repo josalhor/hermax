@@ -14,6 +14,15 @@ if TYPE_CHECKING:
 FLOAT_ZERO_TOL = 1e-12
 
 
+def _normalize_dimacs_literal(value: object) -> int:
+    """Validate one raw DIMACS literal at a public modeling boundary."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("DIMACS literals must be integers.")
+    if value == 0:
+        raise ValueError("DIMACS literals cannot be 0.")
+    return int(value)
+
+
 def _detection_error() -> TypeError:
     return TypeError(
         "Conditions for only_if()/implies() must be a Literal."
@@ -171,7 +180,7 @@ class ClauseGroup:
                 _ensure_same_model_pair_fast(self, clause)
                 norm.append(tuple(int(x) for x in clause.dimacs))
             else:
-                dims = tuple(int(x) for x in clause if int(x) != 0)
+                dims = tuple(_normalize_dimacs_literal(x) for x in clause)
                 if reserve_aux_ids and len(dims) > 0:
                     self._model._reserve_literal_ids_up_to(max(abs(x) for x in dims))
                 norm.append(dims)
@@ -253,6 +262,11 @@ class ClauseGroup:
         raise _detection_error()
 
     def __and__(self, other):
+        if isinstance(other, DeferredClauseGroup):
+            _ensure_same_model_pair_fast(self, other)
+            # A pending deferred group intentionally has no clauses yet.
+            # Preserve its builder rather than merging that empty storage.
+            return DeferredClauseGroup(self._model, lambda: self & other._realize())
         if isinstance(other, Literal):
             _ensure_same_model_pair_fast(self, other)
             return ClauseGroup._from_dimacs_trusted(
@@ -296,6 +310,11 @@ class ClauseGroup:
         """
         if not inplace:
             raise TypeError("ClauseGroup.extend() requires keyword argument inplace=True to mutate.")
+        if isinstance(other, DeferredClauseGroup):
+            _ensure_same_model_pair_fast(self, other)
+            # In-place mutation has no wrapper object through which to retain
+            # deferred work, so materialize the supplied constraint now.
+            other = other._realize()
         if isinstance(other, Literal):
             _ensure_same_model_pair_fast(self, other)
             self._ensure_mutable_clauses().append((self._model._lit_to_dimacs(other),))
@@ -383,6 +402,12 @@ class DeferredClauseGroup(ClauseGroup):
     def __iand__(self, other):
         return self.__and__(other)
 
+    def extend(self, other, *, inplace: bool = False) -> "ClauseGroup":
+        if not inplace:
+            raise TypeError("ClauseGroup.extend() requires keyword argument inplace=True to mutate.")
+        self._realize()
+        return super().extend(other, inplace=True)
+
     def __repr__(self) -> str:
         if self._compiled is None:
             return "DeferredClauseGroup(<pending>)"
@@ -455,7 +480,7 @@ class Clause:
 
     @classmethod
     def from_dimacs(cls, model: "Model", ints: Sequence[int]) -> "Clause":
-        dimacs = tuple(int(x) for x in ints if int(x) != 0)
+        dimacs = tuple(_normalize_dimacs_literal(x) for x in ints)
         max_var = 0
         for x in dimacs:
             max_var = max(max_var, abs(x))
@@ -543,6 +568,10 @@ class Clause:
         raise TypeError("Cannot directly negate a Clause. Negate literals individually to maintain strict CNF.")
 
     def __and__(self, other):
+        if isinstance(other, DeferredClauseGroup):
+            _ensure_same_model_pair_fast(self, other)
+            # See ClauseGroup.__and__: retain pending deferred work.
+            return DeferredClauseGroup(self._model, lambda: self & other._realize())
         if isinstance(other, Literal):
             _ensure_same_model_pair_fast(self, other)
             return ClauseGroup._from_dimacs_trusted(
@@ -853,7 +882,7 @@ class _LazyIntExpr:
     def __mul__(self, other):
         if isinstance(other, (Literal, Term, PBExpr, IntVar, _LazyIntExpr)):
             raise _nonlinear_error(self, other)
-        if isinstance(other, int):
+        if isinstance(other, int) and not isinstance(other, bool):
             return PBExpr(self._model, [], 0, int_terms=[(other, self)])
         raise TypeError("Only integer scaling is supported for Int-like expressions")
 
@@ -887,6 +916,12 @@ class _LazyIntExpr:
     def __floordiv__(self, divisor: int):
         if isinstance(divisor, (Literal, Term, PBExpr, IntVar, _LazyIntExpr)):
             raise _nonlinear_error(self, divisor, op="//")
+        if isinstance(divisor, bool):
+            raise ValueError("Divisor must be strictly positive.")
+        if not isinstance(divisor, int):
+            raise TypeError("Divisor must be an integer.")
+        if divisor <= 0:
+            raise ValueError("Divisor must be strictly positive.")
         return DivExpr(self, divisor)
 
     def scale(self, factor: int):
@@ -1039,6 +1074,8 @@ class PBExpr:
     ):
         self._model = model
         self.terms = self._collapse_terms(list(terms or []))
+        if isinstance(constant, bool) or not isinstance(constant, int):
+            raise TypeError("PBExpr constant must be an integer.")
         self.constant = int(constant)
         self.int_terms = [(int(c), v) for c, v in (int_terms or []) if int(c) != 0]
         self._collapsed = True
@@ -1260,10 +1297,9 @@ class PBExpr:
             return item._as_pbexpr()
         if isinstance(item, _LazyIntExpr):
             return cls._from_terms_trusted(item._model, [], 0, int_terms=[(1, item)], collapsed=True)
-        if isinstance(item, (int, float)) and not isinstance(item, bool):
-            # Constants are carried and normalized during PB compilation. This
-            # keeps algebraic forms like `a + b + 2 <= 3` equivalent to
-            # `a + b <= 1` in the public DSL.
+        if isinstance(item, int) and not isinstance(item, bool):
+            # PB constraints use integer constants. Do not accept floats here:
+            # converting them with int() would silently change the constraint.
             return cls._from_terms_trusted(None, [], item, collapsed=True)  # type: ignore[arg-type]
         raise TypeError(f"Unsupported PB item: {type(item)!r}")
 
@@ -1447,7 +1483,7 @@ def _coerce_pb_comparison_operand(value) -> PBExpr | None:
     """Return a non-materializing PB view of a supported comparison operand."""
     if isinstance(value, (Literal, Term, PBExpr, IntVar, _LazyIntExpr)):
         return PBExpr.from_item(value)
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    if isinstance(value, int) and not isinstance(value, bool):
         return PBExpr.from_item(value)
     return None
 

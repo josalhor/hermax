@@ -65,7 +65,9 @@ class IMaxHSSolver(NativeIncrementalSolverBase):
         self._invalidate_solution()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
-        self.set_soft(int(lit), self._normalize_positive_weight(weight))
+        if isinstance(lit, bool) or not isinstance(lit, int) or lit == 0:
+            raise ValueError("Soft literal must be a non-zero integer.")
+        self.set_soft(lit, self._normalize_positive_weight(weight))
 
     def solve(self, assumptions=None, raise_on_abnormal=False, time_limit=None) -> bool:
         self._validate_live_time_limit(time_limit)
@@ -156,7 +158,7 @@ class IMaxHSSolver(NativeIncrementalSolverBase):
         return str(self.solver.signature())
 
     def close(self) -> None:
-        if getattr(self, "solver", None) is not None:
+        if self.solver is not None:
             s = self.solver
             self.solver = None
             del s

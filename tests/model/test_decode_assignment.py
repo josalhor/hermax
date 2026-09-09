@@ -3,6 +3,13 @@ import pytest
 from hermax.model import Model
 
 
+def test_decode_assignment_rejects_contradictory_raw_model():
+    model = Model()
+
+    with pytest.raises(ValueError, match="contradictory"):
+        model.decode_model([1, -1])
+
+
 def _solve_ok(m: Model):
     r = m.solve()
     assert r.ok, f"expected satisfiable/optimal model, got status={r.status}"

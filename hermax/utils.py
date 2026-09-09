@@ -170,7 +170,7 @@ def apply_unary_add_network(
         return []
 
     net = network if network is not None else batcher_odd_even_unary_add_network(nl, nr)
-    width = _network_width(net, explicit_n=getattr(net, "n", None))
+    width = _network_width(net)
 
     if width == total:
         out_direct = apply_sorting_network([*vals_left, *vals_right], net)
@@ -221,7 +221,7 @@ def apply_sorting_network_layers(
 ) -> list[T]:
     """Apply a layered compare-swap network and return a sorted copy."""
     out = list(values)
-    n = _network_width(layers, explicit_n=getattr(layers, "n", None))
+    n = _network_width(layers)
     if len(out) != n:
         raise ValueError(f"Input length {len(out)} does not match network width {n}")
     key_fn = (lambda x: x) if key is None else key

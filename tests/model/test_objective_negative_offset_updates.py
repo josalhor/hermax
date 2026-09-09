@@ -155,3 +155,22 @@ def test_disallow_negative_offset_policy_allows_non_negative_objective():
     assert r[a] is False
     assert r.cost == 2
 
+
+def test_obj_clear_after_intvar_bucket_soft_clears_constant_soundness():
+    m = Model()
+    x = m.int("x", lb=10, ub=20)
+    # Add x with weight 2 via objective bucket syntax: m.obj[weight] += x
+    m.obj[2] += x
+    r1 = _solve_ok(m)
+    assert r1[x] == 10
+    assert r1.cost == 20
+
+    # Clear the objective: no soft constraints should remain active.
+    m.obj.clear()
+    y = m.bool("y")
+    m.obj = y  # minimize y: optimal at y=False with cost 0
+    r2 = _solve_ok(m)
+    assert r2[y] is False
+    assert r2.cost == 0
+
+

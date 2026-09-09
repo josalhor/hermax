@@ -38,10 +38,8 @@ def is_usable_response_after_time_limit(response: Optional[Dict[str, Any]]) -> b
     """Whether a worker response remains meaningful after its deadline."""
     if not isinstance(response, dict) or response.get("ok") is not True:
         return False
-    try:
-        return int(response.get("status")) in _TIMED_TERMINAL_STATUSES
-    except (TypeError, ValueError):
-        return False
+    status = response.get("status")
+    return isinstance(status, int) and not isinstance(status, bool) and status in _TIMED_TERMINAL_STATUSES
 
 
 @dataclass

@@ -33,6 +33,28 @@ def test_normalize_wcnf_formula_optilog_like_conversion() -> None:
     assert out.nv >= 3
 
 
+@pytest.mark.parametrize(
+    ("hard_clauses", "soft_clauses"),
+    [
+        ([[1.5]], [(1, [1])]),
+        ([[1]], [(1, [1.5])]),
+        ([[1]], [(1.5, [1])]),
+    ],
+)
+def test_normalize_wcnf_formula_optilog_rejects_non_integral_values(
+    hard_clauses, soft_clauses
+) -> None:
+    OptiLikeWCNF = type("WCNF", (), {"__module__": "optilog.formulas"})
+
+    obj = OptiLikeWCNF()
+    obj.hard_clauses = hard_clauses
+    obj.soft_clauses = soft_clauses
+    obj.max_var = lambda: 1
+
+    with pytest.raises((TypeError, ValueError)):
+        normalize_wcnf_formula(obj)
+
+
 DATA_DIR = Path(__file__).resolve().parent / "data"
 WCNF_FILES = sorted(DATA_DIR.glob("*.wcnf"))
 

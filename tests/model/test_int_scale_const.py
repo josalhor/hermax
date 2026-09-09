@@ -263,3 +263,14 @@ def test_weighted_pb_still_uses_pb_encoder_when_not_scaled_intvar_pattern():
         assert called["pb"] >= 1
     finally:
         PBEnc.leq = orig_pb_leq
+
+
+def test_int_scale_incremental_non_multiple_unsat_soundness():
+    m = Model()
+    m.solve(backend="sat")
+    x = m.int("x", 0, 9)
+    y = m.scale(x, 3, name="y")
+    m &= (y == 2)
+    res = m.solve(backend="sat")
+    assert res.status == "unsat"
+

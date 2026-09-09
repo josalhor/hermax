@@ -1,5 +1,8 @@
+import pytest
+
 from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestReentrant
 from hermax.core.ipamir_solver_interface import SolveStatus
+
 
 def test_reentrant():
     print("Testing EvalMaxSATLatestReentrant...")

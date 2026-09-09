@@ -7,6 +7,21 @@ Version 1.2.6
 Highlights
 ~~~~~~~~~~
 * Made multi-version wheel compilation x2-3 faster
+* Added ``Model.table(items, *, allowed=rows)`` for allowed tuples.
+* Fixed a bug in incremental MaxSAT formula replay in variable ID reservation
+* Fixed constant only objectives to report an optimum status and their cost.
+* Fixed a PBAMO equality batching soundness bug.
+* Fixed PBAMO empty and constant batched constraints.
+* ``PBCompiler`` now accepts signed integer weights.
+* Fixed duplicate soft-clause weights when soft deduplication is disabled.
+* Fixed EvalMaxSAT model aux variables leak.
+* Fixed a bug in ``IntSetVar.contains(IntVar)`` on certain domains.
+* PB constraints now reject floating point constant comparisons instead of truncating them.
+* Fixed lexicographic solving to stop after an interrupted incumbent.
+* Fixed ``ITotalizer`` extension from a zero bound.
+* Cleaned up a lot of MaxSAT solver output and logging.
+* UWrMaxSAT now returns control to Python on Ctrl-C. [EXPERIMENTAL]
+* Fixed a bug in AMO cache polarity
 
 Version 1.2.5
 -------------

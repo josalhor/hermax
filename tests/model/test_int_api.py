@@ -37,6 +37,12 @@ def test_int_invalid_domains_raise():
     with pytest.raises(TypeError):
         m.int("z", lb=0.0, ub=4)
 
+    with pytest.raises(TypeError):
+        m.int("bool_lb", lb=True, ub=4)
+
+    with pytest.raises(TypeError):
+        m.int("bool_ub", lb=0, ub=False)
+
 
 def test_int_comparisons_return_literals_and_are_cached_by_operator_value():
     m = Model()
@@ -64,6 +70,45 @@ def test_int_comparisons_require_integer_rhs():
         _ = speed <= 1.5
     with pytest.raises(TypeError):
         _ = speed >= "3"
+
+    for expression in (
+        lambda: speed <= True,
+        lambda: speed < False,
+        lambda: speed >= True,
+        lambda: speed > False,
+        lambda: speed == True,
+        lambda: speed != False,
+    ):
+        with pytest.raises(TypeError):
+            expression()
+
+
+def test_all_pb_comparisons_reject_float_constants_without_truncation():
+    m = Model()
+    x = m.int("x", lb=0, ub=4)
+    b = m.bool("b")
+
+    for expression in (
+        lambda: x == 1.5,
+        lambda: x != 1.5,
+        lambda: (x + x) == 1.5,
+        lambda: (x + x) != 1.5,
+        lambda: b == 1.5,
+        lambda: b != 1.5,
+    ):
+        with pytest.raises(TypeError):
+            expression()
+
+
+def test_int_arithmetic_rejects_boolean_scalars():
+    m = Model()
+    x = m.int("x", lb=0, ub=4)
+    with pytest.raises(TypeError):
+        _ = x * True
+    with pytest.raises(TypeError):
+        _ = True * x
+    with pytest.raises(TypeError):
+        _ = (x // 2) * True
 
 
 def test_int_exact_equality_returns_cached_literal_in_domain():

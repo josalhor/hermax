@@ -253,6 +253,11 @@ class CardEnc(object):
             :meth:`CardEnc.atleast`. Please, see it for details.
         """
 
+        lits = list(lits)
+        if isinstance(bound, bool) or not isinstance(bound, int):
+            raise TypeError("Cardinality bound must be an integer.")
+        if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in lits):
+            raise ValueError("Cardinality literals must be non-zero integers.")
         if encoding < 0 or encoding > 9:
             raise(NoSuchEncodingError(encoding))
 
@@ -276,9 +281,6 @@ class CardEnc(object):
         # obtaining the top id from the variable pool
         if vpool:
             top_id = vpool.top
-
-        # making sure we are dealing with a list of literals
-        lits = list(lits)
 
         # choosing the maximum id among the current top and the list of literals
         top_id = max(map(lambda x: abs(x), lits + [top_id if top_id != None else 0]))
@@ -354,6 +356,11 @@ class CardEnc(object):
             clauses (or the new native atmost constraint) are stored.
         """
 
+        lits = list(lits)
+        if isinstance(bound, bool) or not isinstance(bound, int):
+            raise TypeError("Cardinality bound must be an integer.")
+        if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in lits):
+            raise ValueError("Cardinality literals must be non-zero integers.")
         if encoding < 0 or encoding > 9:
             raise(NoSuchEncodingError(encoding))
 
@@ -377,9 +384,6 @@ class CardEnc(object):
         # obtaining the top id from the variable pool
         if vpool:
             top_id = vpool.top
-
-        # making sure we are dealing with a list of literals
-        lits = list(lits)
 
         # choosing the maximum id among the current top and the list of literals
         top_id = max(map(lambda x: abs(x), lits + [top_id if top_id != None else 0]))
@@ -417,6 +421,7 @@ class CardEnc(object):
             with method :meth:`CardEnc.atleast`. Please, see it for details.
         """
 
+        lits = list(lits)
         if vpool:
             res1 = cls.atleast(lits, bound=bound, vpool=vpool, encoding=encoding)
             res2 = cls.atmost(lits, bound=bound, vpool=vpool, encoding=encoding)
@@ -514,8 +519,19 @@ class ITotalizer(object):
         # this newly created totalizer object is not yet merged in any other
         self._merged = False
 
+        lits = list(lits)
+        self._validate_inputs(lits, ubound, top_id)
         if lits:
             self.new(lits=lits, ubound=ubound, top_id=top_id)
+
+    @staticmethod
+    def _validate_inputs(lits, ubound, top_id=None) -> None:
+        if isinstance(ubound, bool) or not isinstance(ubound, int) or ubound < 0:
+            raise ValueError("ubound must be a non-negative integer.")
+        if top_id is not None and (isinstance(top_id, bool) or not isinstance(top_id, int) or top_id < 0):
+            raise ValueError("top_id must be a non-negative integer or None.")
+        if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in lits):
+            raise ValueError("ITotalizer literals must be non-zero integers.")
 
     def new(self, lits=[], ubound=1, top_id=None):
         """
@@ -526,7 +542,9 @@ class ITotalizer(object):
             the description of :class:`ITotalizer` for details.
         """
 
-        self.lits = list(lits)
+        lits = list(lits)
+        self._validate_inputs(lits, ubound, top_id)
+        self.lits = lits
         self._lits_set = set(self.lits)
         self._max_abs_lit = max([abs(x) for x in self.lits] + [0])
         self.ubound = ubound
@@ -703,6 +721,14 @@ class ITotalizer(object):
                 >>> t.delete()
         """
 
+        lits = list(lits)
+        if ubound is not None:
+            self._validate_inputs([], ubound, top_id)
+        elif top_id is not None:
+            self._validate_inputs([], 0, top_id)
+        if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in lits):
+            raise ValueError("ITotalizer literals must be non-zero integers.")
+
         # preparing a new list of distinct input literals
         new_lits = set(lits)
         new_lits.difference_update(self._lits_set)
@@ -713,6 +739,30 @@ class ITotalizer(object):
             if ubound:
                 self.increase(ubound=ubound, top_id=top_id)
 
+            return
+
+        # The underlying incremental implementation produces an inconsistent
+        # extension when its initial tree was built with ubound=0.  Keep the
+        # old clauses (they only constrain their private auxiliaries) and add
+        # a fresh, correct tree for the enlarged sum.
+        if self.ubound == 0:
+            all_lits = [*self.lits, *lits]
+            new_bound = max(0, ubound if ubound is not None else 0)
+            replacement = ITotalizer(all_lits, ubound=new_bound, top_id=max(self.top_id, top_id or 0))
+            old_tobj = self.tobj
+            if old_tobj is not None:
+                pycard.itot_del(old_tobj)
+            self.tobj = replacement.tobj
+            replacement.tobj = None
+            self.lits = list(all_lits)
+            self._lits_set = set(all_lits)
+            self._max_abs_lit = max([abs(x) for x in all_lits] + [0])
+            self.ubound = new_bound
+            self.top_id = replacement.top_id
+            self.rhs = replacement.rhs
+            self.cnf.clauses.extend(replacement.cnf.clauses)
+            self.cnf.nv = self.top_id
+            self.nof_new = len(replacement.cnf.clauses)
             return
 
         max_new_abs = max([abs(x) for x in lits] + [0])

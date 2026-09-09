@@ -1495,15 +1495,13 @@ void LinearSUClustering::search()
   if (unique_weights.size() == originalWeights.size())
   {
     all_weights = true;
-    printf("c all_weights = true;\n");
+    // Default library use must not emit CLI diagnostics.
   }
   else
   {
-    printf("c all_weights = false;\n");
+	  // Default library use must not emit CLI diagnostics.
   }
 
-  printf("c #Diff Weights= %lu | #Modified Weights= %lu\n",
-         originalWeights.size(), orderWeights.size());
 
   // printConfiguration(is_bmo, maxsat_formula->getProblemType());
   bmoSearch();

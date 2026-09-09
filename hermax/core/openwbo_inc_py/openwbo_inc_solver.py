@@ -2,7 +2,7 @@ import importlib
 from pysat.formula import WCNF
 from typing import List, Optional, Callable, Any
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
-from hermax.core.utils import normalize_wcnf_formula
+from hermax.core.utils import extract_wcnf_data, normalize_wcnf_formula
 
 class OpenWBOIncSolver(IPAMIRSolver):
     @classmethod
@@ -25,21 +25,9 @@ class OpenWBOIncSolver(IPAMIRSolver):
         self.num_vars = 0
 
         if formula is not None:
-            max_var = 0
-            soft_attr = getattr(formula, "soft", [])
-            soft_pairs = []
-            wghts = getattr(formula, "wght", None)
-            if wghts is not None and len(wghts) == len(soft_attr) and (
-                not soft_attr or not isinstance(soft_attr[0], tuple)
-            ):
-                soft_pairs = list(zip(soft_attr, wghts))
-            else:
-                for item in soft_attr:
-                    if isinstance(item, tuple) and len(item) >= 2:
-                        soft_pairs.append((item[0], item[1]))
-                    else:
-                        soft_pairs.append((item, 1))
-            all_clauses = getattr(formula, "hard", []) + [c for c, _w in soft_pairs]
+            data = extract_wcnf_data(formula)
+            max_var = data.num_vars
+            all_clauses = [*data.hard, *(c for c, _w in data.soft)]
             for cl in all_clauses:
                 for lit in cl:
                     max_var = max(max_var, abs(lit))
@@ -47,18 +35,20 @@ class OpenWBOIncSolver(IPAMIRSolver):
             while self.num_vars < max_var:
                 self.new_var()
 
-            for clause in getattr(formula, "hard", []):
+            for clause in data.hard:
                 self.add_clause(clause)
-            for clause, weight in soft_pairs:
+            for clause, weight in data.soft:
                 self.add_clause(clause, weight)
 
     def add_clause(self, clause: List[int], weight: Optional[int] = None) -> None:
-        if weight is not None and weight <= 0:
+        if not isinstance(clause, list):
+            raise TypeError("Clause must be a list of integer literals.")
+        if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in clause):
+            raise ValueError("Clause literals must be non-zero integers.")
+        if weight is not None and (isinstance(weight, bool) or not isinstance(weight, int) or weight <= 0):
             raise ValueError("Weight must be a positive integer.")
         
         for lit in clause:
-            if lit == 0:
-                raise ValueError("Clause literals cannot be 0.")
             var = abs(lit)
             while var > self.num_vars:
                 self.new_var()
@@ -66,9 +56,9 @@ class OpenWBOIncSolver(IPAMIRSolver):
         self.solver.addClause(clause, weight)
 
     def set_soft(self, lit: int, weight: int) -> None:
-        if not isinstance(lit, int) or lit == 0:
+        if isinstance(lit, bool) or not isinstance(lit, int) or lit == 0:
             raise ValueError("Soft literal must be a non-zero integer.")
-        if not isinstance(weight, int):
+        if isinstance(weight, bool) or not isinstance(weight, int):
             raise ValueError("Weight must be an integer.")
         if weight < 0:
             raise ValueError("Weight must be a non-negative integer.")
@@ -79,7 +69,7 @@ class OpenWBOIncSolver(IPAMIRSolver):
         self.add_clause([lit], weight)
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
-        self.set_soft(int(lit), int(weight))
+        self.set_soft(lit, weight)
 
     def solve(
         self,
@@ -122,6 +112,8 @@ class OpenWBOIncSolver(IPAMIRSolver):
     def val(self, lit: int) -> int:
         if self._model is None:
             raise RuntimeError("Model is not available.")
+        if isinstance(lit, bool) or not isinstance(lit, int):
+            raise TypeError("Literal must be an integer.")
         var = abs(lit)
         if var == 0 or var > self.num_vars:
             raise ValueError("Invalid literal for val().")

@@ -295,6 +295,34 @@ def choose_encoding(lits, weights, groups, bound):
 
 
 class PBAMOEnc:
+    @staticmethod
+    def _validate_pb_input(lits, weights, bound) -> None:
+        if len(lits) != len(weights):
+            raise ValueError("Same number of literals and weights is expected.")
+        if isinstance(bound, bool) or not isinstance(bound, int):
+            raise ValueError("PB bound must be an integer.")
+        if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in lits):
+            raise ValueError("PB literals must be non-zero integers.")
+        if any(isinstance(weight, bool) or not isinstance(weight, int) for weight in weights):
+            raise ValueError("PB weights must be integers.")
+        if any(weight < 0 for weight in weights):
+            raise ValueError("PB weights must be non-negative.")
+
+    @staticmethod
+    def _validate_partition_groups(lits, groups) -> None:
+        """Check explicit structured-PB groups before calling the native layer."""
+        expected = list(lits)
+        seen: list[int] = []
+        for group in groups:
+            if not group:
+                raise ValueError("PBAMO groups must be non-empty.")
+            for lit in group:
+                if isinstance(lit, bool) or not isinstance(lit, int) or lit == 0:
+                    raise ValueError("PBAMO group literals must be non-zero integers.")
+                seen.append(lit)
+        if len(seen) != len(expected) or set(seen) != set(expected) or len(set(seen)) != len(seen):
+            raise ValueError("PBAMO groups must form a duplicate-free partition of the PB literals.")
+
     @classmethod
     def multi_leq(cls, lits, stubs, top_id, kmerge_config=None):
         """Encode multiple PB constraints using a shared basis sum.
@@ -307,10 +335,33 @@ class PBAMOEnc:
         from hermax.internal.kmerge import get_basis, get_conflict_depth, get_short_circuit_subsets
         from hermax.encoder.card import ITotalizer
         from hermax.encoder.pb_enc import PBEnc, EncType as PBEncType
+
+        for stub in stubs:
+            cls._validate_pb_input(lits, stub.weights, stub.bound)
+            if tuple(stub.lits) != tuple(lits):
+                raise ValueError("PB constraint stub literals must align with the shared literal core.")
+            if stub.op not in ("<=", "=="):
+                raise ValueError(f"Unsupported PB comparison: {stub.op!r}")
         
         cnf = CNFPlus()
         cnf.nv = int(top_id)
-        
+
+        # A constant PB constraint must be resolved before building the shared
+        # basis.  In particular, ``max([])`` is undefined and PBLib rejects a
+        # negative bound on an empty sum even when that simply means UNSAT.
+        active_stubs = []
+        for stub in stubs:
+            if any(stub.weights):
+                active_stubs.append(stub)
+                continue
+            satisfied = 0 <= int(stub.bound) if stub.op == "<=" else 0 == int(stub.bound)
+            if not satisfied:
+                cnf.clauses.append([])
+                return cnf
+        if not active_stubs:
+            return cnf
+
+        stubs = active_stubs
         weights_list = [s.weights for s in stubs]
         basis = get_basis(weights_list, config=kmerge_config)
         
@@ -339,8 +390,11 @@ class PBAMOEnc:
         basis_out = []
         carry_bits = [] # bits to be added to the next column
         
-        # We process column by column. carry_bits contains literals with weight 1 for CURRENT column.
-        for b_idx in range(num_bits + 10): # +10 for overflow carries
+        # Continue until every source column and every generated carry has
+        # been consumed. A fixed overflow allowance is unsound for wide
+        # unary columns.
+        b_idx = 0
+        while b_idx < num_bits or carry_bits:
             current_inputs = []
             if b_idx < len(col_bits):
                 current_inputs.extend(col_bits[b_idx])
@@ -348,8 +402,8 @@ class PBAMOEnc:
             carry_bits = []
             
             if not current_inputs:
-                if b_idx >= len(col_bits): break
                 basis_out.append(0)
+                b_idx += 1
                 continue
             
             # Simple Full Adder reduction of current_inputs
@@ -398,19 +452,21 @@ class PBAMOEnc:
             else:
                 basis_out.append(0)
 
+            b_idx += 1
+
         # 3. Encode each constraint's Delta part
         for stub in stubs:
             delta_weights = [ stub.weights[i] - basis[i] for i in range(len(lits)) ]
 
             if (
                 kmerge_config is not None
-                and bool(getattr(kmerge_config, "use_slack_tripwire", False))
-                and bool(getattr(kmerge_config, "use_short_circuit_penalty", False))
+                and kmerge_config.use_slack_tripwire
+                and kmerge_config.use_short_circuit_penalty
             ):
                 max_basis = sum(basis)
                 if max_basis > int(stub.bound):
                     conflict_depth = get_conflict_depth(basis, int(stub.bound))
-                    abort_depth = int(getattr(kmerge_config, "slack_conflict_depth_abort", 4))
+                    abort_depth = int(kmerge_config.slack_conflict_depth_abort)
                     if conflict_depth is not None and conflict_depth < abort_depth:
                         for subset in get_short_circuit_subsets(basis, int(stub.bound), conflict_depth):
                             cnf.clauses.append([-int(lits[idx]) for idx in subset])
@@ -430,23 +486,40 @@ class PBAMOEnc:
                     final_lits.append(lits[i])
                     final_weights.append(d_w)
             
-            # Encode final LEQ/EQ
-            if stub.op == "<=":
-                sub_cnf = PBEnc.leq(lits=final_lits, weights=final_weights, bound=stub.bound, top_id=cnf.nv, encoding=PBEncType.adder)
-            else: # "=="
-                sub_cnf = PBEnc.equals(lits=final_lits, weights=final_weights, bound=stub.bound, top_id=cnf.nv, encoding=PBEncType.adder)
-                if stub.bound == 1 and all(w == 1 for w in stub.weights):
-                    cnf.clauses.append(list(lits))
+            # The shared basis circuit is a sound upper-bound encoding. An
+            # equality additionally needs a lower bound, but encoding equality
+            # directly over the shared binary sum is unsound. Keep the shared
+            # upper bound and add only the missing direct lower bound.
+            if stub.op not in ("<=", "=="):
+                raise ValueError(f"Unsupported PB comparison: {stub.op!r}")
+            sub_cnf = PBEnc.leq(
+                lits=final_lits,
+                weights=final_weights,
+                bound=stub.bound,
+                top_id=cnf.nv,
+                encoding=PBEncType.adder,
+            )
             
             cnf.clauses.extend(sub_cnf.clauses)
             cnf.nv = max(cnf.nv, sub_cnf.nv)
+
+            if stub.op == "==":
+                lower_cnf = PBEnc.geq(
+                    lits=list(lits),
+                    weights=list(stub.weights),
+                    bound=stub.bound,
+                    top_id=cnf.nv,
+                    encoding=PBEncType.adder,
+                )
+                cnf.clauses.extend(lower_cnf.clauses)
+                cnf.nv = max(cnf.nv, lower_cnf.nv)
             
         return cnf
 
     @classmethod
     def leq(cls, lits, weights, groups, bound, top_id=None, encoding=EncType.best, emit_amo=True):
-        if len(lits) != len(weights):
-            raise ValueError("Same number of literals and weights is expected.")
+        cls._validate_pb_input(lits, weights, bound)
+        cls._validate_partition_groups(lits, groups)
         wlits = [(int(lit), int(weight)) for lit, weight in zip(lits, weights)]
         grouped = _normalize_groups(groups)
         if top_id is None:
@@ -480,12 +553,13 @@ class PBAMOEnc:
         overlap_policy: str = OverlapPolicy.paper_best_fit_dynamic_future,
         structured_encoding=EncType.best,
     ):
-        if len(lits) != len(weights):
-            raise ValueError("Same number of literals and weights is expected.")
+        cls._validate_pb_input(lits, weights, bound)
         lits = [int(lit) for lit in lits]
         weights = [int(weight) for weight in weights]
         groups_were_explicit = groups is not None
         normalized_groups = _normalize_groups(groups) if groups is not None else None
+        if normalized_groups is not None:
+            cls._validate_partition_groups(lits, normalized_groups)
         normalized_amo = _normalize_candidate_groups(amo_groups)
         normalized_eo = _normalize_candidate_groups(eo_groups)
 
@@ -570,12 +644,13 @@ class PBAMOEnc:
         overlap_policy: str = OverlapPolicy.paper_best_fit_dynamic_future,
         structured_encoding=EncType.best,
     ):
-        if len(lits) != len(weights):
-            raise ValueError("Same number of literals and weights is expected.")
+        cls._validate_pb_input(lits, weights, bound)
         lits = [int(lit) for lit in lits]
         weights = [int(weight) for weight in weights]
         groups_were_explicit = groups is not None
         normalized_groups = _normalize_groups(groups) if groups is not None else None
+        if normalized_groups is not None:
+            cls._validate_partition_groups(lits, normalized_groups)
         normalized_amo = _normalize_candidate_groups(amo_groups)
         normalized_eo = _normalize_candidate_groups(eo_groups)
 

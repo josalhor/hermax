@@ -240,3 +240,49 @@ def test_add_soft_group_keeps_group_mapping_integrity():
     assert r1.group_id != r2.group_id
     assert len(r1.soft_ids) == 1
     assert len(r2.soft_ids) == 1
+
+
+def test_intvar_soft_weight_update_cost_soundness():
+    m = Model()
+    x = m.int("x", 5, 10)
+    ref = m.obj.add_soft(x, 2)
+    res1 = m.solve()
+    assert res1.ok
+    assert res1[x] == 5
+    assert res1.cost == 10
+
+    m.obj.update_soft(ref, 3)
+    res2 = m.solve()
+    assert res2.ok
+    assert res2[x] == 5
+    assert res2.cost == 15
+
+
+def test_pbexpr_soft_weight_update_preserves_term_coefficients_soundness():
+    m = Model()
+    x1 = m.bool("x1")
+    x2 = m.bool("x2")
+
+    # Force selecting at least one variable.
+    m &= (x1 | x2)
+
+    # Add a linear soft combination: 2 * x1 + 5 * x2 with base weight 1.
+    # Relative cost ratio is 2:5 (x2 is 2.5x more expensive than x1).
+    ref = m.obj.add_soft(2 * x1 + 5 * x2, weight=1)
+
+    # Competing soft objective favoring x2=True (incurs penalty of 15 if x2 is False).
+    m.obj.add_soft(x2, weight=15)
+
+    # Scale the first soft objective by updating its weight to 10.
+    # The updated objective must represent 10 * (2*x1 + 5*x2) = 20*x1 + 50*x2.
+    # - If x1=True, x2=False: obj1 penalty is 20, obj2 penalty is 15 -> total cost = 35.
+    # - If x1=False, x2=True: obj1 penalty is 50, obj2 penalty is 0  -> total cost = 50.
+    # Soundness requires the solver to choose x1=True, x2=False with optimal cost 35.
+    m.obj.update_soft(ref, 10)
+
+    res = m.solve()
+    assert res.ok
+    assert res[x1] is True
+    assert res[x2] is False
+    assert res.cost == 35
+

@@ -104,9 +104,28 @@ def test_multiplexer_errors_for_bad_array_coverage_or_type():
     with pytest.raises(TypeError, match="sequence of ints"):
         _ = ("abc" @ w <= 1)  # type: ignore[operator]
 
+    with pytest.raises(TypeError, match="integer constants"):
+        _ = ([1.5, 2, 3] @ w <= 2)  # type: ignore[list-item,operator]
+
+    with pytest.raises(TypeError, match="integer constants"):
+        _ = ([True, 2, 3] @ w <= 2)  # type: ignore[list-item,operator]
+
+    with pytest.raises(TypeError, match="RHS"):
+        _ = ([1, 2, 3] @ w <= True)  # type: ignore[operator]
+
 
 def test_multiplexer_rejects_negative_lb_for_now():
     m = Model()
     w = m.int("w", lb=-1, ub=2)
     with pytest.raises(ValueError, match="lb >= 0"):
         _ = ([10, 20, 30] @ w <= 15)
+
+
+@pytest.mark.parametrize("op", ["==", "!=", "<=", "<", ">=", ">"])
+def test_indexed_int_vector_rejects_bool_rhs_like_other_int_comparisons(op):
+    m = Model()
+    values = m.int_vector("values", length=2, lb=0, ub=2)
+    index = m.int("index", lb=0, ub=1)
+
+    with pytest.raises(TypeError, match="RHS|integer"):
+        eval(f"values[index] {op} True")

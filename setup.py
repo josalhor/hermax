@@ -1120,6 +1120,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         cplex_inc_dir, cplex_lib_dir = self._resolve_cplex_paths()
 
         imaxhs_src_dir = os.path.abspath("solvers/incremental-maxhs/src")
+        imaxhs_a = os.path.join(imaxhs_src_dir, "build", "release", "lib", "libipamirmaxhs.a")
         self._make(["clean"], cwd=imaxhs_src_dir, env=env)
         self._make(
             [
@@ -1168,6 +1169,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         cplex_inc_dir, cplex_lib_dir = self._resolve_cplex_paths()
 
         maxhs_src_dir = os.path.abspath("solvers/maxhs")
+        maxhs_a = os.path.join(maxhs_src_dir, "build", "release", "lib", "libmaxhs.a")
         self._make(["clean"], cwd=maxhs_src_dir, env=env)
         self._make(
             [
@@ -1497,6 +1499,9 @@ class CMakeBuildURMaxSAT(CMakeBuild):
                 env2 = env.copy()
                 env2["MAXPRE"] = ""
                 env2["USESCIP"] = ""
+                env2["CXXFLAGS"] = (
+                    f"{env2.get('CXXFLAGS', '')} -DHERMAX_EMBEDDED=1"
+                ).strip()
 
                 self._make(["clean"], cwd=uwr_dir, env=env2)
                 self._make(["r", "-j", "LDFLAG_STATIC="], cwd=uwr_dir, env=env2)

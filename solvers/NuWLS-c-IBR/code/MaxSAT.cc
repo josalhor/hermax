@@ -282,8 +282,7 @@ lbool MaxSAT::polosat(Solver *solver, vec<Lit> &assumptions, vec<Lit> &obsVecLit
     nuweighting_solver.build_instance(nuweighting_nvars, nuweighting_nclauses, nuweighting_topclauseweight,
                                       nuweighting_clause_lit, nuweighting_clause_lit_count, nuweighting_clause_weight);
 
-    cout << "c build NuWLS instance done!" << endl;
-    cout << "c changing to NuWLS solver!!" << endl;
+    // Default library use must not emit CLI diagnostics.
     nuweighting_solver.settings();
     vector<int> init_solu(nuweighting_nvars + 1);
     for (int i = 0; i < nuweighting_nvars; ++i)
@@ -395,7 +394,6 @@ lbool MaxSAT::polosat(Solver *solver, vec<Lit> &assumptions, vec<Lit> &obsVecLit
       }
     }
     nuweighting_solver.free_memory();
-    cout << "c NuWLS search done!" << endl;
   }
 
   if (res != l_True)

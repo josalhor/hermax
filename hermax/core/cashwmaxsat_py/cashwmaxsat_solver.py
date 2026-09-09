@@ -86,5 +86,10 @@ class CASHWMaxSATSolver(ReplayFormulaSolverBase):
 
     def set_terminate(self, callback: Optional[Callable[[], int]]) -> None:
         self._terminate_callback = callback
-        if getattr(self, "solver", None) is not None and hasattr(self.solver, "set_terminate"):
-            self.solver.set_terminate(callback)
+        self._apply_terminate_callback()
+
+    def _apply_terminate_callback(self) -> None:
+        """Apply an optional native capability at the backend boundary."""
+        solver = self.solver
+        if solver is not None and hasattr(solver, "set_terminate"):
+            solver.set_terminate(self._terminate_callback)

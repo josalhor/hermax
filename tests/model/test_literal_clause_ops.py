@@ -29,6 +29,64 @@ def test_literal_negation_identity_and_polarity():
     assert r[a] is False
 
 
+def test_concrete_clausegroup_and_deferred_constraint_does_not_drop_constraint():
+    """Combining groups must retain a deferred public constraint."""
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+
+    base = ClauseGroup(m, [Clause(m, [a])])
+    allowed = m.table([a, b], allowed=[(True, True)])
+    combined = base & allowed
+
+    m &= combined
+    m &= ~b
+
+    assert m.solve().status == "unsat"
+
+
+def test_concrete_clause_and_deferred_constraint_does_not_drop_constraint():
+    """The same retention rule applies when the left operand is one clause."""
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+
+    combined = (a | a) & m.table([a, b], allowed=[(True, True)])
+
+    m &= combined
+    m &= ~b
+
+    assert m.solve().status == "unsat"
+
+
+def test_clausegroup_extend_with_deferred_constraint_does_not_drop_constraint():
+    """The explicit mutable composition API must also realize deferred input."""
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    group = ClauseGroup(m, [Clause(m, [a])])
+
+    group.extend(m.table([a, b], allowed=[(True, True)]), inplace=True)
+    m &= group
+    m &= ~b
+
+    assert m.solve().status == "unsat"
+
+
+def test_deferred_clausegroup_extend_with_concrete_constraint_retains_deferred_constraint():
+    """Mutating a deferred group must first retain its pending clauses."""
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    group = m.table([a, b], allowed=[(True, True)])
+
+    group.extend(Clause(m, [a]), inplace=True)
+    m &= group
+    m &= ~b
+
+    assert m.solve().status == "unsat"
+
+
 def test_literal_or_literal_produces_clause():
     m = Model()
     a = m.bool("a")
@@ -235,6 +293,18 @@ def test_clause_from_iterable_rejects_cross_model_literals():
 
     with pytest.raises(ValueError, match="different models"):
         Clause.from_iterable([a, b])
+
+
+@pytest.mark.parametrize("raw", [[1.5], [True], [0]])
+@pytest.mark.parametrize("constructor", ["clause", "group"])
+def test_raw_clause_constructors_reject_malformed_dimacs_entries(raw, constructor):
+    model = Model()
+
+    with pytest.raises((TypeError, ValueError)):
+        if constructor == "clause":
+            Clause.from_dimacs(model, raw)
+        else:
+            ClauseGroup(model, [raw])
 
 
 def test_clause_from_dimacs_keeps_aux_unmaterialized_until_literals_are_accessed():

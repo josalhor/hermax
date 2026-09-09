@@ -466,7 +466,7 @@ pair<typename CTopi<TLit, TUInd, Compress>::TSpanTULit, TUInd> CTopi<TLit, TUInd
 
 	if (m_ParamVerbosity > 0 && m_Stat.m_Conflicts % (decltype(m_Stat.m_Conflicts))m_ParamStatPrintOutConfs == 0)
 	{
-		cout << m_Stat.StatStrShort();
+		// Library callers do not want Topor's CLI statistics on stdout.
 	}
 
 	// Giving an alias to m_VisitedLits to reflect the current usage for readability

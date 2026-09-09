@@ -73,19 +73,7 @@ public:
   void initializeCluster();
 
   // Print solver configuration.
-  void printConfiguration() {
-
-    printf("c ==========================================[ Solver Settings "
-           "]============================================\n");
-    printf("c |                                                                "
-           "                                       |\n");
-    printf("c |  Algorithm: %23s                                             "
-           "                      |\n",
-           "OLL");
-    print_Card_configuration(encoding);
-    printf("c |                                                                "
-           "                                       |\n");
-  }
+  void printConfiguration() {}
 
   Cluster *cluster;
 

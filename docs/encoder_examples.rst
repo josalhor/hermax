@@ -65,11 +65,11 @@ Output
 PB With AMO Structure
 ---------------------
 
-Use :class:`hermax.encoder.PBAMOEnc` when the weighted literals are also
-partitioned into known at-most-one groups. ``leq`` takes a disjoint partition;
-``auto_leq`` accepts overlapping AMO/EO candidates and decides whether to use
-a flat or structured encoding. Set ``emit_amo=True`` when the returned CNF
-must include the AMO clauses as well.
+Use :class:`hermax.encoder.PBAMOEnc` when the weighted literals have known
+at-most-one structure. ``leq`` takes a disjoint partition; set
+``emit_amo=True`` when its returned CNF must include that partition's AMO
+clauses. ``auto_leq`` accepts AMO/EO candidates and includes those constraints
+in its returned CNF.
 
 .. literalinclude:: ../examples/encoder/03_pbamo.py
    :language: python

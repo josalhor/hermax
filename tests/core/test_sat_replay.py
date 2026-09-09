@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import threading
 
+import pytest
+
 from pysat.examples.genhard import PHP
 from pysat.solvers import Solver as PySATSolver
 
@@ -31,6 +33,22 @@ def test_pysat_replay_solver_returns_a_sat_model():
     assert result.model is not None
     assert 1 in result.model
     assert -2 in result.model
+
+
+@pytest.mark.parametrize("raw_literal", [1.5, True, "1"])
+def test_pysat_replay_rejects_non_integer_clause_literals(raw_literal):
+    solver = PySATReplaySolver("g4")
+
+    with pytest.raises((TypeError, ValueError)):
+        solver.add_clause([raw_literal])
+
+
+@pytest.mark.parametrize("raw_literal", [1.5, True, "1"])
+def test_pysat_replay_rejects_non_integer_assumptions(raw_literal):
+    solver = PySATReplaySolver("g4")
+
+    with pytest.raises((TypeError, ValueError)):
+        solver.solve(assumptions=[raw_literal])
 
 
 class _InterruptibleFakeSolver:

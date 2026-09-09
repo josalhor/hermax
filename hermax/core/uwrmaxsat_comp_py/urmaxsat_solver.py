@@ -6,6 +6,7 @@ from pysat.formula import WCNF
 
 from hermax.core.ipamir_native_incremental_base import NativeIncrementalSolverBase
 from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible
+from hermax.core.formula_journal import FormulaJournal
 
 
 class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
@@ -50,9 +51,16 @@ class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
         self._ensure_var(abs(ilit))
 
         if w == 0:
+            old_softs = dict(self._anon_soft_by_lit)
+            old_journal = self._journal.snapshot()
             self._anon_soft_by_lit.pop(int(ilit), None)
             self._record_soft_unit(ilit, w)
-            self._rebuild_backend()
+            try:
+                self._rebuild_backend()
+            except Exception:
+                self._anon_soft_by_lit = old_softs
+                self._journal = FormulaJournal.from_snapshot(old_journal)
+                raise
             self._invalidate_solution()
             return
 
@@ -63,7 +71,9 @@ class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
         self._invalidate_solution()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
-        self.set_soft(int(lit), self._normalize_positive_weight(weight))
+        if isinstance(lit, bool) or not isinstance(lit, int) or lit == 0:
+            raise ValueError("Soft literal must be a non-zero integer.")
+        self.set_soft(lit, self._normalize_positive_weight(weight))
 
     # ---------- Solve ----------
 
@@ -90,7 +100,7 @@ class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
         r = int(self.solver.solve())
         self._last_solve_result = r
 
-        if r == int(SolveStatus.OPTIMUM):
+        if r in (int(SolveStatus.OPTIMUM), int(SolveStatus.INTERRUPTED_SAT)):
             model = []
             for i in range(1, self.num_vars + 1):
                 v = self.solver.getValue(i)
@@ -120,11 +130,9 @@ class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
                 cost = 0
             else:
                 cost = int(self.solver.getCost())
-            self._set_feasible_result(model=model, cost=cost, status=SolveStatus.OPTIMUM)
+            self._set_feasible_result(model=model, cost=cost, status=SolveStatus(r))
         elif r == int(SolveStatus.UNSAT):
             self._set_infeasible_result(status=SolveStatus.UNSAT)
-        elif r == int(SolveStatus.INTERRUPTED_SAT):
-            self._set_infeasible_result(status=SolveStatus.INTERRUPTED_SAT)
         elif r == int(SolveStatus.INTERRUPTED):
             self._set_infeasible_result(status=SolveStatus.INTERRUPTED)
         else:
@@ -148,7 +156,7 @@ class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
         return str(self.solver.signature())
 
     def close(self) -> None:
-        if getattr(self, "solver", None) is not None:
+        if self.solver is not None:
             s = self.solver
             self.solver = None
             del s

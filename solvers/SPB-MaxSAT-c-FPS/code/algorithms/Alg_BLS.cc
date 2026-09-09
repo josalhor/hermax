@@ -319,7 +319,7 @@ bool BLS::findNextMCS() {
     //Last saved model is smallest MCS...
   }
   nbMCS++;
-  printf("c MCS #%d Weight: %" PRId64 "\n", nbMCS, costModel);
+  // Default library use must not emit CLI diagnostics.
   
   addMCSClause(unsatClauses);
   return true;
@@ -422,27 +422,6 @@ Solver *BLS::buildSolver() {
 
 // Prints search statistics.
 void BLS::printConfiguration(){
-
-    printf("c ==========================================[ Solver Settings "
-           "]============================================\n");
-    printf("c |                                                                "
-           "                                       |\n");
-    printf("c |  Algorithm: %23s                                             "
-           "                      |\n",
-           "MCS");
-    print_Card_configuration(encoding);
-    printf("c |  Limit number conflicts: %10d                                 "
-           "                                  |\n", conflict_limit);
-    printf("c |  Limit number iterations: %9d                                 "
-      "                                  |\n", _maxMCS);
-    if (local_limit)
-      printf("c |  Global limit number conflicts:   F                          "
-        "                                         |\n");
-    else
-      printf("c |  Global limit number conflicts:   T                          "
-        "                                         |\n");
-    printf("c |                                                                "
-           "                                       |\n");
 }
 
 void BLS::init() {
@@ -454,5 +433,4 @@ void BLS::init() {
     objFunction.push(l);
     _maxWeight += maxsat_formula->getSoftClause(i).weight;
   }
-  printf("c Max. Weight: %" PRId64 "\n", _maxWeight);
 }

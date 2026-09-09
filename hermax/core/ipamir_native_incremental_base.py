@@ -10,7 +10,7 @@ from hermax.core.ipamir_state_mixin import IPAMIRStateMixin
 from hermax.core.formula_journal import FormulaJournal
 from hermax.core.interrupt_recovery import InterruptRecovery
 from hermax.core.time_limits import validate_time_limit
-from hermax.core.utils import normalize_wcnf_formula
+from hermax.core.utils import extract_wcnf_data, normalize_wcnf_formula
 
 
 class NativeIncrementalSolverBase(IPAMIRStateMixin, IPAMIRSolver, InterruptRecovery, abc.ABC):
@@ -20,42 +20,49 @@ class NativeIncrementalSolverBase(IPAMIRStateMixin, IPAMIRSolver, InterruptRecov
         super().__init__(formula, *args, **kwargs)
         self._init_ipamir_state()
         self._journal = FormulaJournal()
+        # Backend variables allocated only to submit an operation are kept
+        # provisional until that operation is recorded in the journal.
+        self._provisional_num_vars = 0
         self._rebuild_on_interrupt = False
         self._replaying_journal = False
         if formula is not None:
             self._load_initial_formula(formula)
 
     def _ensure_var(self, var: int) -> None:
-        while int(var) > self.num_vars:
-            self.new_var()
+        target = int(var)
+        provisional = self._provisional_num_vars
+        while target > max(self.num_vars, provisional):
+            next_var = max(self.num_vars, provisional) + 1
+            self._backend_new_var(next_var)
+            provisional = next_var
+            self._provisional_num_vars = provisional
 
     @property
     def num_vars(self) -> int:
         return self._journal.num_vars
 
     def _normalize_lit(self, lit: int) -> int:
-        ilit = int(lit)
+        if isinstance(lit, bool) or not isinstance(lit, int):
+            raise TypeError("Literal must be an integer.")
+        ilit = lit
         if ilit == 0:
             raise ValueError("Literal 0 is invalid.")
         return ilit
 
     def _normalize_assumptions(self, assumptions: Optional[List[int]]) -> List[int]:
-        assumps = [self._normalize_lit(x) for x in assumptions] if assumptions else []
-        for lit in assumps:
-            self._ensure_var(abs(lit))
-        return assumps
+        return [self._normalize_lit(x) for x in assumptions] if assumptions else []
 
     def _normalize_clause(self, clause: List[int]) -> List[int]:
         if not isinstance(clause, list):
             raise ValueError("Clause must be a list.")
-        out = [self._normalize_lit(x) for x in clause]
-        for lit in out:
+        normalized = [self._normalize_lit(x) for x in clause]
+        for lit in normalized:
             self._ensure_var(abs(lit))
-        return out
+        return normalized
 
     @staticmethod
     def _normalize_positive_weight(weight: int) -> int:
-        if not isinstance(weight, int):
+        if isinstance(weight, bool) or not isinstance(weight, int):
             raise ValueError("Weight must be an integer.")
         if int(weight) <= 0:
             raise ValueError("Weight must be a positive integer.")
@@ -63,7 +70,7 @@ class NativeIncrementalSolverBase(IPAMIRStateMixin, IPAMIRSolver, InterruptRecov
 
     @staticmethod
     def _normalize_nonnegative_weight(weight: int) -> int:
-        if not isinstance(weight, int):
+        if isinstance(weight, bool) or not isinstance(weight, int):
             raise ValueError("Weight must be an integer.")
         if int(weight) < 0:
             raise ValueError("Weight must be a non-negative integer.")
@@ -118,10 +125,12 @@ class NativeIncrementalSolverBase(IPAMIRStateMixin, IPAMIRSolver, InterruptRecov
 
     def _record_hard_clause(self, clause: List[int]) -> None:
         if not self._replaying_journal:
+            self._journal.ensure_var(max((abs(int(lit)) for lit in clause), default=0))
             self._journal.add_hard(clause)
 
     def _record_soft_unit(self, lit: int, weight: int) -> None:
         if not self._replaying_journal:
+            self._journal.ensure_var(abs(int(lit)))
             self._journal.set_soft(lit, weight)
 
     def _validate_live_time_limit(self, time_limit: Optional[float]) -> None:
@@ -153,8 +162,10 @@ class NativeIncrementalSolverBase(IPAMIRStateMixin, IPAMIRSolver, InterruptRecov
 
     def new_var(self) -> int:
         self._require_open()
-        var = self._journal.new_var()
+        var = max(self.num_vars, self._provisional_num_vars) + 1
         self._backend_new_var(var)
+        self._journal.ensure_var(var)
+        self._provisional_num_vars = var
         self._invalidate_solution()
         return var
 
@@ -167,14 +178,9 @@ class NativeIncrementalSolverBase(IPAMIRStateMixin, IPAMIRSolver, InterruptRecov
         _ = var_id
 
     def _load_initial_formula(self, formula: WCNF) -> None:
-        max_var = 0
-        all_cls = list(getattr(formula, "hard", []))
-        soft_attr = getattr(formula, "soft", [])
-        for item in soft_attr:
-            cl = item[0] if isinstance(item, tuple) and len(item) >= 2 else item
-            if isinstance(cl, list):
-                all_cls.append(cl)
-        for cl in all_cls:
+        data = extract_wcnf_data(formula)
+        max_var = data.num_vars
+        for cl in [*data.hard, *(clause for clause, _weight in data.soft)]:
             for lit in cl:
                 ilit = int(lit)
                 if ilit == 0:
@@ -183,22 +189,10 @@ class NativeIncrementalSolverBase(IPAMIRStateMixin, IPAMIRSolver, InterruptRecov
         while self.num_vars < max_var:
             self.new_var()
 
-        for clause in getattr(formula, "hard", []):
+        for clause in data.hard:
             self.add_clause([int(x) for x in clause])
 
-        softs = getattr(formula, "soft", [])
-        wghts = getattr(formula, "wght", None)
-        if wghts is not None and len(wghts) == len(softs) and (not softs or not isinstance(softs[0], tuple)):
-            pairs = list(zip(softs, wghts))
-        else:
-            pairs = []
-            for item in softs:
-                if isinstance(item, tuple) and len(item) >= 2:
-                    pairs.append((item[0], int(item[1])))
-                else:
-                    pairs.append((item, 1))
-
-        for cl, w in pairs:
+        for cl, w in data.soft:
             if not cl:
                 raise ValueError("Invalid soft in WCNF.")
             if len(cl) == 1:

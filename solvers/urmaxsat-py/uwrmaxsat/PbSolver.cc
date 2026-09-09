@@ -587,7 +587,9 @@ void PbSolver::solve(solve_Command cmd)
         sat_solver.toDimacs(opt_cnf),
         exit(0);
 
+#ifndef HERMAX_EMBEDDED
     signal(SIGINT, SIGINT_interrupt);
+#endif
 #ifdef SIGXCPU
     signal(SIGXCPU,SIGINT_interrupt);
 #endif
@@ -780,4 +782,3 @@ void PbSolver::printStats(bool printSatStats)
         statsPrinted = true;
     }
 }
-

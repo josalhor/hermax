@@ -226,6 +226,8 @@ def test_int_set_contains_intvar_indicator_semantics_exhaustive_small_domain():
         s_in = m_in.int_set("s", values=[1, 3, 4])
         x_in = m_in.int("x", lb=0, ub=6)  # 0..5
         b_in = s_in.contains(x_in)
+        for value in s_in.universe:
+            m_in &= s_in.contains(value) if value in {1, 3, 4} else ~s_in.contains(value)
         m_in &= (x_in == xv)
         m_in &= b_in
         assert (m_in.solve().status != "unsat") is truth
@@ -234,6 +236,8 @@ def test_int_set_contains_intvar_indicator_semantics_exhaustive_small_domain():
         s_out = m_out.int_set("s", values=[1, 3, 4])
         x_out = m_out.int("x", lb=0, ub=6)
         b_out = s_out.contains(x_out)
+        for value in s_out.universe:
+            m_out &= s_out.contains(value) if value in {1, 3, 4} else ~s_out.contains(value)
         m_out &= (x_out == xv)
         m_out &= ~b_out
         assert (m_out.solve().status != "unsat") is (not truth)
@@ -243,32 +247,46 @@ def test_int_set_contains_intvar_includes_closed_upper_bound():
     m_true = Model()
     s_true = m_true.int_set("s", values=[2])
     x_true = m_true.int("x", lb=2, ub=2)
+    m_true &= s_true.contains(2)
     m_true &= s_true.contains(x_true)
     assert m_true.solve().status == "sat"
 
     m_false = Model()
     s_false = m_false.int_set("s", values=[2])
     x_false = m_false.int("x", lb=2, ub=2)
+    m_false &= ~s_false.contains(2)
     m_false &= ~s_false.contains(x_false)
-    assert m_false.solve().status == "unsat"
+    assert m_false.solve().status == "sat"
 
 
-def test_int_set_contains_intvar_single_run_reuses_in_range():
+def test_int_set_contains_intvar_single_run_reuses_indicator():
     m = Model()
     s = m.int_set("s", values=list(range(10, 20)))
     x = m.int("x", lb=0, ub=63)
     b = s.contains(x)
-    assert b is x.in_range(10, 19)
     assert s.contains(x) is b
 
 
-def test_int_set_contains_intvar_two_runs_scales_with_runs_not_values():
+def test_int_set_contains_intvar_two_runs_is_cached():
     m = Model()
     s = m.int_set("s", values=list(range(10, 20)) + list(range(40, 50)))
     x = m.int("x", lb=0, ub=63)
+    b = s.contains(x)
+    assert s.contains(x) is b
+
+
+def test_int_set_contains_intvar_uses_no_per_value_conjunction_helpers():
+    m = Model()
+    s = m.int_set("s", values=[0, 1, 2, 3])
+    x = m.int("x", lb=0, ub=3)
     top_before = m._top_id()
+
     _ = s.contains(x)
-    assert (m._top_id() - top_before) <= 5
+
+    # Interior exact-value atoms for x==1 and x==2 are required by the
+    # encoding, plus one result literal. No extra AND literal is necessary
+    # for every possible set member.
+    assert m._top_id() - top_before == 3
 
 
 def test_int_set_contains_intvar_random_matches_python_membership():
@@ -288,6 +306,8 @@ def test_int_set_contains_intvar_random_matches_python_membership():
             s_in = m_in.int_set(f"s_in_{case}", values=universe)
             x_in = m_in.int(f"x_in_{case}", lb=lb, ub=ub)
             b_in = s_in.contains(x_in)
+            for value in s_in.universe:
+                m_in &= s_in.contains(value)
             m_in &= (x_in == xv)
             m_in &= b_in
             assert (m_in.solve().status != "unsat") is truth
@@ -296,9 +316,51 @@ def test_int_set_contains_intvar_random_matches_python_membership():
             s_out = m_out.int_set(f"s_out_{case}", values=universe)
             x_out = m_out.int(f"x_out_{case}", lb=lb, ub=ub)
             b_out = s_out.contains(x_out)
+            for value in s_out.universe:
+                m_out &= s_out.contains(value)
             m_out &= (x_out == xv)
             m_out &= ~b_out
             assert (m_out.solve().status != "unsat") is (not truth)
+
+
+def test_int_set_contains_intvar_respects_selected_membership():
+    """Dynamic membership must use the set value, not only its universe."""
+    for selected in (set(), {1}, {0, 2}):
+        for value in range(3):
+            m = Model()
+            s = m.int_set("s", values=[0, 1, 2])
+            x = m.int("x", lb=0, ub=2)
+            in_set = s.contains(x)
+            for candidate in range(3):
+                m &= s.contains(candidate) if candidate in selected else ~s.contains(candidate)
+            m &= x == value
+            m &= in_set
+            assert m.solve().ok == (value in selected)
+
+
+def test_int_set_contains_intvar_is_sound_when_gated():
+    m = Model()
+    s = m.int_set("s", values=[0, 1])
+    x = m.int("x", lb=0, ub=1)
+    gate = m.bool("gate")
+    m &= s.contains(0)
+    m &= ~s.contains(1)
+    m &= x == 1
+    m &= s.contains(x).only_if(gate)
+
+    m &= gate
+    assert not m.solve().ok
+
+    m2 = Model()
+    s2 = m2.int_set("s", values=[0, 1])
+    x2 = m2.int("x", lb=0, ub=1)
+    gate2 = m2.bool("gate")
+    m2 &= s2.contains(0)
+    m2 &= ~s2.contains(1)
+    m2 &= x2 == 1
+    m2 &= s2.contains(x2).only_if(gate2)
+    m2 &= ~gate2
+    assert m2.solve().ok
 
 
 def test_int_set_algebra_union_intersection_difference_symdiff():
@@ -448,3 +510,36 @@ def test_int_set_vector_is_in_rejects_bad_row_cells_cleanly():
 
     with pytest.raises(ValueError, match="vector length"):
         _ = sv.is_in([({1},)])
+
+
+def test_int_set_vector_empty_table_is_deferred():
+    model = Model()
+    vector = model.int_set_vector("sets", length=1, values=[1, 2])
+    before = (model._next_id, len(model._hard), set(model._registry))
+
+    constraint = vector.is_in([])
+
+    assert (model._next_id, len(model._hard), set(model._registry)) == before
+    model &= constraint
+    assert model.solve().status == "unsat"
+
+
+def test_int_set_card_incremental_soundness_higher_threshold():
+    """Lazy IntSetVar.card() must be sound when constrained on higher threshold bits incrementally."""
+    m = Model()
+    s = m.int_set("s", values=[1, 2, 3])
+    m &= s.contains(1)
+    m &= ~s.contains(2)
+    m &= ~s.contains(3)
+    res1 = m.solve(backend="sat")
+    assert res1.ok
+    assert res1[s] == {1}
+
+    # In step 2, s has exactly 1 element.
+    # Constraining card >= 2 touches threshold bit 1 (not bit 0).
+    # Must be strictly UNSAT.
+    card = s.card()
+    m &= (card >= 2)
+    res2 = m.solve(backend="sat")
+    assert res2.status == "unsat"
+

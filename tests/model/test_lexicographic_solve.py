@@ -6,6 +6,7 @@ import random
 import pytest
 
 from hermax.model import Model
+from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus
 
 
 def _solve_ok(m: Model, **kwargs):
@@ -28,6 +29,57 @@ def _build_two_tier_conflict_model() -> tuple[Model, object]:
     return m, a
 
 
+class _InterruptedFirstTierSolver(IPAMIRSolver):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.calls = 0
+        self.status = SolveStatus.UNKNOWN
+        self.model = None
+        self.cost = None
+
+    def add_clause(self, clause):
+        pass
+
+    def set_soft(self, lit, weight):
+        pass
+
+    def add_soft_unit(self, lit, weight):
+        pass
+
+    def new_var(self):
+        return 1
+
+    def solve(self, assumptions=None, raise_on_abnormal=False, time_limit=None):
+        self.calls += 1
+        if self.calls == 1:
+            self.status = SolveStatus.INTERRUPTED_SAT
+            self.model = [-1]
+            self.cost = 1
+        else:
+            self.status = SolveStatus.OPTIMUM
+            self.model = [-1]
+            self.cost = 0
+        return True
+
+    def get_status(self):
+        return self.status
+
+    def get_model(self):
+        return self.model
+
+    def get_cost(self):
+        return self.cost
+
+    def val(self, lit):
+        return 1 if int(lit) in (self.model or []) else -1
+
+    def signature(self):
+        return "interrupted-first-tier"
+
+    def close(self):
+        pass
+
+
 def test_lex_incremental_honors_tier_priority_over_later_tier_weight():
     m, a = _build_two_tier_conflict_model()
     r = _solve_ok(m, lex_strategy="incremental")
@@ -35,6 +87,20 @@ def test_lex_incremental_honors_tier_priority_over_later_tier_weight():
     assert r[a] is True
     assert r.tier_costs == [0, 100]
     assert r.cost == 100
+
+
+def test_lex_incremental_does_not_advance_after_interrupted_tier():
+    m = Model()
+    a = m.bool("a")
+    m.tier_obj[0, 1] += a
+    m.tier_obj[1, 1] += ~a
+    solver = _InterruptedFirstTierSolver()
+
+    result = m.solve(solver=solver, lex_strategy="incremental")
+
+    assert result.status == "interrupted_sat"
+    assert result.tier_costs is None
+    assert solver.calls == 1
 
 
 def test_lex_stratified_honors_tier_priority_over_later_tier_weight():

@@ -114,6 +114,21 @@ def test_obj_clear_resets_negative_offset_and_replacement_starts_clean():
     assert solved[b] is False
 
 
+@pytest.mark.parametrize("incremental", [True, False])
+def test_constant_negative_objective_is_reported_on_sat_path(incremental):
+    m = Model()
+    x = m.bool("x")
+    m &= x
+    m.obj = -3
+
+    result = m.solve(incremental=incremental)
+
+    assert result.ok
+    assert result.status == "optimum"
+    assert result.cost == -3
+    assert result[x] is True
+
+
 def test_obj_iadd_still_additive():
     m = Model()
     a = m.bool("a")
@@ -218,6 +233,33 @@ def test_obj_set_weight_parameter():
     a = m.bool("a")
     m.obj.set(a, weight=5)
     assert _soft_weights(m).count(5) >= 1
+
+
+def test_obj_iadd_literal_uses_linear_objective_semantics():
+    m = Model()
+    b = m.bool("b")
+
+    m.obj += ~b
+
+    result = m.solve(incremental=False)
+
+    # Minimizing ~b selects b=True. Treating ~b as a soft clause would select
+    # b=False instead, which is a different objective.
+    assert result.ok
+    assert result[b] is True
+    assert result.cost == 0
+
+
+def test_obj_iadd_intvar_supports_negative_domain_offsets():
+    m = Model()
+    x = m.int("x", lb=-2, ub=2)
+
+    m.obj += x
+    result = m.solve(incremental=False)
+
+    assert result.ok
+    assert result[x] == -2
+    assert result.cost == -2
 
 
 def test_obj_set_invalid_weight_rejected():

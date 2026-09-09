@@ -2,10 +2,10 @@
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 #include <optional>
-#include <optional>
 #include <functional>
 #include <cmath>
 #include "../uwrmaxsat/ipamir.h"
+#include "hermax_ctrlc_guard.h"
 
 namespace py = pybind11;
 
@@ -26,6 +26,7 @@ public:
     void* solver;
     std::function<int()> terminate_callback;
     int num_vars;
+    hermax_ctrlc_guard ctrlc_guard{};
 
     UWrMaxSAT() : solver(ipamir_init()), num_vars(0) {
         if (!solver) {
@@ -34,20 +35,19 @@ public:
     }
 
     ~UWrMaxSAT() {
-        if (solver) {
-            ipamir_release(solver);
-            solver = nullptr;
-        }
+        release_solver();
     }
 
     UWrMaxSAT(const UWrMaxSAT&) = delete;
     UWrMaxSAT& operator=(const UWrMaxSAT&) = delete;
 
     int newVar() {
+        ensure_solver();
         return ++num_vars;
     }
 
     void addClause(const std::vector<int>& clause, std::optional<long long> weight_opt) {
+        ensure_solver();
         for (int lit : clause) {
             int var = std::abs(lit);
             if (var > num_vars) {
@@ -77,20 +77,44 @@ public:
     }
 
     void assume(const std::vector<int>& assumptions) {
+        ensure_solver();
         for (int lit : assumptions) {
             ipamir_assume(solver, lit);
         }
     }
 
     int solve() {
+        ensure_solver();
+
+        // UWrMaxSAT itself is not safely resumable after an asynchronous
+        // escape.  The guard returns here, we restore the Python signal
+        // disposition, release the native state, then surface KeyboardInterrupt.
+        const int guard_result = hermax_ctrlc_guard_enter(&ctrlc_guard, nullptr);
+        if (guard_result == HERMAX_CTRLC_ENTERED) {
+            const int result = ipamir_solve(solver);
+            hermax_ctrlc_guard_leave(&ctrlc_guard);
+            return result;
+        }
+        if (guard_result == HERMAX_CTRLC_INTERRUPTED) {
+            hermax_ctrlc_guard_leave(&ctrlc_guard);
+            release_solver();
+            PyErr_SetNone(PyExc_KeyboardInterrupt);
+            throw py::error_already_set();
+        }
+
+        // Ctrl-C support is intentionally unavailable rather than partially
+        // installed on unsupported platforms or while another native guard is
+        // active in this extension.
         return ipamir_solve(solver);
     }
 
     uint64_t getCost() {
+        ensure_solver();
         return ipamir_val_obj(solver);
     }
 
     py::object getValue(int lit) {
+        ensure_solver();
         int val = ipamir_val_lit(solver, lit);
         if (val == lit) {
             return py::cast(true);
@@ -102,6 +126,7 @@ public:
     }
 
     void set_terminate(std::optional<std::function<int()>> callback) {
+        ensure_solver();
         if (callback) {
             terminate_callback = callback.value();
             ipamir_set_terminate(solver, &terminate_callback, terminate_callback_wrapper);
@@ -112,6 +137,22 @@ public:
 
     const char* signature() const {
         return ipamir_signature();
+    }
+
+private:
+    void ensure_solver() const {
+        if (!solver) {
+            throw std::runtime_error(
+                "UWrMaxSAT native state was released after Ctrl-C interruption."
+            );
+        }
+    }
+
+    void release_solver() noexcept {
+        if (solver) {
+            ipamir_release(solver);
+            solver = nullptr;
+        }
     }
 };
 

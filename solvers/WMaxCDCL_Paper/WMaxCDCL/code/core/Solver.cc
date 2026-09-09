@@ -4656,18 +4656,21 @@ lbool Solver::search(int& nof_conflicts)
                 if (LOOKAHEAD > savedLOOKAHEAD)
                     succRate = (float) (nbLKsuccess-savednbLKsuccess)/(LOOKAHEAD-savedLOOKAHEAD);
 
-                printf("c UB=%llu succs, sol=%llu, confls=%llu, hconfls=%llu, core %d, tier2 %d, local %d,  %d soft cls unsat (%d at L0), %d fixed vars at L0, softCnfl %d, nbFlyRd %d, nbFixedLH %llu\n",
-                       UB, countedWeight, conflicts, conflicts-softConflicts, learnts_core.size(), learnts_tier2.size(), learnts_local.size(),
-                       falseLits.size(), nbFalses, nbFixeds, pureSoftConfl, nbFlyReduced, nbFixedByLH);
+                if (verbosity >= 1)
+                    printf("c UB=%llu succs, sol=%llu, confls=%llu, hconfls=%llu, core %d, tier2 %d, local %d,  %d soft cls unsat (%d at L0), %d fixed vars at L0, softCnfl %d, nbFlyRd %d, nbFixedLH %llu\n",
+                           UB, countedWeight, conflicts, conflicts-softConflicts, learnts_core.size(), learnts_tier2.size(), learnts_local.size(),
+                           falseLits.size(), nbFalses, nbFixeds, pureSoftConfl, nbFlyReduced, nbFixedByLH);
 
                 // printf("c nbHardens %d (fixed %llu), shorten: %llu, prunedLB %4.2f, dev %4.2f, succRate %4.2f, nbSucc %llu, lk: %llu, shorten: %llu, quasiC: %llu (fixed: %llu)\n\n",
                 //        nbHardens, fixedByHardens, nbSavedLits, meanLB, dev, succRate, nbLKsuccess-savednbLKsuccess, LOOKAHEAD-savedLOOKAHEAD, nbSavedLits, quasiSoftConflicts, fixedByQuasiConfl);
                 // totalPrunedLB=0; totalPrunedLB2=0; savedLOOKAHEAD = LOOKAHEAD; savednbLKsuccess=nbLKsuccess;
-		printf("c nbHardens %d (fixed %llu), shorten: %llu, prunedLB %4.2f, dev %4.2f, succRate %4.2f, nbSucc %llu, lk: %llu\n\n",
-                       nbHardens, fixedByHardens, nbSavedLits, meanLB, dev, succRate, nbLKsuccess-savednbLKsuccess, LOOKAHEAD-savedLOOKAHEAD);
-		printf("c shorten: %llu, quasiC: %llu (fixed: %llu), myderivedCost %lld, fsblEq %d, nbEqUse %d\n\n",
-		       nbSavedLits, quasiSoftConflicts, fixedByQuasiConfl, myDerivedCost,
-		       feasibleNbEq, nbEqUse);
+                if (verbosity >= 1) {
+		    printf("c nbHardens %d (fixed %llu), shorten: %llu, prunedLB %4.2f, dev %4.2f, succRate %4.2f, nbSucc %llu, lk: %llu\n\n",
+                           nbHardens, fixedByHardens, nbSavedLits, meanLB, dev, succRate, nbLKsuccess-savednbLKsuccess, LOOKAHEAD-savedLOOKAHEAD);
+		    printf("c shorten: %llu, quasiC: %llu (fixed: %llu), myderivedCost %lld, fsblEq %d, nbEqUse %d\n\n",
+		           nbSavedLits, quasiSoftConflicts, fixedByQuasiConfl, myDerivedCost,
+		           feasibleNbEq, nbEqUse);
+                }
                 totalPrunedLB=0; totalPrunedLB2=0; savedLOOKAHEAD = LOOKAHEAD; savednbLKsuccess=nbLKsuccess;
 
 		extendEquivLitValue(0);
@@ -4677,7 +4680,8 @@ lbool Solver::search(int& nof_conflicts)
                 WithNewUB = true;
                 //  printf("c UB=%llu at conflicts=%llu and hard conflicts=%llu\n",
                 //     UB, conflicts, conflicts-softConflicts);
-                printf("o %lld\n",solutionCost+UB+fixedCostBySearch+derivedCost);
+                if (verbosity >= 1)
+                    printf("o %lld\n",solutionCost+UB+fixedCostBySearch+derivedCost);
                 model.growTo(nbOrignalVars,l_Undef);
                 for (int i = 0; i < nbOrignalVars; i++)
                     model[i] = value(i);
@@ -6228,8 +6232,9 @@ void Solver::addHardClausesForSoftClauses() {
         }
     }
     unitSoftLits.shrink(i-j);
-    printf("c nb soft clauses and lits: %d, %d, of which %d unit, %d nonUnit and %llu empty\n",
-           softClauses.size(), nbUnitSoft+nbNonUnitSoft, nbUnitSoft, nbNonUnitSoft, solutionCost);
+    if (verbosity >= 1)
+        printf("c nb soft clauses and lits: %d, %d, of which %d unit, %d nonUnit and %llu empty\n",
+               softClauses.size(), nbUnitSoft+nbNonUnitSoft, nbUnitSoft, nbNonUnitSoft, solutionCost);
     softClauses.shrink(softClauses.size()-i2);
     assert(nSoftLits==allSoftLits.size());
     weights.copyTo(weightsBckp);
@@ -6769,7 +6774,8 @@ void Solver::partitionAMO() {
 		seen[vv]=0;
 	}
 
-	printf("c amos %d, lits %d\n", amos.size(), candidateLits.size());
+	if (verbosity >= 1)
+	    printf("c amos %d, lits %d\n", amos.size(), candidateLits.size());
 
 }
 
@@ -6840,8 +6846,9 @@ bool Solver::findConflictSoftLits() {
             cancelUntilTrailRecord();
         }
     }
-    printf("c conflLits %d, conflLits2 %d, nbFailedLits %d, fixedVarsBypreproc %d, totalFixedVars %d\n",
-           nbConflLits, nbConfLits2, nbFailedLits, trail.size()-initTrail, trail.size());
+    if (verbosity >= 1)
+        printf("c conflLits %d, conflLits2 %d, nbFailedLits %d, fixedVarsBypreproc %d, totalFixedVars %d\n",
+               nbConflLits, nbConfLits2, nbFailedLits, trail.size()-initTrail, trail.size());
 
     if (nbConflLits > 0)
         partition2();
@@ -6889,7 +6896,8 @@ bool Solver::findAMOs() {
 		}
 		trueLits.clear();
 	}
-	printf("c mutexes %d, nbFailedLits %d, \n",nbConflLits, nbFailedLits);
+	if (verbosity >= 1)
+	    printf("c mutexes %d, nbFailedLits %d, \n",nbConflLits, nbFailedLits);
 
 	partitionAMO();
 
@@ -7008,8 +7016,9 @@ bool Solver::findImplications() {
             }
         }
     }
-    printf("c Fixed %d and added %d implication bin clauses for %d lits out of %d\n",
-           nfixed, nadded, nused, nonUnitSoftLits.size());
+    if (verbosity >= 1)
+        printf("c Fixed %d and added %d implication bin clauses for %d lits out of %d\n",
+               nfixed, nadded, nused, nonUnitSoftLits.size());
     nonUnitSoftLits.shrink(i-ikept);
     return true;
 }
@@ -7076,8 +7085,9 @@ void Solver::trimSoftLiterals(){
 	fixedCostBySearch=fixedCost;
     relaxedCost = 0;
 
-	printf("c fixedCost %llu, satCost %llu, totalFixedVars %d, objForSearch: %llu\n\n",
-		   fixedCost, satCost, trail.size(), objForSearch);
+	if (verbosity >= 1)
+	    printf("c fixedCost %llu, satCost %llu, totalFixedVars %d, objForSearch: %llu\n\n",
+		       fixedCost, satCost, trail.size(), objForSearch);
 
 	staticNbVars = nVars();
 	//At this point, all variables have been created and renamed.
@@ -8245,7 +8255,8 @@ lbool Solver::solve_()
 
     if (initLB >= solutionCost+fixedCostBySearch+derivedCost+relaxedCost) {
         infeasibleUB= initLB  -(solutionCost+fixedCostBySearch+derivedCost + relaxedCost);
-        printf("c provided LB: %llu\n", infeasibleUB);
+        if (verbosity >= 1)
+            printf("c provided LB: %llu\n", infeasibleUB);
     }
 
 	//infeasibleUB = lookaheadComputeInitLB();
@@ -8268,17 +8279,17 @@ lbool Solver::solve_()
             return l_False;
         }
     }
-    else
+    else if (verbosity >= 1)
         printf("c no UB provided, search from scratch...\n");
 
 #ifdef FLAG_UPDOWN
 	UB=providedUB;
-	printf("c Starting from TOP\n");
+	if (verbosity >= 1) printf("c Starting from TOP\n");
 #else
     UB=inf+1;
-	printf("c Starting from BOTTOM\n");
+    if (verbosity >= 1) printf("c Starting from BOTTOM\n");
 #endif
-    printf("c start search at %llu\n",UB);
+    if (verbosity >= 1) printf("c start search at %llu\n",UB);
 	int nbVSIDSphase=0, nbLRBphase=0;
     do {
         status            = l_Undef;
@@ -8291,8 +8302,9 @@ lbool Solver::solve_()
         int init = 10000;
         while (status == l_Undef && init > 0 && !feasible /* && !feasible && !switch_mode && withinBudget()*/)
             status = search(init);
-        printf("c ends of initiationization by VSIDS at %llu conflicts with init %d\n\n",
-               conflicts, init);
+        if (verbosity >= 1)
+            printf("c ends of initiationization by VSIDS at %llu conflicts with init %d\n\n",
+                   conflicts, init);
         //  if (!switch_mode)
         VSIDS = false;
 
@@ -8353,11 +8365,13 @@ lbool Solver::solve_()
         if (LOOKAHEAD > savedLOOKAHEAD)
             succRate = (float) (nbLKsuccess-savednbLKsuccess)/(LOOKAHEAD-savedLOOKAHEAD);
         if (status == l_False) {
-            printf("c UB=%llu fails, cnfls=%llu, hcnfls=%llu, lacnfls=%llu, lascnfls=%llu, core %d, tier2 %d, local %d, quasiC: %llu (fixed: %llu)\n",
-                   UB, conflicts, conflicts-softConflicts, la_conflicts, la_softConflicts, learnts_core.size(), learnts_tier2.size(), learnts_local.size(), quasiSoftConflicts, fixedByQuasiConfl);
-            printf("c prunedLB %4.2f, dev %4.2f, succRate %4.2f, nbSucc %llu, nbHardens %d (fixed %llu), lk: %llu, shorten: %llu, pureSo %d, nbFlyRd %d, nbFixedLH %llu\n",
-                   meanLB, dev, succRate,
-                   nbLKsuccess-savednbLKsuccess, nbHardens, fixedByHardens, LOOKAHEAD-savedLOOKAHEAD, nbSavedLits, pureSoftConfl, nbFlyReduced, nbFixedByLH);
+            if (verbosity >= 1) {
+                printf("c UB=%llu fails, cnfls=%llu, hcnfls=%llu, lacnfls=%llu, lascnfls=%llu, core %d, tier2 %d, local %d, quasiC: %llu (fixed: %llu)\n",
+                       UB, conflicts, conflicts-softConflicts, la_conflicts, la_softConflicts, learnts_core.size(), learnts_tier2.size(), learnts_local.size(), quasiSoftConflicts, fixedByQuasiConfl);
+                printf("c prunedLB %4.2f, dev %4.2f, succRate %4.2f, nbSucc %llu, nbHardens %d (fixed %llu), lk: %llu, shorten: %llu, pureSo %d, nbFlyRd %d, nbFixedLH %llu\n",
+                       meanLB, dev, succRate,
+                       nbLKsuccess-savednbLKsuccess, nbHardens, fixedByHardens, LOOKAHEAD-savedLOOKAHEAD, nbSavedLits, pureSoftConfl, nbFlyReduced, nbFixedByLH);
+            }
             if (infeasibleUB < UB)
                 infeasibleUB = UB;
             if (feasible) {
@@ -8390,9 +8404,10 @@ lbool Solver::solve_()
         else if (status == l_True) {
             int nbFixeds = trail_lim.size() == 0 ? 0 : trail_lim[0];
             int nbFalses = falseLits_lim.size() == 0 ? 0 : falseLits_lim[0];
-            printf("c UB=%llu succ, confls=%llu , hconfls=%llu,  laconfls=%llu, lasconfls=%llu with %d soft clauses unsat (%d at level 0) and %d fixed vars at level 0,  prunedLB %4.2f, dev %4.2f, succRate %4.2f, nbSucc %llu, shortened : %llu\n",
-                   UB, conflicts, conflicts-softConflicts, la_conflicts, la_softConflicts, falseLits.size(), nbFalses, nbFixeds,
-                   meanLB, dev, succRate, nbLKsuccess, nbSavedLits);
+            if (verbosity >= 1)
+                printf("c UB=%llu succ, confls=%llu , hconfls=%llu,  laconfls=%llu, lasconfls=%llu with %d soft clauses unsat (%d at level 0) and %d fixed vars at level 0,  prunedLB %4.2f, dev %4.2f, succRate %4.2f, nbSucc %llu, shortened : %llu\n",
+                       UB, conflicts, conflicts-softConflicts, la_conflicts, la_softConflicts, falseLits.size(), nbFalses, nbFixeds,
+                       meanLB, dev, succRate, nbLKsuccess, nbSavedLits);
             //assert(UB > falseLits.size());
             checkSolution();
             feasible = true;
@@ -8428,7 +8443,8 @@ lbool Solver::solve_()
             rebuildOrderHeap();
             //simplify();
         }
-        else printf("c error UB %llu, inf %llu, sup %llu\n", UB, inf, sup);
+        else if (verbosity >= 1)
+            printf("c error UB %llu, inf %llu, sup %llu\n", UB, inf, sup);
     } while (UB > inf);
 
     if (verbosity >= 1)
@@ -8444,16 +8460,18 @@ lbool Solver::solve_()
     //     for (int i = 0; i < nVars(); i++) model[i] = value(i);
     // }else if (status == l_False && conflict.size() == 0)
     //     ok = false;
-    if (sup == objForSearch+1)
-        printf("c no feasible solution, hardConflicts: %llu\n", conflicts - softConflicts);
-    else
-        printf("c initCost: %llu, fixedBySearch: %llu, optimal: %llu, maxsat: %llu, hardConflicts: %llu\n",
-               solutionCost, fixedCostBySearch,
-               solutionCost+sup+fixedCostBySearch+derivedCost + relaxedCost,
-               objForSearch-sup + satCost, conflicts - softConflicts);
-    printf("c nbLK: %llu, nbSuccLK: %llu(%4.2f%%), nbLKup: %llu(%4.2f%%), hardens %u (fixed %llu), dynVars %d, shorten: %llu\n",
-           LOOKAHEAD, nbLKsuccess, 100.0*nbLKsuccess/LOOKAHEAD, lk_propagations,
-           100.0*lk_propagations/propagations, nbHardens, fixedByHardens, nVars()-staticNbVars, nbSavedLits);
+    if (verbosity >= 1) {
+        if (sup == objForSearch+1)
+            printf("c no feasible solution, hardConflicts: %llu\n", conflicts - softConflicts);
+        else
+            printf("c initCost: %llu, fixedBySearch: %llu, optimal: %llu, maxsat: %llu, hardConflicts: %llu\n",
+                   solutionCost, fixedCostBySearch,
+                   solutionCost+sup+fixedCostBySearch+derivedCost + relaxedCost,
+                   objForSearch-sup + satCost, conflicts - softConflicts);
+        printf("c nbLK: %llu, nbSuccLK: %llu(%4.2f%%), nbLKup: %llu(%4.2f%%), hardens %u (fixed %llu), dynVars %d, shorten: %llu\n",
+               LOOKAHEAD, nbLKsuccess, 100.0*nbLKsuccess/LOOKAHEAD, lk_propagations,
+               100.0*lk_propagations/propagations, nbHardens, fixedByHardens, nVars()-staticNbVars, nbSavedLits);
+    }
 
     // printf("v ");
     // for (int i = 0; i < nVars(); i++)

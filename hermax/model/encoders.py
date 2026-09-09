@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
 from hermax.encoder.pbamo import PBAMOEnc
+from hermax.internal.pb_normalize import normalize_signed_terms
 from hermax.utils import batcher_odd_even_unary_add_network
 
 from typing import TYPE_CHECKING, Any
@@ -148,31 +149,15 @@ class _EncoderDispatch:
 
     @staticmethod
     def _normalize_pb(lhs: PBExpr, rhs: PBExpr) -> tuple[list[tuple[int, Literal]], int]:
-        # Build lhs - rhs and normalize all coefficients to be positive by
-        # flipping literals and shifting the constant.
+        """Normalize a model PB difference through the shared PB core."""
         diff = lhs - rhs
-        # A flip can turn -w*x into w*~x, colliding with an existing ~x term.
-        # Coalesce here because structured PB backends require unique literals.
-        coefficients: dict[tuple[int, bool], int] = {}
-        literals: dict[tuple[int, bool], Literal] = {}
-        order: list[tuple[int, bool]] = []
-        const = diff.constant
-        for t in diff.terms:
-            c = int(t.coefficient)
-            lit = t.literal
-            if c == 0:
-                continue
-            if c < 0:
-                lit = ~lit
-                c = -c
-                const -= c  # -w*x == w*~x - w
-            key = (lit.id, lit.polarity)
-            if key not in coefficients:
-                coefficients[key] = 0
-                literals[key] = lit
-                order.append(key)
-            coefficients[key] += c
-        return [(coefficients[key], literals[key]) for key in order if coefficients[key] != 0], const
+        normalized = normalize_signed_terms(
+            ((term.coefficient, term.literal) for term in diff.terms),
+            diff.constant,
+            flip=lambda literal: ~literal,
+            key=lambda literal: (literal.id, literal.polarity),
+        )
+        return [(weight, literal) for weight, literal in normalized.terms], normalized.constant
 
     @staticmethod
     def _bound_from_zero_compare(op: str, const: int) -> tuple[str, int]:
@@ -1070,7 +1055,12 @@ class _EncoderDispatch:
                 li = lits[i]
                 for j in range(i + 1, len(lits)):
                     lj = lits[j]
-                    key = (li.id, lj.id) if li.id < lj.id else (lj.id, li.id)
+                    # AMO groups are stored as signed DIMACS literals.  Keep
+                    # that polarity here: an AMO over (a, b) says nothing
+                    # about the distinct pair (a, ~b).
+                    li_dim = model._lit_to_dimacs(li)
+                    lj_dim = model._lit_to_dimacs(lj)
+                    key = (li_dim, lj_dim) if li_dim < lj_dim else (lj_dim, li_dim)
                     if key in redundant_pairs:
                         continue
                     if isinstance(consequent, bool):
@@ -1712,7 +1702,7 @@ class _EncoderDispatch:
         nsum = len(sum_ge) - 1
         delta_count = c_target - x.lb - y.lb + z.lb
 
-        for r in range(1, nsum + 1):
+        for r in range(0, nsum + 1):
             sum_ge_r = sum_ge[r]
             z_count_ge = r - delta_count
             if z_count_ge <= 0:

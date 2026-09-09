@@ -90,6 +90,23 @@ def test_numpy_like_matrix_indexing_returns_cells_vectors_and_submatrix_views():
     assert em[1][0] is em[1, 0]
 
 
+def test_bool_and_enum_submatrix_slices_are_typed_views():
+    """Two-dimensional slices must work for every supported matrix type."""
+    m = Model()
+    bm = m.bool_matrix("bm", rows=2, cols=2)
+    em = m.enum_matrix("em", rows=2, cols=2, choices=["r", "g"], nullable=False)
+
+    bool_sub = bm[:, :]
+    enum_sub = em[:, :]
+
+    m &= bool_sub.flatten().exactly_one()
+    m &= enum_sub.flatten().is_in([("r", "g", "g", "r")])
+
+    r = _solve_ok(m)
+    assert r[bool_sub.flatten()].count(True) == 1
+    assert r[enum_sub.flatten()] == ["r", "g", "g", "r"]
+
+
 def test_matrix_row_and_col_return_typed_vectors_with_correct_lengths():
     m = Model()
     mat = m.int_matrix("m", rows=3, cols=2, lb=0, ub=5)

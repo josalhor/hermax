@@ -383,3 +383,11 @@ def test_pbexpr_scalar_multiplication_rejects_nonlinear_rhs():
     b = m.bool("b")
     with pytest.raises(TypeError):
         _ = (a + b) * (a + 1)  # type: ignore[operator]
+
+
+@pytest.mark.parametrize("constant", [1.9, -1.9, True])
+def test_pbexpr_constructor_rejects_non_integer_constants(constant):
+    """A direct PBExpr constant must not change meaning through coercion."""
+    m = Model()
+    with pytest.raises((TypeError, ValueError)):
+        PBExpr(m, constant=constant)

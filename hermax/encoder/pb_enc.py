@@ -258,6 +258,10 @@ class PBEnc(object):
             :rtype: :class:`pysat.formula.CNFPlus`
         """
 
+        if isinstance(bound, bool) or not isinstance(bound, int):
+            raise TypeError("PB bound must be an integer.")
+        if isinstance(encoding, bool) or not isinstance(encoding, int):
+            raise TypeError("PB encoding must be an integer.")
         if encoding < 0 or encoding > 7:
             raise(NoSuchEncodingError(encoding))
 
@@ -268,36 +272,69 @@ class PBEnc(object):
         assert not top_id or not vpool, \
                 'Use either a top id or a pool of variables but not both.'
 
+        lits = list(lits)
+        weights = None if weights is None else list(weights)
+        conditionals = [] if conditionals is None else list(conditionals)
+
+        if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in conditionals):
+            raise ValueError("Conditional literals must be non-zero integers.")
+        if top_id is not None and (isinstance(top_id, bool) or not isinstance(top_id, int) or top_id < 0):
+            raise ValueError("top_id must be a non-negative integer or None.")
+        if encoding == EncType.native and conditionals:
+            raise NotImplementedError("Native PB constraints do not support conditionals.")
+
         # we are going to return this formula
         ret = CNFPlus()
 
-        # if the list of literals is empty, return empty formula
+        # Handle the empty sum explicitly. An empty formula is correct only
+        # when the comparison holds for zero; otherwise emit a contradiction.
         if not lits:
+            if comparator == '<':
+                satisfied = bound >= 0
+            elif comparator == '>':
+                satisfied = bound <= 0
+            else:  # comparator == '='
+                satisfied = bound == 0
+            ret.nv = max(
+                [abs(int(top_id)) if top_id is not None else 0]
+                + [abs(lit) for lit in conditionals]
+            )
+            if not satisfied:
+                if conditionals:
+                    ret.clauses.append([-lit for lit in conditionals])
+                else:
+                    ret.clauses.append([])
             return ret
 
         # preparing weighted literals
-        if weights:
-            assert len(lits) == len(weights), 'Same number of literals and weights is expected.'
+        if weights is not None:
+            if len(lits) != len(weights):
+                raise ValueError('Same number of literals and weights is expected.')
             wlits = [(l, w) for l, w in zip(lits, weights)]
         else:
             if all(map(lambda lw: (type(lw) in (list, tuple)) and len(lw) == 2, lits)):
                 # literals are already weighted
-                lits, weight = zip(*lits)  # unweighted literals for getting top_id
+                lits, weights = map(list, zip(*lits))  # unweighted literals for getting top_id
+                wlits = list(zip(lits, weights))
             elif all(map(lambda l: type(l) is int, lits)):
                 # no weights are provided => all weights are units
                 wlits = [(l, 1) for l in lits]
                 weights = [1 for l in lits]
             else:
-                assert 0, 'Incorrect literals given.'
+                raise TypeError('Incorrect literals given.')
+
+        if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in lits):
+            raise ValueError("PB literals must be non-zero integers.")
+        assert weights is not None
+        if any(isinstance(weight, bool) or not isinstance(weight, int) or weight < 0 for weight in weights):
+            raise ValueError("PB weights must be non-negative integers.")
 
         # obtaining the top id from the variable pool
         if vpool:
             top_id = vpool.top
 
         # choosing the maximum id among the current top and the list of literals
-        if conditionals is None:
-            conditionals = []
-        top_id = max(map(lambda x: abs(x), conditionals + lits + [top_id if top_id != None else 0]))
+        top_id = max(map(abs, conditionals + lits + [top_id if top_id is not None else 0]))
 
         # native representation
         if encoding == 6:
@@ -328,7 +365,7 @@ class PBEnc(object):
         # updating vpool if necessary
         if vpool:
             if vpool._occupied and vpool.top <= vpool._occupied[0][0] <= ret.nv:
-                cls._update_vids(ret, vpool, lits)
+                cls._update_vids(ret, lits, vpool)
             else:
                 vpool.top = ret.nv - 1
                 vpool._next()

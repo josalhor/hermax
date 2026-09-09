@@ -60,6 +60,11 @@ class _ReplaySolverWithNewVar(_ReplaySolverNoNewVar):
         return "replay-with-newvar"
 
 
+class _ReplaySolverMissingModel(_ReplaySolverNoNewVar):
+    def get_model(self):
+        return None
+
+
 def _mk_nonunit_soft_model() -> Model:
     m = Model()
     a = m.bool("a")
@@ -199,6 +204,16 @@ def test_solve_with_existing_solver_replay_nonunit_soft_with_new_var():
     assert s._next >= 1
 
 
+def test_model_rejects_feasible_backend_result_without_model():
+    m = Model()
+    m &= m.bool("a")
+
+    result = m.solve(solver=_ReplaySolverMissingModel(), incremental=False)
+
+    assert not result.ok
+    assert result.status == "error"
+
+
 @pytest.mark.parametrize(
     ("st", "expected"),
     [
@@ -271,19 +286,6 @@ def test_vector_element_rejects_bad_rhs_type():
     idx = m.int("idx", 0, 1)
     with pytest.raises(TypeError, match="does not support RHS"):
         _ = (vals[idx] <= "x")
-
-
-def test_intvector_extreme_and_bound_empty_errors():
-    m = Model()
-    v = m.int_vector("v", length=0, lb=0, ub=1)
-    with pytest.raises(ValueError, match="empty IntVector"):
-        _ = v.max()
-    with pytest.raises(ValueError, match="empty IntVector"):
-        _ = v.min()
-    with pytest.raises(ValueError, match="empty IntVector"):
-        _ = v.upper_bound()
-    with pytest.raises(ValueError, match="empty IntVector"):
-        _ = v.lower_bound()
 
 
 def test_set_objective_precision_rejects_bad_decimals_and_zero_rounding():

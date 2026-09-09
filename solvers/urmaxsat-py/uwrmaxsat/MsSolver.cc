@@ -577,7 +577,9 @@ void MsSolver::maxsat_solve(solve_Command cmd)
         sat_solver.toDimacs(opt_cnf),
         exit(0);
 
+#ifndef HERMAX_EMBEDDED
     signal(SIGINT, SIGINT_interrupt);
+#endif
 #ifdef SIGXCPU
     signal(SIGXCPU,SIGINT_interrupt);
 #endif
@@ -779,7 +781,9 @@ void MsSolver::maxsat_solve(solve_Command cmd)
                 return;
             }
         }
+#ifndef HERMAX_EMBEDDED
         signal(SIGINT, SIGINT_interrupt);
+#endif
         signal(SIGALRM, SIGINT_interrupt);
         signal(SIGTERM, SIGTERM_handler);
 #ifdef SIGXCPU
@@ -1552,4 +1556,3 @@ void MsSolver::preprocess_soft_cls(Minisat::vec<Lit>& assump_ps, vec<Int>& assum
     if (opt_verbosity >= 2 && am1_cnt > 0)
         reportf("Found %d AtMostOne cores of avg size: %.2f\n", am1_cnt, (double)am1_len_sum/am1_cnt);
 }
-

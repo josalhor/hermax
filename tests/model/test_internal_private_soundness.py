@@ -6,6 +6,7 @@ import random
 import pytest
 
 import hermax.model as hm
+import hermax.model.encoders as model_encoders
 from hermax.model.encoders import _EncoderDispatch
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus
 from hermax.model import Clause, Model, Term
@@ -48,6 +49,23 @@ def test_private_normalize_pb_preserves_numeric_value_randomized():
             raw = _eval_pbexpr(lhs - rhs, asg)
             norm = int(const) + sum(int(w) * _lit_value(l, asg) for w, l in pairs)
             assert raw == norm
+
+
+def test_private_normalize_pb_delegates_to_shared_core(monkeypatch):
+    m = Model()
+    x = m.bool("x")
+    calls = []
+
+    def recording_normalizer(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    original = model_encoders.normalize_signed_terms
+    monkeypatch.setattr(model_encoders, "normalize_signed_terms", recording_normalizer)
+
+    _EncoderDispatch._normalize_pb((-2 * x) + 1, 0 * x)
+
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("op,const,expected", [

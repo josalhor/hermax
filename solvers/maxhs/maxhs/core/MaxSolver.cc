@@ -1751,22 +1751,26 @@ void MaxSolver::unsatFound() {
 }
 
 void MaxSolver::optFound(const std::string& reason) {
-  cout << reason << "\n";
+  if (params.verbosity > 0) cout << reason << "\n";
   Weight solCost = UB() + theWcnf->baseCost();
-  cout << "o " << wt_fmt(solCost) << "\n";
-  cout << "s OPTIMUM FOUND\n";
+  if (params.verbosity > 0) {
+    cout << "o " << wt_fmt(solCost) << "\n";
+    cout << "s OPTIMUM FOUND\n";
+  }
   solved = true;
   printSolution(UBmodel);
   int nfalseSofts;
   Weight model_cost = theWcnf->checkModelFinal(UBmodel, nfalseSofts);
-  if (fabs(model_cost - solCost) > absGap)
-    cout << "c ERROR incorrect model reported\n"
-         << "c model cost = " << wt_fmt(model_cost)
-         << " computed cost = " << wt_fmt(solCost) << "(UB = " << wt_fmt(UB())
-         << " basecost = " << wt_fmt(theWcnf->baseCost())
-         << ") difference = " << wt_fmt(model_cost - solCost) << std::endl;
-  else
-    cout << "c Solved: Number of falsified softs = " << nfalseSofts << "\n";
+  if (params.verbosity > 0) {
+    if (fabs(model_cost - solCost) > absGap)
+      cout << "c ERROR incorrect model reported\n"
+           << "c model cost = " << wt_fmt(model_cost)
+           << " computed cost = " << wt_fmt(solCost) << "(UB = " << wt_fmt(UB())
+           << " basecost = " << wt_fmt(theWcnf->baseCost())
+           << ") difference = " << wt_fmt(model_cost - solCost) << std::endl;
+    else
+      cout << "c Solved: Number of falsified softs = " << nfalseSofts << "\n";
+  }
 }
 
 void MaxSolver::checkModel(const std::string& location) {

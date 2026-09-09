@@ -66,8 +66,9 @@ Cplex::Cplex(Bvars& b, SumManager* s, vector<lbool>& ubmodelsofts,
     cout << "c WARNING. failure to turn on CPLEX screen indicator, error "
          << status << "\n";
 
-  cout << "c Using IBM CPLEX version " << CPXXversion(env)
-       << " under IBM's Academic Initiative licencing program\n";
+  if (params.verbosity > 0)
+    cout << "c Using IBM CPLEX version " << CPXXversion(env)
+         << " under IBM's Academic Initiative licencing program\n";
 
   if (!(mip = CPXXcreateprob(env, &status, "cplex_prob")))
     processError(status, true, "Could not create CPLEX problem");

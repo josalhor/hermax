@@ -17,10 +17,20 @@ class UWrMaxSATSolver(NativeIncrementalSolverBase):
     """
     def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
         self.solver = _urmaxsat.UWrMaxSAT()
+        self._signature = str(self.solver.signature())
+        self._interrupted_released = False
         self._last_solve_result: Optional[int] = None
         # Track softs so we can compute cost from the exposed model
         self._anon_soft_by_lit: dict[int, int] = {}   # literal -> weight (last-wins)
         super().__init__(formula=formula, *args, **kwargs)
+
+    def _require_open(self) -> None:
+        if self._interrupted_released:
+            raise RuntimeError(
+                "UWrMaxSAT cannot be used after Ctrl-C interrupted a solve; "
+                "its native state was released."
+            )
+        super()._require_open()
 
     
     def add_clause(self, clause: List[int]) -> None:
@@ -47,7 +57,9 @@ class UWrMaxSATSolver(NativeIncrementalSolverBase):
         self._invalidate_solution()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
-        self.set_soft(int(lit), self._normalize_positive_weight(weight))
+        if isinstance(lit, bool) or not isinstance(lit, int) or lit == 0:
+            raise ValueError("Soft literal must be a non-zero integer.")
+        self.set_soft(lit, self._normalize_positive_weight(weight))
 
     # ---------- Solve ----------
 
@@ -58,10 +70,20 @@ class UWrMaxSATSolver(NativeIncrementalSolverBase):
         assumps = self._normalize_assumptions(assumptions)
         if assumps:
             self.solver.assume([int(x) for x in assumps])
-        r = int(self.solver.solve())
+        try:
+            r = int(self.solver.solve())
+        except KeyboardInterrupt:
+            # UWrMaxSAT's native Ctrl-C path has already released its state.
+            # Keep the Python wrapper honest: it is observable as interrupted,
+            # can be closed safely, but must never be driven again.
+            self.solver = None
+            self._interrupted_released = True
+            self._last_solve_result = int(SolveStatus.INTERRUPTED)
+            self._set_infeasible_result(status=SolveStatus.INTERRUPTED)
+            raise
         self._last_solve_result = r
 
-        if r == int(SolveStatus.OPTIMUM):
+        if r in (int(SolveStatus.OPTIMUM), int(SolveStatus.INTERRUPTED_SAT)):
             model = []
             for i in range(1, self.num_vars + 1):
                 v = self.solver.getValue(i)
@@ -88,12 +110,10 @@ class UWrMaxSATSolver(NativeIncrementalSolverBase):
             self._set_feasible_result(
                 model=model,
                 cost=self._compute_cost_from_model(model),
-                status=SolveStatus.OPTIMUM,
+                status=SolveStatus(r),
             )
         elif r == int(SolveStatus.UNSAT):
             self._set_infeasible_result(status=SolveStatus.UNSAT)
-        elif r == int(SolveStatus.INTERRUPTED_SAT):
-            self._set_infeasible_result(status=SolveStatus.INTERRUPTED_SAT)
         elif r == int(SolveStatus.INTERRUPTED):
             self._set_infeasible_result(status=SolveStatus.INTERRUPTED)
         else:
@@ -118,14 +138,15 @@ class UWrMaxSATSolver(NativeIncrementalSolverBase):
 
 
     def signature(self) -> str:
-        return str(self.solver.signature())
+        return self._signature
 
     def close(self) -> None:
-        if getattr(self, "solver", None) is not None:
+        if self.solver is not None:
             s = self.solver
             self.solver = None
             del s
         super().close()
 
     def set_terminate(self, callback: Optional[Callable[[], int]]) -> None:
+        self._require_open()
         self.solver.set_terminate(callback)

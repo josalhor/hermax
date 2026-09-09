@@ -37,25 +37,48 @@ class IPAMIRStateMixin:
         num_vars: Optional[int] = None,
         pad_missing_with_negative: bool = True,
     ) -> None:
-        self._status = status
+        if not isinstance(status, SolveStatus):
+            raise TypeError("status must be a SolveStatus.")
+        if cost is not None and (isinstance(cost, bool) or not isinstance(cost, int)):
+            raise TypeError("cost must be an integer or None.")
 
+        normalized_model: Optional[List[int]]
         if model is None:
-            self._model = None
+            normalized_model = None
         else:
-            out = [int(x) for x in model]
+            out: List[int] = []
+            for literal in model:
+                if isinstance(literal, bool) or not isinstance(literal, int):
+                    raise TypeError("Model literals must be integers.")
+                out.append(int(literal))
             if num_vars is not None:
                 n = int(num_vars)
                 if n < 0:
                     raise ValueError("num_vars must be non-negative")
-                if len(out) < n:
-                    if not pad_missing_with_negative:
-                        raise ValueError("Model is shorter than num_vars")
-                    for i in range(len(out) + 1, n + 1):
-                        out.append(-i)
-                out = out[:n]
-            self._model = out
+                if any(lit == 0 or abs(lit) > n for lit in out):
+                    raise ValueError("Malformed model contains an invalid literal")
+                raw_vars: set[int] = set()
+                for lit in out:
+                    if abs(lit) in raw_vars:
+                        raise ValueError("Malformed model contains duplicate or contradictory literals")
+                    raw_vars.add(abs(lit))
+                if len(out) < n and not pad_missing_with_negative:
+                    raise ValueError("Model is shorter than num_vars")
+                if pad_missing_with_negative:
+                    by_var = {abs(lit): lit for lit in out}
+                    out = [by_var.get(i, -i) for i in range(1, n + 1)]
+                elif len(out) > n:
+                    raise ValueError("Model is longer than num_vars")
+            seen: set[int] = set()
+            for lit in out:
+                if lit == 0 or abs(lit) in seen or -lit in seen:
+                    raise ValueError("Malformed model contains duplicate or contradictory literals")
+                seen.add(abs(lit))
+            normalized_model = out
 
-        self._last_cost = None if cost is None else int(cost)
+        self._status = status
+        self._model = normalized_model
+        self._last_cost = cost
 
     def _maybe_raise_on_abnormal(self, raise_on_abnormal: bool) -> None:
         if raise_on_abnormal and self._status in self._ABNORMAL_STATUSES:
@@ -83,6 +106,8 @@ class IPAMIRStateMixin:
         if not is_feasible(self._status) or self._model is None:
             raise RuntimeError("No model available")
 
+        if isinstance(lit, bool) or not isinstance(lit, int):
+            raise TypeError("Literal must be an integer.")
         lit = int(lit)
         if lit == 0:
             raise ValueError("Literal 0 is invalid.")

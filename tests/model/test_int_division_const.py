@@ -43,6 +43,19 @@ def test_int_floordiv_rejects_non_integer_divisor_type(bad):
         _ = x // bad  # type: ignore[operator]
 
 
+@pytest.mark.parametrize("aggregate", ["max", "min", "upper_bound", "lower_bound"])
+@pytest.mark.parametrize("bad", [0, -1, True, 1.5, "2"])
+def test_lazy_int_floordiv_rejects_invalid_divisor_like_intvar(aggregate, bad):
+    """Derived integer expressions must enforce the same divisor contract."""
+    m = Model()
+    values = m.int_vector("values", length=2, lb=0, ub=10)
+    lazy_expr = getattr(values, aggregate)()
+
+    expected = ValueError if isinstance(bad, bool) or (isinstance(bad, int) and bad <= 0) else TypeError
+    with pytest.raises(expected):
+        _ = lazy_expr // bad  # type: ignore[operator]
+
+
 def test_int_floordiv_is_holding_tank_and_does_not_mutate_model_until_used():
     m = Model()
     x = m.int("x", 0, 10)

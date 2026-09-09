@@ -22,20 +22,29 @@ class FormulaJournal:
         while self.num_vars < int(var):
             self.new_var()
 
+    @staticmethod
+    def _normalize_literal(lit: int) -> int:
+        if isinstance(lit, bool) or not isinstance(lit, int):
+            raise TypeError("DIMACS literals must be integers.")
+        if lit == 0:
+            raise ValueError("DIMACS literal zero is invalid.")
+        return int(lit)
+
     def add_hard(self, clause: List[int]) -> None:
-        copied = [int(lit) for lit in clause]
+        copied = [self._normalize_literal(lit) for lit in clause]
         self._ensure_clause_vars(copied)
         self.hard_clauses.append(copied)
 
     def set_soft(self, lit: int, weight: int) -> None:
-        self.ensure_var(abs(int(lit)))
+        normalized_lit = self._normalize_literal(lit)
+        self.ensure_var(abs(normalized_lit))
         if int(weight) == 0:
-            self.soft_units.pop(int(lit), None)
+            self.soft_units.pop(normalized_lit, None)
         else:
-            self.soft_units[int(lit)] = int(weight)
+            self.soft_units[normalized_lit] = int(weight)
 
     def add_soft_nonunit(self, clause: List[int], weight: int) -> None:
-        copied = [int(lit) for lit in clause]
+        copied = [self._normalize_literal(lit) for lit in clause]
         self._ensure_clause_vars(copied)
         self.soft_nonunit.append((copied, int(weight)))
 
@@ -53,6 +62,15 @@ class FormulaJournal:
             "soft_units": [(int(lit), int(weight)) for lit, weight in self.soft_units.items()],
             "soft_nonunit": [(list(clause), int(weight)) for clause, weight in self.soft_nonunit],
         }
+
+    @classmethod
+    def from_snapshot(cls, snapshot: Dict[str, object]) -> "FormulaJournal":
+        journal = cls()
+        journal.num_vars = int(snapshot["num_vars"])
+        journal.hard_clauses = [list(clause) for clause in snapshot["hard_clauses"]]  # type: ignore[index]
+        journal.soft_units = {int(lit): int(weight) for lit, weight in snapshot["soft_units"]}  # type: ignore[index]
+        journal.soft_nonunit = [(list(clause), int(weight)) for clause, weight in snapshot["soft_nonunit"]]  # type: ignore[index]
+        return journal
 
     def replay(
         self,

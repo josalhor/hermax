@@ -41,8 +41,10 @@ class EvalMaxSATIncrSolver(NativeIncrementalSolverBase):
         self._invalidate_solution()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
+        if isinstance(lit, bool) or not isinstance(lit, int) or lit == 0:
+            raise ValueError("Soft literal must be a non-zero integer.")
         w = self._normalize_positive_weight(weight)
-        self.set_soft(int(lit), int(w))
+        self.set_soft(lit, w)
 
     def solve(
         self,

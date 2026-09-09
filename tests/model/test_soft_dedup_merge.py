@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from hermax.model import Model
 from tests.model.test_soft_behavior import FakeIPSoft
 
@@ -57,6 +59,35 @@ def test_add_soft_duplicate_literal_incremental_routes_as_set_update():
     assert w0 == 5 and w1 == 15
 
 
+def test_disabled_soft_dedup_does_not_drop_duplicate_literal_weight():
+    """Separate duplicate entries must remain additive after native compilation."""
+    m = Model()
+    m.set_soft_dedup(False)
+    a = m.bool("a")
+    m &= ~a
+    m.obj.add_soft(a, 5)
+    m.obj.add_soft(a, 10)
+
+    # The model stores two objective entries when deduplication is disabled.
+    # The native path currently overwrites the first entry because both use
+    # the same soft literal.
+    r = _solve_ok(m)
+    assert r.cost == 15
+
+
+def test_disabled_soft_dedup_incremental_route_accumulates_duplicate_literal_weight():
+    m = Model()
+    m.set_soft_dedup(False)
+    a = m.bool("a")
+    solver = FakeIPSoft()
+    m.solve(backend="maxsat", solver=solver)
+
+    m.obj.add_soft(a, 5)
+    m.obj.add_soft(a, 10)
+
+    assert solver.soft_updates[-2:] == [(a.id, 5), (a.id, 15)]
+
+
 def test_add_soft_and_obj_paths_are_independent_for_duplicate_literals():
     m = Model()
     a = m.bool("a")
@@ -65,4 +96,3 @@ def test_add_soft_and_obj_paths_are_independent_for_duplicate_literals():
     # one from add_soft, one from obj bucket path
     assert len(m._soft) == 2
     assert sorted(w for w, _ in m._soft) == [2, 3]
-

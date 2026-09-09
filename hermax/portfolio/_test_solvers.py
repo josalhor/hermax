@@ -65,6 +65,69 @@ class BadModelCostSolver(IPAMIRSolver):
         pass
 
 
+class ContradictoryModelSolver(BadModelCostSolver):
+    """Test helper that returns both polarities of one variable."""
+
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
+        self._model = [1, -1]
+        self._cost = 0
+        self._status = SolveStatus.OPTIMUM
+        return True
+
+    def signature(self) -> str:
+        return "ContradictoryModelSolver(test helper)"
+
+
+class NonIntegerModelSolver(BadModelCostSolver):
+    """Test helper that returns a model containing a non-integer literal."""
+
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
+        self._model = [1.5]  # type: ignore[list-item]
+        self._cost = 0
+        self._status = SolveStatus.OPTIMUM
+        return True
+
+    def signature(self) -> str:
+        return "NonIntegerModelSolver(test helper)"
+
+
+class NonIntegerCostSolver(BadModelCostSolver):
+    """Test helper that reports a cost which is not an integer."""
+
+    def __init__(self, raw_cost=1.5, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.raw_cost = raw_cost
+
+    def solve(
+        self,
+        assumptions: Optional[List[int]] = None,
+        raise_on_abnormal: bool = False,
+        time_limit: Optional[float] = None,
+    ) -> bool:
+        self._model = [-1]
+        self._cost = self.raw_cost
+        self._status = SolveStatus.OPTIMUM
+        return True
+
+    def get_cost(self):
+        if not is_feasible(self._status):
+            raise RuntimeError("No cost")
+        return self._cost
+
+    def signature(self) -> str:
+        return "NonIntegerCostSolver(test helper)"
+
+
 class SlowTestSolver(BadModelCostSolver):
     """Worker fixture that stays alive long enough for deadline tests."""
 

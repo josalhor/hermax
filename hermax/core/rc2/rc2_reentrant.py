@@ -60,7 +60,7 @@ class RC2Reentrant(ReplayFormulaSolverBase):
             for lit in cl:
                 max_var = max(max_var, abs(int(lit)))
 
-        wcnf.nv = max(int(getattr(wcnf, "nv", 0)), int(max_var))
+        wcnf.nv = max(int(wcnf.nv), int(max_var))
 
         try:
             with RC2(wcnf) as rc2:

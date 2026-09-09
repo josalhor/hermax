@@ -224,6 +224,14 @@ CASES: list[SolverCase] = [
     ),
 ]
 
+# Every solver row also checks the default output contract.  Keeping this as
+# a matrix selector makes a regression attributable to the solver that leaked
+# the diagnostic instead of producing one aggregate output-test result.
+for _case in CASES:
+    _case.selectors.append(
+        f"core/test_default_quiet_output.py::test_matrix_solver_default_output_is_quiet[{_case.name}]"
+    )
+
 
 def classify_returncode(code: int) -> str:
     if code == 0:
@@ -412,18 +420,57 @@ def run_case(
             if not m:
                 continue
             per_test[canonical_test_id(m.group("node"))] = normalize_test_status(m.group("status"))
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         elapsed = time.monotonic() - start
-        out = (f"TIMEOUT after {timeout_s}s\n")
+        partial_stdout = exc.stdout or ""
+        partial_stderr = exc.stderr or ""
+        if isinstance(partial_stdout, bytes):
+            partial_stdout = partial_stdout.decode(errors="replace")
+        if isinstance(partial_stderr, bytes):
+            partial_stderr = partial_stderr.decode(errors="replace")
+        out = (
+            f"TIMEOUT after {timeout_s}s\n"
+            f"$ {' '.join(cmd)}\n"
+            f"--- partial stdout ---\n{partial_stdout}\n"
+            f"--- partial stderr ---\n{partial_stderr}\n"
+        )
         (log_dir / f"{safe}.log").write_text(out, encoding="utf-8")
         return ("TIMEOUT", elapsed, None, per_test, out)
 
     elapsed = time.monotonic() - start
     status = classify_returncode(proc.returncode)
 
-    (log_dir / f"{safe}.log").write_text(out, encoding="utf-8")
+    if status == "ERR":
+        # The concise matrix run is deliberately cheap.  Preserve a separate,
+        # maximally useful reproduction log for an error: node ids, long
+        # tracebacks, captured native output, and the exact command.
+        detail_flags = [
+            "--rootdir=.",
+            "-vv",
+            "-rA",
+            "--tb=long",
+            "-s",
+        ]
+        if os.environ.get("HERMAX_TEST_INSTALLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+            detail_flags.append("--import-mode=importlib")
+        detail_cmd = [
+            sys.executable,
+            "-X",
+            "faulthandler",
+            "-m",
+            "pytest",
+            *detail_flags,
+            *case.selectors,
+            *extra_pytest_args,
+        ]
+        detail = _run_diag(detail_cmd, cwd=TESTS_DIR, env=_pytest_env(), timeout_s=max(timeout_s, 120))
+        detail_path = log_dir / f"{safe}.failure_detail.log"
+        detail_path.write_text(detail, encoding="utf-8")
+        out += f"\nDetailed reproduction log: {detail_path}\n"
     if status == "CRASH":
         _collect_crash_diagnostics(case, log_dir, safe)
+
+    (log_dir / f"{safe}.log").write_text(out, encoding="utf-8")
 
     return (status, elapsed, proc.returncode, per_test, out)
 

@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional, Set, Tuple
 from hermax.encoder.pbamo import PBAMOEnc
+from hermax.internal.pb_normalize import normalize_signed_terms
 from hermax.internal.kmerge import (
     DEFAULT_KMERGE_CONFIG,
     KMergeConfig,
@@ -17,13 +18,31 @@ class PBItem:
 
     :param lits: DIMACS-style literals.
     :param bound: The Right-Hand Side (RHS) value.
-    :param weights: Non-negative integer weights. If None, all weights are assumed to be 1.
+    :param weights: Signed integer weights. If None, all weights are assumed to be 1.
     :param cmp_op: Comparison operator (``'<='`` or ``'=='``).
     """
     lits: List[int]
     bound: int
     weights: Optional[List[int]] = None
     cmp_op: str = "<="
+
+    def __post_init__(self) -> None:
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate the finite-domain PB contract before any encoder casts it."""
+        if self.cmp_op not in {"<=", "=="}:
+            raise ValueError("PBItem comparison operator must be '<=' or '=='.")
+        if isinstance(self.bound, bool) or not isinstance(self.bound, int):
+            raise ValueError("PBItem bound must be an integer.")
+        if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in self.lits):
+            raise ValueError("PBItem literals must be non-zero integers.")
+        if self.weights is None:
+            return
+        if len(self.weights) != len(self.lits):
+            raise ValueError("Same number of literals and weights is expected.")
+        if any(isinstance(weight, bool) or not isinstance(weight, int) for weight in self.weights):
+            raise ValueError("PBItem weights must be integers.")
 
     @property
     def is_cardinality(self) -> bool:
@@ -35,7 +54,6 @@ class PBItem:
         if self.weights is not None:
             return self.weights
         return [1] * len(self.lits)
-
 
 class PBCompiler:
     """
@@ -83,6 +101,7 @@ class PBCompiler:
         merge_pb_optimization: bool,
         kmerge_config: KMergeConfig | None = None,
     ):
+        items = [cls._normalize_item(item) for item in items]
         results = []
         kmerge_indices = set()
         current_top = int(top_id)
@@ -326,3 +345,21 @@ class PBCompiler:
                     local_eo.append(item.lits)
             
         return results
+
+    @staticmethod
+    def _normalize_item(item: PBItem) -> PBItem:
+        """Return the private positive-weight form required by PB backends."""
+        item.validate()
+        if item.weights is None:
+            return item
+        normalized = normalize_signed_terms(
+            zip(item.weights, item.lits),
+            -item.bound,
+            flip=lambda lit: -lit,
+        )
+        return PBItem(
+            lits=[int(lit) for _weight, lit in normalized.terms],
+            weights=[weight for weight, _lit in normalized.terms],
+            bound=-normalized.constant,
+            cmp_op=item.cmp_op,
+        )

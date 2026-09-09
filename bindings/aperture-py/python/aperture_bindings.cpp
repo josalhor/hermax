@@ -12,7 +12,7 @@ namespace py = pybind11;
 
 class ApertureBackend {
  public:
-  ApertureBackend() : solver_(std::make_unique<Solver>()) {}
+  ApertureBackend() : solver_(make_solver()) {}
 
   int new_var() {
     solver_->NewVar();
@@ -33,6 +33,21 @@ class ApertureBackend {
 
  private:
   using Solver = Aperture::ApertureIpamir<int32_t, uint64_t>;
+
+  static std::unique_ptr<Solver> make_solver() {
+    // Aperture defaults to CLI-style NORMAL/VVERBOSE diagnostics.  Configure
+    // its process-global logger before the Solver constructor runs, then keep
+    // the solver itself silent for the programmatic Python API.
+    auto& logger = Aperture::Logger::Instance();
+    logger.SetVerbosity(Aperture::LogSource::SOLVER,
+                        Aperture::VerbosityLevel::SILENT);
+    logger.SetVerbosity(Aperture::LogSource::EXTERNAL,
+                        Aperture::VerbosityLevel::SILENT);
+    Aperture::SolverOptions options;
+    options.verbosity_level = Aperture::VerbosityLevel::SILENT;
+    return std::make_unique<Solver>(options);
+  }
+
   std::unique_ptr<Solver> solver_;
 };
 

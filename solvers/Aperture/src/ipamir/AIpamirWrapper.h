@@ -8,7 +8,8 @@ template <ValidLiteral TIpamirLit = int32_t,
           ValidWeight TIpamirWeight = uint64_t>
 class ApertureIpamir : public Solver<TIpamirLit, TIpamirWeight> {
  public:
-  ApertureIpamir() : Solver<TIpamirLit, TIpamirWeight>(SolverType::GLUCOSE) {}
+  explicit ApertureIpamir(const SolverOptions& options = SolverOptions())
+      : Solver<TIpamirLit, TIpamirWeight>(SolverType::GLUCOSE, {}, options) {}
   void AddHard(TIpamirLit lit);
   void AddSoftLit(TIpamirLit lit, TIpamirWeight weight);
   void Assume(TIpamirLit lit);

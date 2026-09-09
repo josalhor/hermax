@@ -36,6 +36,8 @@ class PySATReplaySolver:
     def add_clause(self, clause: Sequence[int]) -> None:
         if not isinstance(clause, (list, tuple)):
             raise TypeError("Clause must be a sequence of non-zero literals.")
+        if any(isinstance(lit, bool) or not isinstance(lit, int) for lit in clause):
+            raise TypeError("Clause literals must be integers.")
         normalized = [int(lit) for lit in clause]
         if any(lit == 0 for lit in normalized):
             raise ValueError("Literal 0 is invalid.")
@@ -47,6 +49,8 @@ class PySATReplaySolver:
         assumptions: Optional[Sequence[int]] = None,
         time_limit: Optional[float] = None,
     ) -> SATReplayResult:
+        if any(isinstance(lit, bool) or not isinstance(lit, int) for lit in assumptions or []):
+            raise TypeError("Assumptions must be integers.")
         normalized_assumptions = [int(lit) for lit in assumptions or []]
         if any(lit == 0 for lit in normalized_assumptions):
             raise ValueError("Literal 0 is invalid.")

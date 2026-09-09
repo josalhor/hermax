@@ -9,7 +9,7 @@ from pysat.formula import WCNF
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
 from hermax.core.ipamir_state_mixin import IPAMIRStateMixin
 from hermax.core.time_limits import validate_time_limit
-from hermax.core.utils import normalize_wcnf_formula
+from hermax.core.utils import extract_wcnf_data, normalize_wcnf_formula
 
 _MAX_I32 = (1 << 31) - 1
 _MAX_I64 = (1 << 63) - 1
@@ -85,26 +85,27 @@ class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
         return out
 
     def _load_initial_formula(self, formula: WCNF) -> None:
-        hard = list(getattr(formula, "hard", []))
-        soft = list(getattr(formula, "soft", []))
-        weights = list(getattr(formula, "wght", []))
-        max_var = int(getattr(formula, "nv", 0))
+        data = extract_wcnf_data(formula)
+        hard = data.hard
+        soft = [clause for clause, _weight in data.soft]
+        weights = [weight for _clause, weight in data.soft]
+        max_var = data.num_vars
         for clause in [*hard, *soft]:
             for lit in clause:
-                max_var = max(max_var, abs(self._normalize_lit(int(lit))))
+                max_var = max(max_var, abs(self._normalize_lit(lit)))
         self._ensure_var(max_var)
 
         for clause in hard:
-            self.add_clause([int(lit) for lit in clause])
+            self.add_clause(list(clause))
         if len(soft) != len(weights):
             raise ValueError("WCNF soft clauses and weights must have the same length.")
         for clause, weight in zip(soft, weights):
             if not clause:
                 raise ValueError("Invalid empty soft clause in WCNF.")
             if len(clause) == 1:
-                self.add_soft_unit(int(clause[0]), int(weight))
+                self.add_soft_unit(clause[0], weight)
             else:
-                self.add_soft_relaxed([int(lit) for lit in clause], int(weight), self.new_var())
+                self.add_soft_relaxed(list(clause), weight, self.new_var())
 
     def new_var(self) -> int:
         self._require_open()
@@ -156,7 +157,7 @@ class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
         return str(self.solver.signature())
 
     def close(self) -> None:
-        if getattr(self, "solver", None) is not None:
+        if self.solver is not None:
             self.solver.close()
             self.solver = None
         super().close()

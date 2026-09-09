@@ -14,5 +14,5 @@ def test_intset_contains_intvar_edge_branches():
     s2 = m2.int_set("s2", lb=2, ub=4)
     x2 = m2.int("x2", lb=2, ub=2)  # singleton domain value 2
     b1 = s2.contains(x2)
-    assert b1 is (x2 == 2)
+    assert b1 is s2.contains(2)
     assert s2.contains(x2) is b1

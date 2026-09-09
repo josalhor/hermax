@@ -118,7 +118,8 @@ void SimpSolver::setFrozenVars() {
         }
         else setFrozen(i, false);
     }
-    printf("c Mono: %d, fixed: %d\n", nbMono, trail.size() - savedTrail);
+    if (verbosity >= 1)
+        printf("c Mono: %d, fixed: %d\n", nbMono, trail.size() - savedTrail);
 }
 
 lbool SimpSolver::solve_(bool do_simp, bool turn_off_simp)
@@ -758,11 +759,13 @@ bool SimpSolver::eliminate(bool turn_off_elim)
     n_cls  = nClauses();
     n_vars = nFreeVars();
 
-    printf("c Reduced to %d vars, %d cls (c/v ratio==%.1f, grow=%d)\n",
-           n_vars, n_cls, (double)n_cls / n_vars, grow);
+    if (verbosity >= 1)
+        printf("c Reduced to %d vars, %d cls (c/v ratio==%.1f, grow=%d)\n",
+               n_vars, n_cls, (double)n_cls / n_vars, grow);
 
     if ((double)n_cls / n_vars >= 10 || n_vars < 10000){
-        printf("c No iterative elimination performed. (vars=%d, c/v ratio=%.1f)\n", n_vars, (double)n_cls / n_vars);
+        if (verbosity >= 1)
+            printf("c No iterative elimination performed. (vars=%d, c/v ratio=%.1f)\n", n_vars, (double)n_cls / n_vars);
         goto cleanup; }
 
     grow = grow ? grow * 2 : 8;

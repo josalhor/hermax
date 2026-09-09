@@ -27,6 +27,16 @@ def test_bool_vector_construction_indexing_iteration_and_length():
     assert r[v] == [True, False, False, False]
 
 
+def test_empty_bool_vector_at_least_one_is_unsatisfiable_not_a_clause_error():
+    """The empty disjunction is false, so it must be addable as UNSAT."""
+    m = Model()
+    values = m.bool_vector("values", length=0)
+
+    m &= values.at_least_one()
+
+    assert m.solve().status == "unsat"
+
+
 def test_int_vector_construction_indexing_iteration_and_length():
     m = Model()
     v = m.int_vector("v", length=3, lb=0, ub=5)
@@ -37,6 +47,17 @@ def test_int_vector_construction_indexing_iteration_and_length():
     assert [x.name for x in v] == ["v[0]", "v[1]", "v[2]"]
     # Each int has ub-lb threshold literals.
     assert all(len(x._threshold_lits) == 5 for x in v)
+
+
+def test_empty_int_vectors_are_unequal_is_unsatisfiable_not_an_empty_clause_error():
+    """The inequality of two empty vectors is false, not an invalid clause."""
+    m = Model()
+    left = m.int_vector("left", length=0, lb=0, ub=5)
+    right = m.int_vector("right", length=0, lb=0, ub=5)
+
+    m &= (left != right)
+
+    assert m.solve().status == "unsat"
 
 
 def test_enum_vector_construction_indexing_iteration_and_length():
@@ -156,6 +177,78 @@ def test_intvector_is_in_rejects_disallowed_combination():
     m &= (spec[1] == 4)
     m &= (spec[2] == 1)
     assert m.solve().status == "unsat"
+
+
+def test_model_table_is_canonical_api_and_requires_allowed_keyword():
+    m = Model()
+    x = m.int("x", lb=0, ub=3)
+    y = m.int("y", lb=0, ub=3)
+
+    with pytest.raises(TypeError):
+        m.table([x, y], [(0, 1)])
+
+    hard_before = len(m._hard)
+    top_before = m._top_id()
+    table = m.table([x, y], allowed=[(0, 1), (1, 0)])
+    assert isinstance(table, ClauseGroup)
+    assert len(m._hard) == hard_before
+    assert m._top_id() == top_before
+    m &= table
+    m &= (x == 0)
+    r = _solve_ok(m)
+    assert r[x] == 0
+    assert r[y] == 1
+
+
+def test_model_table_binary_relation_accepts_exactly_and_rejects_everything_else():
+    allowed = {(0, 1), (1, 2), (2, 0)}
+    for xv in range(3):
+        for yv in range(3):
+            m = Model()
+            x = m.int("x", lb=0, ub=2)
+            y = m.int("y", lb=0, ub=2)
+            m &= m.table([x, y], allowed=allowed)
+            m &= (x == xv)
+            m &= (y == yv)
+            assert (m.solve().ok is True) == ((xv, yv) in allowed)
+
+
+def test_model_table_uses_boolean_and_enum_value_atoms_in_mixed_columns():
+    m = Model()
+    enabled = m.bool("enabled")
+    amount = m.int("amount", lb=0, ub=2)
+    color = m.enum("color", choices=["red", "blue"], nullable=True)
+    m &= m.table(
+        [enabled, amount, color],
+        allowed=[(True, 1, "red"), (False, 2, None)],
+    )
+    m &= ~enabled
+    m &= (amount == 2)
+    r = _solve_ok(m)
+    assert r[enabled] is False
+    assert r[amount] == 2
+    assert r[color] is None
+
+
+def test_model_table_prunes_impossible_and_duplicate_rows_and_handles_degenerate_widths():
+    m = Model()
+    x = m.int("x", lb=0, ub=2)
+    m &= m.table([x], allowed=[(9,), (1,), (1,)])
+    r = _solve_ok(m)
+    assert r[x] == 1
+
+    m_bad = Model()
+    y = m_bad.int("y", lb=0, ub=2)
+    m_bad &= m_bad.table([y], allowed=[(9,)])
+    assert m_bad.solve().status == "unsat"
+
+    m_true = Model()
+    m_true &= m_true.table([], allowed=[()])
+    assert m_true.solve().ok is True
+
+    m_false = Model()
+    m_false &= m_false.table([], allowed=[])
+    assert m_false.solve().status == "unsat"
 
 
 def test_enumvector_is_in_supports_nullable_none_and_rejects_bad_rows():
@@ -537,3 +630,18 @@ def test_boolvector_cardinality_helpers_are_available_and_semantically_correct()
     m3 &= ~b3[1]
     m3 &= ~b3[2]
     assert m3.solve().status == "unsat"
+
+
+def test_intvector_ne_incremental_soundness():
+    m = Model()
+    m.solve(backend="sat")
+    v1 = m.int_vector("v1", length=2, lb=0, ub=5)
+    v2 = m.int_vector("v2", length=2, lb=0, ub=5)
+    m &= (v1 != v2)
+    m &= (v1[0] == 0)
+    m &= (v2[0] == 0)
+    m &= (v1[1] == 0)
+    m &= (v2[1] == 0)
+    res = m.solve(backend="sat")
+    assert res.status == "unsat"
+

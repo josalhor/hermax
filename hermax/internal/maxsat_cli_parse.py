@@ -69,16 +69,20 @@ def parse_maxsat_cli_output(
                 continue
             try:
                 lits.append(int(tok))
-            except ValueError:
-                pass
+            except ValueError as exc:
+                raise ValueError(f"malformed model literal: {tok!r}") from exc
 
     model = None
     if lits:
         by_var: Dict[int, int] = {}
         for l in lits:
-            if l != 0:
-                by_var[abs(l)] = l
+            if l == 0:
+                raise ValueError("Model literal zero is invalid.")
+            if abs(l) in by_var:
+                raise ValueError("Model contains duplicate or contradictory literals.")
+            by_var[abs(l)] = l
         model = [by_var.get(v, -v) for v in range(1, num_vars + 1)]
+        if last_status == SolveStatus.INTERRUPTED:
+            last_status = SolveStatus.INTERRUPTED_SAT
 
     return last_status, best_cost, model
-

@@ -34,6 +34,9 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)  # needed for static->shared link
 # --------------------------------------------------------
 pybind11_add_module(urmaxsat_py MODULE NO_EXTRAS python/urmaxsat_bindings.cpp)
 target_compile_features(urmaxsat_py PRIVATE cxx_std_17)
+target_include_directories(urmaxsat_py PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../bindings/common"
+)
 
 # --------------------------------------------------------
 # Link static libs directly (no runtime dependencies)

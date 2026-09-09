@@ -7,6 +7,7 @@ import pytest
 from hermax.core.ipamir_solver_interface import SolveStatus
 from hermax.core.ipamir_subprocess_replay_base import OneShotSubprocessReplaySolverBase
 from hermax.internal.subprocess_oneshot import run_oneshot_worker
+from hermax.internal.subprocess_oneshot import is_usable_response_after_time_limit
 from hermax.model import Model
 from hermax.portfolio import PortfolioSolver
 from tests.time_limit_worker_solvers import (
@@ -59,6 +60,17 @@ def test_oneshot_worker_happy_path_returns_optimum():
     assert not run.timed_out
     assert run.response["status"] == int(SolveStatus.OPTIMUM)
     assert run.response["model"] == [1]
+
+
+def test_timed_response_rejects_float_status():
+    assert not is_usable_response_after_time_limit(
+        {"ok": True, "status": float(SolveStatus.OPTIMUM)}
+    )
+
+
+@pytest.mark.parametrize("status", [False, 0.0])
+def test_timed_response_rejects_bool_and_float_interrupt_status(status):
+    assert not is_usable_response_after_time_limit({"ok": True, "status": status})
 
 
 @pytest.mark.skipif(os.name == "nt", reason="SIGINT process-group behavior is POSIX-specific")

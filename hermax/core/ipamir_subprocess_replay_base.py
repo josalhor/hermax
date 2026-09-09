@@ -153,11 +153,22 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
 
         model = None
         if resp.get("model") is not None:
-            model = [int(x) for x in resp["model"]]
+            raw_model = resp["model"]
+            if not isinstance(raw_model, list) or any(
+                isinstance(literal, bool) or not isinstance(literal, int) or literal == 0
+                for literal in raw_model
+            ):
+                self._last_error = "invalid worker model"
+                return ReplaySolveResult(status=SolveStatus.ERROR, model=None, cost=None)
+            model = list(raw_model)
 
         cost = None
         if resp.get("cost") is not None:
             cost = self._coerce_int(resp.get("cost"))
+
+        if is_feasible(st) and model is None:
+            self._last_error = "feasible worker result without model"
+            return ReplaySolveResult(status=SolveStatus.ERROR, model=None, cost=None)
 
         return ReplaySolveResult(status=st, model=model, cost=cost)
 
@@ -217,7 +228,7 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
             for lit in cl:
                 max_var = max(max_var, abs(int(lit)))
 
-        wcnf.nv = max(int(getattr(wcnf, "nv", 0)), max_var)
+        wcnf.nv = max(int(wcnf.nv), max_var)
         with RC2(wcnf) as rc2:
             model = rc2.compute()
             if model is None:

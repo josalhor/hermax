@@ -46,7 +46,7 @@ class MaxHSSolver(ReplayFormulaSolverBase):
 
     @staticmethod
     def _normalize_nonnegative_weight(weight: int) -> int:
-        if not isinstance(weight, int):
+        if isinstance(weight, bool) or not isinstance(weight, int):
             raise ValueError("Weight must be an integer.")
         if int(weight) < 0:
             raise ValueError("Weight must be a non-negative integer.")

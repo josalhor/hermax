@@ -10,6 +10,18 @@ from typing import Any, Dict, Iterable
 from hermax.internal.subprocess_oneshot import _HEADER_STRUCT, resolve_object
 
 
+def _literal(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value == 0:
+        raise ValueError("DIMACS literals must be non-zero integers.")
+    return value
+
+
+def _weight(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("weights must be integers.")
+    return value
+
+
 def _read_exact(stream, n: int) -> bytes:
     out = bytearray()
     while len(out) < n:
@@ -48,13 +60,13 @@ def _snapshot_replay_to_solver(solver, snap: Dict[str, Any]) -> None:
             break
 
     for cl in snap.get("hard_clauses", []):
-        solver.add_clause([int(x) for x in cl])
+        solver.add_clause([_literal(x) for x in cl])
 
     for lit, w in snap.get("soft_units", []):
-        solver.set_soft(int(lit), int(w))
+        solver.set_soft(_literal(lit), _weight(w))
 
     for cl, w in snap.get("soft_nonunit", []):
-        solver.add_clause([int(x) for x in cl], int(w))
+        solver.add_clause([_literal(x) for x in cl], _weight(w))
 
 
 def _ops_replay_to_solver(solver, ops: Iterable[Any]) -> None:
@@ -70,23 +82,23 @@ def _ops_replay_to_solver(solver, ops: Iterable[Any]) -> None:
                 pass
         elif op == "add_clause":
             _, clause = raw
-            solver.add_clause([int(x) for x in clause])
+            solver.add_clause([_literal(x) for x in clause])
         elif op == "set_soft":
             _, lit, w = raw
-            solver.set_soft(int(lit), int(w))
+            solver.set_soft(_literal(lit), _weight(w))
         elif op == "add_soft_unit":
             _, lit, w = raw
-            solver.add_soft_unit(int(lit), int(w))
+            solver.add_soft_unit(_literal(lit), _weight(w))
         elif op == "add_soft_relaxed":
             _, clause, w, relax_var = raw
-            solver.add_soft_relaxed([int(x) for x in clause], int(w), None if relax_var is None else int(relax_var))
+            solver.add_soft_relaxed([_literal(x) for x in clause], _weight(w), None if relax_var is None else _literal(relax_var))
         else:
             raise ValueError(f"Unknown op: {op!r}")
 
 
 def _run_request(req: Dict[str, Any]) -> Dict[str, Any]:
     cls_path = req["solver_class_path"]
-    assumptions = [int(x) for x in req.get("assumptions") or []]
+    assumptions = [_literal(x) for x in req.get("assumptions") or []]
     snapshot = dict(req.get("snapshot") or {})
     ops = req.get("ops")
     solver_cls = resolve_object(cls_path)
@@ -113,7 +125,7 @@ def _run_request(req: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             pass
         try:
-            response["cost"] = int(solver.get_cost())
+            response["cost"] = solver.get_cost()
         except Exception:
             pass
         try:

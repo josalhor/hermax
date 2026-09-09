@@ -130,20 +130,26 @@ class IPAMIRSolver(abc.ABC):
         # validate
         if not isinstance(clause, list) or len(clause) == 0:
             raise ValueError("clause must be a non-empty list")
-        if not isinstance(weight, int) or weight <= 0:
+        if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in clause):
+            raise ValueError("clause literals must be non-zero integers")
+        if isinstance(weight, bool) or not isinstance(weight, int) or weight <= 0:
             raise ValueError("weight must be a positive int")
 
         if relax_var is None:
             if len(clause) != 1:
                 raise ValueError("relax_var=None only allowed for unit clauses")
-            self.add_soft_unit(int(clause[0]), int(weight))
+            self.add_soft_unit(clause[0], weight)
             return None
 
         # explicit relax var path: hard (clause ∪ {+b}), soft [-b]
-        b = abs(int(relax_var))
-        new_hard = [*map(int, clause), b]
+        if isinstance(relax_var, bool) or not isinstance(relax_var, int) or relax_var == 0:
+            raise ValueError("relax_var must be a non-zero integer")
+        b = abs(relax_var)
+        new_hard = [*clause, b]
+        # Register the soft side first: a failed registration must not leave
+        # a new hard relaxation clause behind.
+        self.set_soft(-b, weight)
         self.add_clause(new_hard)
-        self.set_soft(-b, int(weight))
         return b
 
     @abc.abstractmethod

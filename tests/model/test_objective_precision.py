@@ -116,3 +116,16 @@ def test_float_objective_expr_requires_precision_to_lower():
     r = _solve_ok(m2)
     assert r[b2] is False
     assert r.cost == pytest.approx(0.0, abs=1e-9)
+
+
+def test_objective_expression_precision_scaling_soundness():
+    m = Model()
+    m.set_objective_precision(decimals=2)
+    x = m.bool("x")
+    m &= x
+    m.obj += 1.25 * x
+    res = m.solve()
+    assert res.ok
+    assert res[x] is True
+    assert res.cost == pytest.approx(1.25, abs=1e-9)
+

@@ -97,6 +97,26 @@ def test_boolsum_bigm_negated_indicator_randomized_points():
         assert m.solve().ok == expected, (op, swapped, n_bools, tight_bound, mcoef, values, expected)
 
 
+def test_boolsum_bigm_amo_cache_respects_literal_polarity():
+    """An AMO over (a, b) must not remove the clause for (a, ~b)."""
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    gate = m.bool("gate")
+
+    # Register a useful AMO fact, then exercise the Big-M threshold-2 branch
+    # with the distinct literal pair (a, ~b).
+    m &= (a + b <= 1)
+    m &= (a + ~b <= 1 + 2 * gate)
+    m &= a
+    m &= ~b
+    m &= ~gate
+
+    # With gate false, the second constraint is a + ~b <= 1, which the
+    # pinned assignment violates.
+    assert m.solve().status == "unsat"
+
+
 def test_mixed_bigm_negated_indicator_randomized_points():
     rng = random.Random(20260722)
     for _ in range(40):

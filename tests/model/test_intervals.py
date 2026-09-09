@@ -65,6 +65,13 @@ def test_interval_invalid_duration_and_horizon_are_rejected():
     with pytest.raises(ValueError, match="horizon is too small"):
         m.interval("B", start=0, duration=5, end=4)
 
+    with pytest.raises(TypeError, match="must be ints"):
+        m.interval("bool_start", start=True, duration=2, end=10)
+    with pytest.raises(TypeError, match="must be ints"):
+        m.interval("bool_duration", start=0, duration=True, end=10)
+    with pytest.raises(TypeError, match="must be ints"):
+        m.interval("bool_end", start=0, duration=2, end=False)
+
 
 def test_interval_ends_before_semantics():
     m = Model()

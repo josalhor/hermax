@@ -294,8 +294,7 @@ lbool MaxSAT::polosat(Solver *solver, vec<Lit> &assumptions, vec<Lit> &obsVecLit
     nuwls_solver.build_instance(maxsat_formula->nuwls_nvars, maxsat_formula->nuwls_nclauses, maxsat_formula->nuwls_topclauseweight,
                                 maxsat_formula->nuwls_clause_lit, maxsat_formula->nuwls_clause_lit_count, maxsat_formula->nuwls_clause_weight);
 
-    cout << "c build NuWLS instance done!" << endl;
-    cout << "c changing to NuWLS solver!!!" << endl;
+    // Default library use must not emit CLI diagnostics.
     nuwls_solver.settings();
 
     vector<int> init_solu(maxsat_formula->nuwls_nvars + 1);
@@ -313,7 +312,6 @@ lbool MaxSAT::polosat(Solver *solver, vec<Lit> &assumptions, vec<Lit> &obsVecLit
     start_timing();
     
     const auto nuwlsTimeLimit = Torc::Instance()->GetNuwlsIsExternalTimeLimit() ? Torc::Instance()->GetNuwlsExternalTimeLimit() : nuwls_solver.NUWLS_TIME_LIMIT;
-    cout << "c nuwlsTimeLimit = " << nuwlsTimeLimit << endl;
     
     int time_limit_for_ls = nuwlsTimeLimit;
     if (nuwls_solver.if_using_neighbor)
@@ -407,7 +405,6 @@ lbool MaxSAT::polosat(Solver *solver, vec<Lit> &assumptions, vec<Lit> &obsVecLit
       }
     }
     nuwls_solver.free_memory();
-    cout << "c nuwls search done! break test = " << breakTest << endl;
   }
 
 	
@@ -1260,6 +1257,12 @@ void MaxSAT::printStats() {
 
 // Prints the corresponding answer.
 void MaxSAT::printAnswer(int type) {
+  // The library API uses minimal verbosity for programmatic callers.  Answer
+  // and Topor-statistics lines are CLI output, so emitting them at that level
+  // makes an otherwise quiet Python solve write to its caller's stdout.
+  if (verbosity <= _VERBOSITY_MINIMAL_)
+    return;
+
   if (verbosity > 0)
     printStats();
 
@@ -1588,7 +1591,6 @@ void MaxSAT::InitSatLike()
   satlike_solver->build_instance(satlike_nvars, satlike_nclauses, satlike_topclauseweight,
 								satlike_clause_lit, satlike_clause_lit_count, satlike_clause_weight);
 
-  cout << "c building satlike instance done!" << endl;  
 }
 
 void MaxSAT::SatLike(Solver *solver)
@@ -1612,13 +1614,11 @@ void MaxSAT::SatLike(Solver *solver)
 	}
   }
   
-  cout << "c SatLike time threshold: " << Torc::Instance()->GetSatlikeTimeThr() << endl;
   
   CApplyFuncOnExitFromScope<void, function<void()>> deleteSatLikeOnExit([&]() 
   { 
 	  statInitSatlikePolosatStr += "SatLikeT1 " + to_string(Torc::Instance()->WallTimePassed()) + " SatLikeC1 " + to_string(satlike_solver->opt_unsat_weight) + " ";
 	  delete satlike_solver;   
-	  cout << "c satlike done" << endl; 
 	  if (Torc::Instance()->GetSatlikeMode() > 1)
 	  {
 		startTimeForSatlikeReinvoke = std::chrono::high_resolution_clock::now();  
@@ -1629,7 +1629,6 @@ void MaxSAT::SatLike(Solver *solver)
   
   statInitSatlikePolosatStr += "SatLikeT0 " + to_string(Torc::Instance()->WallTimePassed()) + " SatLikeC0 " + to_string(originalCost) + " ";
   
-  cout << "c changing to satlike solver!!!" << endl;
   
   if (satlike_invs == 0)
   {
@@ -1713,4 +1712,3 @@ void MaxSAT::SatLike(Solver *solver)
 		
   }
 }
-

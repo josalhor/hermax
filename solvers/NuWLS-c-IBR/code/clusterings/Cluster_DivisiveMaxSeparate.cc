@@ -102,7 +102,7 @@ void Cluster_DivisiveMaxSeparate::clusterWeights(MaxSATFormulaExtended *formula,
   // to the number of weights
   if (c > original_weights.size())
   {
-    printf("c Limiting number of clusters to number of weights\n");
+    // Default library use must not emit CLI diagnostics.
     c = original_weights.size();
     // weights will be the same as the original weights. This assumes that all
     // statistics keep the weight intact if a singleton set of weights is

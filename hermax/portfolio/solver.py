@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
 from hermax.core.time_limits import validate_time_limit
-from hermax.core.utils import normalize_wcnf_formula
+from hermax.core.utils import extract_wcnf_data, normalize_wcnf_formula
 from hermax.internal.maxsat_cli_parse import parse_maxsat_cli_output
 from hermax.internal.model_check import check_model
 from hermax.internal.subprocess_oneshot import (
@@ -235,6 +235,8 @@ class PortfolioSolver(IPAMIRSolver):
         super().__init__(formula)
         if not solver_classes:
             raise ValueError("solver_classes must be a non-empty sequence of solver classes.")
+        if any(not inspect.isclass(worker) for worker in solver_classes):
+            raise TypeError("solver_classes must contain solver classes.")
         if selection_policy in self._LEGACY_POLICY_NAMES:
             warnings.warn(
                 f"{selection_policy!r} is deprecated; use "
@@ -372,10 +374,12 @@ class PortfolioSolver(IPAMIRSolver):
         self._require_open()
         if not isinstance(clause, list):
             raise ValueError("Clause must be a list.")
-        cl = [int(x) for x in clause]
+        if any(isinstance(lit, bool) or not isinstance(lit, int) for lit in clause):
+            raise TypeError("Clause literals must be integers.")
+        if any(lit == 0 for lit in clause):
+            raise ValueError("Clause literals cannot be 0.")
+        cl = list(clause)
         for lit in cl:
-            if lit == 0:
-                raise ValueError("Clause literals cannot be 0.")
             while abs(lit) > self._num_vars:
                 self.new_var()
         self._ops.append(("add_clause", cl))
@@ -384,9 +388,9 @@ class PortfolioSolver(IPAMIRSolver):
 
     def set_soft(self, lit: int, weight: int) -> None:
         self._require_open()
-        if not isinstance(lit, int):
+        if isinstance(lit, bool) or not isinstance(lit, int):
             raise TypeError("Soft literal must be an integer.")
-        if not isinstance(weight, int):
+        if isinstance(weight, bool) or not isinstance(weight, int):
             raise TypeError("Weight must be a non-negative integer.")
         lit = int(lit)
         weight = int(weight)
@@ -402,41 +406,47 @@ class PortfolioSolver(IPAMIRSolver):
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
         self._require_open()
-        if not isinstance(weight, int):
+        if isinstance(weight, bool) or not isinstance(weight, int):
             raise TypeError("Weight must be a positive integer.")
         if int(weight) <= 0:
             raise ValueError("Weight must be positive.")
-        self.set_soft(int(lit), int(weight))
+        self.set_soft(lit, weight)
 
     def add_soft_relaxed(self, clause: list[int], weight: int, relax_var: int | None):
         self._require_open()
         # Mirror IPAMIRSolver while tracking exact replay op.
         if not isinstance(clause, list) or len(clause) == 0:
             raise ValueError("clause must be a non-empty list")
-        if not isinstance(weight, int):
+        if isinstance(weight, bool) or not isinstance(weight, int):
             raise TypeError("weight must be a positive int")
         if int(weight) <= 0:
             raise ValueError("weight must be a positive int")
-        cl = [int(x) for x in clause]
+        if any(isinstance(lit, bool) or not isinstance(lit, int) for lit in clause):
+            raise TypeError("Clause literals must be integers.")
+        if any(lit == 0 for lit in clause):
+            raise ValueError("Clause literals cannot be 0.")
+        if relax_var is not None and (
+            isinstance(relax_var, bool) or not isinstance(relax_var, int) or relax_var == 0
+        ):
+            raise ValueError("relax_var must be a non-zero integer literal")
+        cl = list(clause)
         for lit in cl:
-            if lit == 0:
-                raise ValueError("Clause literals cannot be 0.")
             while abs(lit) > self._num_vars:
                 self.new_var()
 
         if relax_var is None:
             if len(cl) != 1:
                 raise ValueError("relax_var=None only allowed for unit clauses")
-            self.add_soft_unit(cl[0], int(weight))
+            self.add_soft_unit(cl[0], weight)
             return None
 
-        b = abs(int(relax_var))
+        b = abs(relax_var)
         while b > self._num_vars:
             self.new_var()
-        self._ops.append(("add_soft_relaxed", cl, int(weight), b))
+        self._ops.append(("add_soft_relaxed", cl, weight, b))
         # Effect for validation
         self._hard_clauses.append([*cl, b])
-        self._softs.append(([-b], int(weight)))
+        self._softs.append(([-b], weight))
         self._invalidate()
         return b
 
@@ -580,6 +590,8 @@ class PortfolioSolver(IPAMIRSolver):
             return True, cost, None
         if model is None:
             return False, None, "feasible status without model"
+        if self._validate_model and any(lit == 0 or abs(lit) > self._num_vars for lit in model):
+            return False, None, "model contains literals outside the declared variable range"
         assumptions_hard = [[int(a)] for a in w.request_assumptions]
         chk = check_model(model, self._hard_clauses + assumptions_hard, self._softs, reported_cost=cost)
         if self._validate_model and not chk.hards_ok:
@@ -663,13 +675,21 @@ class PortfolioSolver(IPAMIRSolver):
             return None
 
         model = resp.get("model")
-        model_list = None if model is None else [int(x) for x in model]
+        if model is not None and (
+            not isinstance(model, list)
+            or any(isinstance(literal, bool) or not isinstance(literal, int) for literal in model)
+        ):
+            detail["status"] = "INVALID"
+            detail["invalid_reason"] = "model contains non-integer literals"
+            self._last_run_details.append(detail)
+            return None
+        model_list = None if model is None else list(model)
         cost = None
         if resp.get("cost") is not None:
-            try:
-                cost = int(resp["cost"])
-            except Exception:
-                cost = None
+            raw_cost = resp["cost"]
+            if isinstance(raw_cost, bool) or not isinstance(raw_cost, int):
+                raise TypeError("worker cost must be an integer")
+            cost = raw_cost
         ok, final_cost, invalid_reason = self._validate_candidate(w, status, model_list, cost)
         if not ok:
             self._handle_invalid(w.solver_name, invalid_reason or "invalid result")
@@ -765,12 +785,17 @@ class PortfolioSolver(IPAMIRSolver):
         time_limit: Optional[float] = None,
     ) -> bool:
         self._require_open()
-        self._invalidate()
         limit = validate_time_limit(time_limit)
-        assumps = [int(a) for a in assumptions] if assumptions else []
+        if assumptions is not None and (
+            not isinstance(assumptions, list)
+            or any(isinstance(a, bool) or not isinstance(a, int) for a in assumptions)
+        ):
+            raise TypeError("Assumptions must be integers.")
+        assumps = list(assumptions) if assumptions else []
+        if any(lit == 0 for lit in assumps):
+            raise ValueError("Assumptions must be non-zero integers.")
+        self._invalidate()
         for lit in assumps:
-            if lit == 0:
-                raise ValueError("Assumptions must be non-zero integers.")
             while abs(lit) > self._num_vars:
                 self.new_var()
 
@@ -1001,24 +1026,10 @@ class PortfolioSolver(IPAMIRSolver):
         self._invalidate()
 
     def _load_initial_formula(self, formula) -> None:
-        for cl in getattr(formula, "hard", []):
+        data = extract_wcnf_data(formula)
+        for cl in data.hard:
             self.add_clause(list(map(int, cl)))
-        soft_attr = getattr(formula, "soft", [])
-        wghts = getattr(formula, "wght", None)
-        if wghts is not None and len(wghts) == len(soft_attr) and (not soft_attr or not isinstance(soft_attr[0], tuple)):
-            for cl, w in zip(soft_attr, wghts):
-                cl2 = list(map(int, cl))
-                if len(cl2) == 1:
-                    self.add_soft_unit(cl2[0], int(w))
-                else:
-                    b = self.new_var()
-                    self.add_soft_relaxed(cl2, int(w), relax_var=b)
-            return
-        for item in soft_attr:
-            if isinstance(item, tuple) and len(item) >= 2:
-                cl, w = item[0], item[1]
-            else:
-                cl, w = item, 1
+        for cl, w in data.soft:
             cl2 = list(map(int, cl))
             if len(cl2) == 1:
                 self.add_soft_unit(cl2[0], int(w))

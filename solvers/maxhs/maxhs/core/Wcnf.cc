@@ -71,8 +71,9 @@ bool Wcnf::inputDimacs(std::string filename, bool verify) {
   double start_time = Minisat::cpuTime();
   gzFile input = gzopen(filename.c_str(), "rb");
   if (input == NULL) {
-    cout << "c ERROR: problem opening input file: " << instance_file_name
-         << "\n";
+    if (!instance_file_name.empty())
+      cout << "c ERROR: problem opening input file: " << instance_file_name
+           << "\n";
     return false;
   }
   if (!parse_DIMACS(input, this)) {

@@ -9,7 +9,7 @@ from pysat.formula import WCNF
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
 from hermax.core.ipamir_state_mixin import IPAMIRStateMixin
 from hermax.core.formula_journal import FormulaJournal
-from hermax.core.utils import normalize_wcnf_formula
+from hermax.core.utils import extract_wcnf_data, normalize_wcnf_formula
 
 
 @dataclass(frozen=True)
@@ -82,7 +82,9 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         self.set_soft(int(lit), w)
 
     def _normalize_lit(self, lit: int) -> int:
-        ilit = int(lit)
+        if isinstance(lit, bool) or not isinstance(lit, int):
+            raise TypeError("Literal must be an integer.")
+        ilit = lit
         if ilit == 0:
             raise ValueError("Literal 0 is invalid.")
         return ilit
@@ -90,14 +92,11 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
     def _normalize_clause(self, clause: List[int]) -> List[int]:
         if not isinstance(clause, list):
             raise ValueError("Clause must be a list.")
-        cl = [self._normalize_lit(x) for x in clause]
-        for lit in cl:
-            self._ensure_var(abs(lit))
-        return cl
+        return [self._normalize_lit(x) for x in clause]
 
     @staticmethod
     def _normalize_positive_weight(weight: int) -> int:
-        if not isinstance(weight, int):
+        if isinstance(weight, bool) or not isinstance(weight, int):
             raise TypeError("Weight must be an integer.")
         if int(weight) <= 0:
             raise ValueError("Weight must be a positive integer.")
@@ -105,7 +104,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
 
     @staticmethod
     def _normalize_nonnegative_weight(weight: int) -> int:
-        if not isinstance(weight, int):
+        if isinstance(weight, bool) or not isinstance(weight, int):
             raise TypeError("Weight must be an integer.")
         if int(weight) < 0:
             raise ValueError("Weight must be a non-negative integer.")
@@ -131,10 +130,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         return self._journal.soft_nonunit
 
     def _normalize_assumptions(self, assumptions: Optional[List[int]]) -> List[int]:
-        assumps = [self._normalize_lit(a) for a in assumptions] if assumptions else []
-        for lit in assumps:
-            self._ensure_var(abs(lit))
-        return assumps
+        return [self._normalize_lit(a) for a in assumptions] if assumptions else []
 
     def _compute_wrapper_cost(self, model: List[int]) -> int:
         asg = {abs(int(m)): int(m) > 0 for m in model}
@@ -170,8 +166,11 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         time_limit: Optional[float] = None,
     ) -> bool:
         self._require_open()
-        self._invalidate_solution()
         self._reject_time_limit(time_limit)
+        # Validate before invalidating the previous result, so failed solve
+        # calls leave the last successful result queryable.
+        self._normalize_assumptions(assumptions)
+        self._invalidate_solution()
         return self._solve_replay(assumptions, raise_on_abnormal)
 
     def _solve_replay(
@@ -182,6 +181,9 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         assumps = self._normalize_assumptions(assumptions)
 
         result = self._run_replay_solve(assumps)
+        if is_feasible(result.status) and result.model is None:
+            self._set_result(status=SolveStatus.ERROR, model=None, cost=None)
+            return False
         self._set_result(
             status=result.status,
             model=result.model,
@@ -199,24 +201,11 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         """Replay current cached formula to backend and solve once."""
 
     def _load_initial_formula(self, formula: WCNF) -> None:
-        for cl in getattr(formula, "hard", []):
-            self.add_clause(list(map(int, cl)))
-
-        soft_attr = getattr(formula, "soft", [])
-        wghts = getattr(formula, "wght", None)
-        if wghts is not None and len(wghts) == len(soft_attr) and (
-            not soft_attr or not isinstance(soft_attr[0], tuple)
-        ):
-            for cl, w in zip(soft_attr, wghts):
-                self.add_clause(list(map(int, cl)), int(w))
-            return
-
-        for item in soft_attr:
-            if isinstance(item, tuple) and len(item) >= 2:
-                cl, w = item[0], item[1]
-            else:
-                cl, w = item, 1
-            self.add_clause(list(map(int, cl)), int(w))
+        data = extract_wcnf_data(formula)
+        for cl in data.hard:
+            self.add_clause(list(cl))
+        for cl, w in data.soft:
+            self.add_clause(list(cl), w)
 
     def close(self) -> None:
         self._closed = True

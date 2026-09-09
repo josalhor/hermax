@@ -229,3 +229,53 @@ def test_trivariate_large_domains_with_offset_still_bypass_pb_and_card(strict: b
         m &= (z == 16)
     r = _solve(m)
     assert r.ok
+
+
+def test_trivariate_merged_unary_adder_lower_boundary_soundness():
+    """Merged unary adder (span >= 50) must enforce lower bound on z when x and y are at lb."""
+    # With spans of 50, merge_clause_upper < pair_clause_upper, activating
+    # _compile_trivariate_int_merged_leq instead of pairwise threshold cuts.
+    m = Model()
+    x = m.int("x", 10, 60)
+    y = m.int("y", 10, 60)
+    z = m.int("z", 0, 120)
+
+    # x + y <= z requires z >= 20 when x=10, y=10.
+    m &= (x + y <= z)
+    m &= (x == 10)
+    m &= (y == 10)
+    m &= (z == 0)
+
+    # Must be UNSAT because 10 + 10 <= 0 (20 <= 0) is false.
+    r = _solve(m)
+    assert r.status == "unsat"
+
+
+@pytest.mark.parametrize("strict", [False, True])
+@pytest.mark.parametrize("offset", [-5, 0, 5])
+def test_trivariate_merged_unary_adder_boundary_soundness_parametrized(strict: bool, offset: int):
+    """Merged unary adder with strict inequality and offsets must be sound at lower boundaries."""
+    m = Model()
+    x = m.int("x", 10, 60)
+    y = m.int("y", 10, 60)
+    z = m.int("z", 0, 120)
+
+    # When x=10, y=10: sum is 20 + offset.
+    # We choose z strictly below the required threshold:
+    # If strict: x + y + offset < z requires z >= 20 + offset + 1. We test z = 20 + offset (UNSAT).
+    # If non-strict: x + y + offset <= z requires z >= 20 + offset. We test z = 20 + offset - 1 (UNSAT).
+    if strict:
+        m &= (x + y + offset < z)
+        z_bad = 20 + offset
+    else:
+        m &= (x + y + offset <= z)
+        z_bad = 20 + offset - 1
+
+    m &= (x == 10)
+    m &= (y == 10)
+    m &= (z == z_bad)
+
+    r = _solve(m)
+    assert r.status == "unsat", f"Failed for strict={strict}, offset={offset}, z_bad={z_bad}"
+
+

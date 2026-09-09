@@ -26,6 +26,15 @@ def test_nonnullable_enum_requires_at_least_one_choice():
         m.enum("empty", choices=[], nullable=False)
 
 
+def test_enum_rejects_duplicate_or_non_string_choices():
+    m = Model()
+    with pytest.raises(ValueError, match="unique"):
+        m.enum("duplicate", choices=["red", "red"])
+
+    with pytest.raises(TypeError, match="strings"):
+        m.enum("non_string", choices=["red", 1])  # type: ignore[list-item]
+
+
 def test_nullable_empty_enum_decodes_to_none():
     m = Model()
     e = m.enum("empty", choices=[], nullable=True)
