@@ -142,7 +142,7 @@ static int load_formula_from_wcnf(coretrail::CoreTrailSolver* solver, PyObject* 
             Py_DECREF(hard); Py_DECREF(soft); Py_DECREF(wght);
             return -1;
         }
-        long w = PyLong_AsLong(ww);
+        long long w = PyLong_AsLongLong(ww);
         Py_DECREF(ww);
         if (PyErr_Occurred()) {
             Py_DECREF(cl); Py_DECREF(hard); Py_DECREF(soft); Py_DECREF(wght);
@@ -329,9 +329,9 @@ static PyObject* m_add_clause(PyCoreTrail* self, PyObject* args, PyObject* kwarg
         return nullptr;
     }
     if (py_to_int_vector(clause_obj, &clause) < 0) return nullptr;
-    std::optional<long> w = std::nullopt;
+    std::optional<std::int64_t> w = std::nullopt;
     if (weight_obj != Py_None) {
-        long wi = PyLong_AsLong(weight_obj);
+        long long wi = PyLong_AsLongLong(weight_obj);
         if (PyErr_Occurred()) return nullptr;
         w = wi;
     }
@@ -350,13 +350,14 @@ static PyObject* m_add_clause(PyCoreTrail* self, PyObject* args, PyObject* kwarg
 static PyObject* m_set_soft(PyCoreTrail* self, PyObject* args, PyObject* kwargs) {
     coretrail::CoreTrailSolver* s = get_solver(self);
     if (s == nullptr) return nullptr;
-    long lit = 0, weight = 0;
-    if (!PyArg_ParseTuple(args, "ll", &lit, &weight)) return nullptr;
+    long lit = 0;
+    long long weight = 0;
+    if (!PyArg_ParseTuple(args, "lL", &lit, &weight)) return nullptr;
     if (kwargs != nullptr) {
         PyObject* l = PyDict_GetItemString(kwargs, "lit");
         PyObject* w = PyDict_GetItemString(kwargs, "weight");
         if (l) lit = PyLong_AsLong(l);
-        if (w) weight = PyLong_AsLong(w);
+        if (w) weight = PyLong_AsLongLong(w);
         if (PyErr_Occurred()) return nullptr;
     }
     try {
@@ -374,13 +375,14 @@ static PyObject* m_set_soft(PyCoreTrail* self, PyObject* args, PyObject* kwargs)
 static PyObject* m_add_soft_unit(PyCoreTrail* self, PyObject* args, PyObject* kwargs) {
     coretrail::CoreTrailSolver* s = get_solver(self);
     if (s == nullptr) return nullptr;
-    long lit = 0, weight = 0;
-    if (!PyArg_ParseTuple(args, "ll", &lit, &weight)) return nullptr;
+    long lit = 0;
+    long long weight = 0;
+    if (!PyArg_ParseTuple(args, "lL", &lit, &weight)) return nullptr;
     if (kwargs != nullptr) {
         PyObject* l = PyDict_GetItemString(kwargs, "lit");
         PyObject* w = PyDict_GetItemString(kwargs, "weight");
         if (l) lit = PyLong_AsLong(l);
-        if (w) weight = PyLong_AsLong(w);
+        if (w) weight = PyLong_AsLongLong(w);
         if (PyErr_Occurred()) return nullptr;
     }
     try {
@@ -475,7 +477,7 @@ static PyObject* m_get_cost(PyCoreTrail* self, PyObject* args) {
     coretrail::CoreTrailSolver* s = get_solver(self);
     if (s == nullptr) return nullptr;
     try {
-        return PyLong_FromLong(s->get_cost());
+        return PyLong_FromLongLong(s->get_cost());
     } catch (const std::runtime_error& e) {
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return nullptr;

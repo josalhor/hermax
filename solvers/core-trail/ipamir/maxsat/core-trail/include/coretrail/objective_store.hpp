@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -10,7 +11,7 @@ namespace coretrail {
 // Canonical user objective. Derived RC2 selectors never enter this store.
 class ObjectiveStore {
 public:
-    void add_unit(int literal, long weight) {
+    void add_unit(int literal, std::int64_t weight) {
         if (weight <= 0) throw std::invalid_argument("soft weight must be positive");
         auto [it, inserted] = terms_.try_emplace(literal, Term{{literal}, 0});
         if (!inserted && it->second.clause.size() != 1U) {
@@ -19,14 +20,14 @@ public:
         it->second.weight += weight;
     }
 
-    void add_clause(int selector, std::vector<int> clause, long weight) {
+    void add_clause(int selector, std::vector<int> clause, std::int64_t weight) {
         if (weight <= 0) throw std::invalid_argument("soft weight must be positive");
         if (!terms_.emplace(selector, Term{std::move(clause), weight}).second) {
             throw std::invalid_argument("selector already exists");
         }
     }
 
-    void set_unit(int literal, long weight) {
+    void set_unit(int literal, std::int64_t weight) {
         if (weight < 0) throw std::invalid_argument("soft weight must be non-negative");
         auto [it, inserted] = terms_.try_emplace(literal, Term{{literal}, 0});
         if (!inserted && it->second.clause.size() != 1U) {
@@ -35,17 +36,17 @@ public:
         it->second.weight = weight;
     }
 
-    long unit_weight(int literal) const {
+    std::int64_t unit_weight(int literal) const {
         const auto it = terms_.find(literal);
         return it == terms_.end() ? 0 : it->second.weight;
     }
 
-    long evaluate(const std::vector<int>& model) const {
+    std::int64_t evaluate(const std::vector<int>& model) const {
         std::unordered_map<int, bool> values;
         values.reserve(model.size());
         for (int lit : model) values[lit < 0 ? -lit : lit] = lit > 0;
 
-        long cost = 0;
+        std::int64_t cost = 0;
         for (const auto& [selector, term] : terms_) {
             (void)selector;
             if (term.weight == 0) continue;
@@ -67,7 +68,7 @@ public:
 private:
     struct Term {
         std::vector<int> clause;
-        long weight;
+        std::int64_t weight;
     };
 
     std::unordered_map<int, Term> terms_{};

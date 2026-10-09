@@ -332,7 +332,11 @@ Solver::~Solver() {
 
 
 void Solver::write_char(unsigned char ch) {
+#if defined(_WIN32)
+    if(putc((int) ch, certifiedOutput) == EOF)
+#else
     if(putc_unlocked((int) ch, certifiedOutput) == EOF)
+#endif
         exit(1);
 }
 

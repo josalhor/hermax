@@ -27,6 +27,10 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 #include "mtl/IntTypes.h"
 
+#if defined(_WIN32)
+#include <chrono>
+#endif
+
 //-------------------------------------------------------------------------------------------------
 
 namespace Glucose {
@@ -58,10 +62,15 @@ static inline double Glucose::cpuTime(void) {
 
 #endif
 
-// Laurent: I know that this will not compile directly under Windows... sorry for that
 static inline double Glucose::realTime() {
+#if defined(_WIN32)
+    return std::chrono::duration<double>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+#else
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return (double)tv.tv_sec + (double) tv.tv_usec / 1000000; }
+    return (double)tv.tv_sec + (double) tv.tv_usec / 1000000;
+#endif
+}
 
 #endif

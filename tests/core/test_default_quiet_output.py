@@ -1,6 +1,7 @@
 """Small smoke checks for the default solver output contract."""
 
 import ctypes
+import sys
 from importlib import import_module
 
 import pytest
@@ -44,10 +45,21 @@ def _matrix_solver(name):
     return solver_class, is_subprocess
 
 
+def _flush_native_output():
+    # Windows exposes C stdio through runtime DLLs, not the process handle.
+    # MinGW extensions may use either runtime, so flush both.
+    runtimes = ("ucrtbase.dll", "msvcrt.dll") if sys.platform == "win32" else (None,)
+    for runtime in runtimes:
+        fflush = ctypes.CDLL(runtime).fflush
+        fflush.argtypes = [ctypes.c_void_p]
+        fflush.restype = ctypes.c_int
+        fflush(None)
+
+
 def _assert_quiet(capfd, run):
     run()
     # Native solvers may buffer printf/cout output until the C stream is flushed.
-    ctypes.CDLL(None).fflush(None)
+    _flush_native_output()
     captured = capfd.readouterr()
     assert captured.out == "", f"unexpected solver stdout:\n{captured.out}"
     assert captured.err == "", f"unexpected solver stderr:\n{captured.err}"
@@ -77,7 +89,7 @@ def test_rc2_explicit_verbose_output_is_captured(capfd):
     with RC2(formula, verbose=2) as solver:
         assert solver.compute() is not None
 
-    ctypes.CDLL(None).fflush(None)
+    _flush_native_output()
     captured = capfd.readouterr()
     assert "c formula:" in captured.out
     assert captured.err == ""
@@ -183,7 +195,7 @@ def test_matrix_solver_default_output_is_quiet(capfd, solver_name):
     finally:
         solver.close()
 
-    ctypes.CDLL(None).fflush(None)
+    _flush_native_output()
     captured = capfd.readouterr()
     assert captured.out == "", f"{solver_name} emitted stdout:\n{captured.out}"
     assert captured.err == "", f"{solver_name} emitted stderr:\n{captured.err}"
