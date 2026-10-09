@@ -3,7 +3,7 @@ Modelling Overview
 
 ``hermax.model`` is a Python modelling layer for SAT/MaxSAT.
 
-This page is decision oriented: what to use, when, and what workflow to follow.
+This page explains what to use and when.
 For internal compilation and mutability rules, see
 :doc:`modeling_internal_overview`.
 
@@ -14,7 +14,7 @@ Use :mod:`hermax.model` when your problem is easier to express with typed
 variables and constraints (booleans, bounded integers, enums, intervals,
 collections, PB constraints), and you want Hermax to lower that to CNF/WCNF.
 
-Use direct solver wrappers when you already have low-level CNF/WCNF/IPAMIR
+Use direct solver wrappers when you already have low level CNF/WCNF/IPAMIR
 logic and want explicit control over incremental operations:
 
 * :mod:`hermax.incremental`
@@ -25,7 +25,7 @@ In short:
 * If your thinking is at the level of "variables + constraints + objective",
   use ``Model``.
 * If your thinking is already at the level of literals/clauses/assumptions and
-  backend-specific calls, use the solver wrappers.
+  backend specific calls, use the solver wrappers.
 
 Variable and Domain Choices
 ---------------------------
@@ -77,7 +77,7 @@ Use tiered objective when priorities are lexicographic and must not be mixed:
 
 * ``model.tier_obj[tier][w] += ...``
 
-This is useful when, for example, service-level violations must be minimized
+Use this when, for example, service-level violations must be minimized
 before any secondary cost.
 
 Solve / Export / Decode Loop

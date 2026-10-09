@@ -119,3 +119,19 @@ img.cvrp-problem-view {
   overflow-x: auto;
   white-space: pre;
 }
+
+/* Keep the end of each example gallery easy to find. */
+.next-button a {
+  display: inline-block;
+  padding: 0.55rem 1rem;
+  border-radius: 0.3rem;
+  background: #2c7be5;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.next-button a:hover {
+  background: #1a5fb4;
+  color: #fff;
+}

@@ -1,7 +1,8 @@
 Solve, Export, and Decode
 =========================
 
-The model layer supports export to PySAT formulas, decoding, and ``solve()``.
+The model layer can export PySAT formulas, decode solver models, and call
+``solve()``.
 
 Export to CNF / WCNF
 --------------------
@@ -95,13 +96,13 @@ Solve strategies:
 If stratified scaling would overflow integer bounds, solving raises a
 ``ValueError``/``OverflowError``; use ``lex_strategy="incremental"`` in that case.
 
-Assumptions apply to the whole lex query and are used for every tier step.
+Assumptions apply to every tier step.
 
 Result fields:
 
 * ``SolveResult.tier_costs``: per-tier costs (highest priority first)
 * ``SolveResult.tier_models``:
-  per-tier raw models for incremental lex solve;
+  raw model for each tier in an incremental lex solve;
   ``None`` for stratified solve
 * ``SolveResult.cost``:
   final-tier cost for incremental lex solve
@@ -162,8 +163,7 @@ or via the convenience result object from ``Model.solve()``.
 Convenience Solving
 -------------------
 
-``Model.solve()`` is the main entry point and uses model-native incremental
-state by default.
+``Model.solve()`` is the main entry point and keeps backend state by default.
 
 Behavior:
 
@@ -195,8 +195,7 @@ Incremental Defaults
    m &= ~a        # routed incrementally
    m.solve()
 
-Once a backend is bound, model updates are reflected on the bound backend when
-they are materialized for solving.
+Once a backend is bound, updates are sent to it before the next solve.
 Soft-clause behavior depends on bound mode:
 
 * bound MaxSAT backend: soft additions/updates are applied on the MaxSAT side

@@ -30,14 +30,13 @@ The modelling API has three main layers:
 Eager vs. lazy evaluation
 -----------------------------------------
 
-The API is immediate, but not everything is compiled at the same time:
+The API is immediate, but compilation can be delayed:
 
 * Boolean operators produce clauses/groups immediately.
-* PB comparisons produce a **lazy** :class:`hermax.model.PBConstraint` which is compiled when it must be
-  materialized, for example during export/solve.
+* PB comparisons produce a **lazy** :class:`hermax.model.PBConstraint`. It is
+  compiled when needed, such as during export or solve.
 
-This keeps the design expressive while preserving enough PB metadata for safe
-operations like ``PB.implies(literal)``.
+This preserves PB metadata for operations such as ``PB.implies(literal)``.
 
 Mutability contract
 -------------------

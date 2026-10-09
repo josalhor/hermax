@@ -1,8 +1,7 @@
 Advanced Modelling Examples
 ==========================================================
 
-This page is a continuation of :doc:`model_examples`. For the more basic
-modelling examples, start there first.
+This page continues :doc:`model_examples`. Start there for the basics.
 
 Conventions
 -----------
@@ -17,16 +16,14 @@ Example 13: Piecewise
 --------------------------------------
 
 
-Use this pattern when a cost or penalty depends on an integer variable through
-tiers, and you want to use that cost in both constraints and the objective.
+Use this when a cost depends on integer tiers and appears in constraints or the
+objective.
 
 Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
-The piecewise expression is compiled as a weighted sum over the existing ladder
-literals of the integer variable. It does **not** create a proxy integer
-variable for the mapped cost. In practice, this removes a large amount of
-unnecessary encoding work in budget models.
+The expression uses the integer variable's existing ladder literals. It does
+not create another integer variable, so budget models need fewer clauses.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -77,13 +74,13 @@ Example 14: Histogram Binning
 
 
 
-Use this when you need counts over integer buckets and want those counts in constraints
-or the objective.
+Use this to count values in integer buckets for constraints or objectives.
 
 Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
-``in_range()`` returns a boolean indicator for an interval, which can be summed directly, which is very efficient.
+``in_range()`` returns a Boolean indicator for an interval. Sum these
+indicators to count each bucket.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -128,19 +125,18 @@ counts match the target histogram exactly.
    :language: console
 
 
-Example 15: Domain Holes + Distance Bound
------------------------------------------
+Example 15: Domain Holes and Distance Bound
+-------------------------------------------
 
 
 
-Use this when the domain itself carries structure and you want to encode
-that structure instead of routing through generic PB constraints.
+Use this when the domain has simple forbidden ranges or distance rules. The
+ladder encoding can express them without a generic PB constraint.
 
 Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
-These constraints compile to very small sets of clauses.
-They are useful when the domain is large but the forbidden structure is simple.
+These constraints use small clause sets, even when the domain is large.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -195,21 +191,19 @@ Solution
    *Visualization omitted from PDF build (domain-holes + distance solution). See the HTML docs for the diagram.*
 
 
-Example 16: Division + Scaling
+Example 16: Division and Scaling
 -------------------------------------------------------
 
 
 
-Use this when your model has coarse units or derived quantities and you still want to write natural
-algebraic constraints.
+Use this when your model has coarse units or derived values but you want normal
+algebraic syntax.
 
 Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
-The compiler recognizes these arithmetic
-forms and compiles them with ladder fast paths instead of generic PB/Card
-encoders. This can remove a large amount of auxiliary-variable bloat in
-scheduling/resource models.
+The compiler maps these forms to ladder fast paths instead of generic PB/Card
+encoders. This reduces auxiliary variables in scheduling and resource models.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -251,16 +245,16 @@ Example 17: Big-M
 
 
 
-Use this for the classic Opertions Research (OR) pattern \[if boolean is on, integer bound shifts\].
-This appears in optional resources, setup-dependent capacities, truck/worker
-activation, and many Big-M formulations.
+Use this for the classic Operations Research pattern: a Boolean switch changes
+an integer bound.
+This appears in optional resources, setup dependent capacities, and other
+Big M formulations.
 
 Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
-This pattern is compiled as a pair of conditional ladder bounds instead of a generic
-PB encoding. That means fewer clauses and fewer
-auxiliary variables than a naive Big-M.
+The pattern uses two conditional ladder bounds instead of a generic PB encoding,
+so it needs fewer clauses and auxiliary variables.
 
 Model
 ^^^^^
@@ -289,7 +283,7 @@ Code
 Output
 ^^^^^^
 
-The boolean activation and the resulting load demonstrate the conditional
+The boolean activation and the resulting load show the conditional
 capacity bound in a Big-M style model, compiled through the dedicated fast path.
 
 .. literalinclude:: _generated/example_outputs/17_big_m_indicator_capacity.txt
@@ -301,16 +295,13 @@ Example 18: Running Maximum
 
 
 
-Show the ``running_max()`` helper, which packages the efficient cumulative-fold
-pattern for prefix maxima and avoids the common quadratic prefix-max modelling
-mistake.
+Show ``running_max()``, which builds prefix maxima with a cumulative fold.
 
 Efficiency
 ^^^^^^^^^^^^^^^^^^^^^
 
-The naive way to compute every prefix maximum recomputes larger and larger
-prefixes independently. ``running_max()`` builds the sequence cumulatively,
-which is the best pattern for ladder max aggregation.
+Computing each prefix independently repeats work. ``running_max()`` builds the
+sequence one item at a time.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -352,12 +343,11 @@ Example 19: ``all_different``
 
 
 
-Use this when you care about modelling scalability and want to choose the right
-``all_different`` backend for your domain size and vector length.
+Use this to compare the ``all_different`` backends for your domain and vector
+size.
 
-Both backends are equivalent, but they scale differently. This
-example shows how to compare them on the same model and inspect the resulting
-CNF size, which is often the deciding factor on larger instances.
+Both backends are equivalent but have different clause counts. The example
+compares them on the same model.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -401,8 +391,8 @@ Example 20: Interval Scheduling
 
 
 
-Use this as a template for small scheduling models where you want readable
-interval constraints.
+Use this as a template for small scheduling models with readable interval
+constraints.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -468,13 +458,10 @@ Example 21: Decode Collections
 
 
 Use this when the model contains vectors, matrices, dictionaries, or enum
-collections and you want to inspect the decoded result in ordinary Python
-structures.
+collections and you want ordinary Python values from the result.
 
-The collections are a small integer vector, an integer matrix, a boolean
-dictionary, and an enum dictionary. The model pins each entry to a known value
-and then shows how the result object decodes them back into ordinary Python
-containers.
+The model fixes entries in a small integer vector, integer matrix, Boolean
+dictionary, and enum dictionary, then decodes them to Python containers.
 
 Code
 ^^^^
@@ -522,8 +509,7 @@ time through a table lookup.
       \min \sum_j p_j
    \end{aligned}
 
-This is a good pattern when the data is already stored as Python lists or
-vectors and you want the model to follow that structure directly.
+This fits data already stored as Python lists or vectors.
 
 .. warning::
 
@@ -587,8 +573,8 @@ Leaving a task unassigned pays a penalty.
       + \sum_{t,w} c_{t,w}[a_t = w]
    \end{aligned}
 
-This is easier to read than a Boolean assignment matrix, especially
-when each item can go to at most one place.
+This is easier to read than a Boolean assignment matrix when each item can go
+to at most one place.
 
 Code
 ^^^^
@@ -613,8 +599,7 @@ Example 24: Facility Location
 Use this when opening a site has a fixed cost, and each client must be attached
 to one open site.
 
-This is a classic optimization pattern because it combines three common ideas:
-open-or-close decisions, assignment decisions, and fixed costs.
+This combines open or close decisions, assignments, and fixed costs.
 
 New primitives
 ^^^^^^^^^^^^^^
@@ -700,9 +685,7 @@ Solver performance can vary a lot from one model family to another. A
 portfolio lets you keep the same model and try several solvers behind the same
 interface.
 
-The point of the example is to keep the same constraints and objective,
-but switch the solve strategy to a
-complete preset portfolio.
+The constraints and objective stay the same; only the solve strategy changes.
 
 
 Code
@@ -737,10 +720,10 @@ wrapper.
 Example 29: Floating Point Objective
 ------------------------------------
 
-Use this when constraints are discrete but objective terms are fractional
-(expected ROI, probabilities, prices, rates).
+Use this when constraints are discrete but objective terms are fractional, such
+as prices, rates, or probabilities.
 
-You keep objective terms in natural units instead of manual 100/1000 scaling.
+Keep objective terms in natural units instead of scaling them by hand.
 
 New primitives
 ^^^^^^^^^^^^^^

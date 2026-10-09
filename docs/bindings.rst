@@ -1,18 +1,16 @@
 Bindings Reference
 ==================
 
-Documents the pybind11-level APIs exposed by Hermax C/C++ extensions. Method
-names and signatures below are the exact Python names exported by the
-``PYBIND11_MODULE`` definitions.
+This page documents the pybind11 APIs exposed by Hermax C and C++ extensions.
+The names and signatures match the exported Python bindings.
 
 pybind11
 --------------
 
-**A big thanks to the pybind11 project**:
+Thanks to the pybind11 project:
 https://github.com/pybind/pybind11
 
-pybind11 has made building and maintaining Hermax Python bindings
-substantially simpler.
+pybind11 makes the Hermax bindings easier to build and maintain.
 
 Conventions
 -----------
@@ -168,10 +166,6 @@ EvalMaxSAT
    .. py:method:: setNInputVars(n: int) -> None
 
       Set number of input variables in backend.
-
-.. warning::
-   EvalMaxSAT bindings are currently unstable on macOS (``arm64`` and
-   ``x86_64``) and may crash on some weighted-core test patterns.
 
 EvalMaxSAT (IPAMIR)
 ---------------------------------------

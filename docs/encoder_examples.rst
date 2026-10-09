@@ -81,3 +81,12 @@ Output
 .. literalinclude:: _generated/example_outputs/03_pbamo.txt
    :language: text
    :caption: Structured PB(AMO) encoding and SAT checks
+
+Next
+----
+
+For the structured PB(AMO) API, continue to :doc:`encoder_pbamo`.
+
+.. raw:: html
+
+   <p class="next-button"><a href="encoder_pbamo.html">Next: PB(AMO) API</a></p>

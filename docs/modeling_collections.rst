@@ -59,7 +59,7 @@ Variable index: ``vec[idx]``
 .. code-block:: python
 
    vals = model.int_vector("vals", length=3, lb=0, ub=10)
-   idx = model.int("idx", 0, 3)
+   idx = model.int("idx", 0, 2)
    a = model.int("a", 0, 10)
 
    model &= (vals[idx] == a)
@@ -77,7 +77,7 @@ Supported comparators on ``vals[idx]``:
 * ``==``, ``!=``
 * ``<=``, ``<``, ``>=``, ``>``
 
-RHS currently supports:
+The right hand side supports:
 
 * integer constants
 * ``IntVar``
@@ -149,11 +149,11 @@ Example:
 
 ``IntVector.all_different()`` accepts a backend selector:
 
-* ``backend=\"auto\"`` (default): currently aliases to ``\"pairwise\"``
+* ``backend=\"auto\"`` (default): aliases to ``\"pairwise\"``
 * ``backend=\"pairwise\"``: pairwise ``x_i != x_j`` constraints
 * ``backend=\"bipartite\"``: exact-value channeling + column at-most-one constraints
 
-The ``bipartite`` backend currently requires:
+The ``bipartite`` backend requires:
 
 * a common domain across the vector
 * domain size at least the vector length
@@ -188,10 +188,10 @@ Example:
    xmax2 = model.max(xs, name="xmax2")
    xmin2 = model.min(xs, name="xmin2")
 
-The output domain is inferred from the operands:
+The output domain comes from the operands:
 
-* ``max`` uses ``[max(lb_i), max(ub_i))``
-* ``min`` uses ``[min(lb_i), min(ub_i))``
+* ``max`` uses ``[max(lb_i), max(ub_i)]``
+* ``min`` uses ``[min(lb_i), min(ub_i)]``
 
 One-Sided Bounds
 ----------------
@@ -208,7 +208,8 @@ direction of the aggregate relation:
    \ell = \mathrm{lower\_bound}(x_1,\dots,x_n) &\Rightarrow \ell \le x_i \quad \forall i
    \end{aligned}
 
-These are weaker than exact ``max``/``min`` but cheaper: one direction only.
+These are weaker than exact ``max``/``min`` but cheaper because they enforce
+only one direction.
 
 Example:
 
@@ -243,7 +244,7 @@ Typed vector views support allowed-combinations constraints:
 * ``EnumVector.is_in(rows)``
 * ``IntVector.is_in(rows)``
 
-This is the model-layer table constraint:
+This uses the model table constraint:
 
 .. code-block:: python
 
@@ -270,9 +271,8 @@ subset of variables:
    region = model.vector([grid[r, c] for r in rows for c in cols])
    model &= region.all_different()
 
-This is useful for irregular subsets such as Sudoku subgrids, selected
-resources, or custom neighborhoods, and for combining subset views with
-``.is_in(rows)``.
+Use this for irregular subsets such as Sudoku subgrids, selected resources,
+custom neighborhoods, or ``.is_in(rows)`` views.
 
 Matrices
 --------
@@ -307,7 +307,7 @@ Example (Sudoku subgrid):
    grid = model.int_matrix("cell", 9, 9, lb=1, ub=10)
    model &= grid[0:3, 0:3].flatten().all_different()
 
-This is the intended NumPy syntax for rectangular subsets.
+This is the NumPy syntax for rectangular subsets.
 
 Keyed Dictionaries
 ------------------
@@ -318,7 +318,7 @@ Constructors:
 * ``model.int_dict(name, keys, lb, ub)``
 * ``model.enum_dict(name, keys, choices, nullable=False)``
 
-These are useful when natural indexing is not numeric.
+Use dictionaries when natural indexing is not numeric.
 
 Example: 
 

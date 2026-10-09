@@ -1,7 +1,7 @@
 Utilities API
 =============
 
-The :mod:`hermax.utils` module exposes small, solver-agnostic helpers that are
+The :mod:`hermax.utils` module exposes small, solver independent helpers that are
 useful across modelling, testing, and experimentation. At the moment it
 contains pure-Python sorting network utilities (Batcher's odd-even merge sort
 networks [1]_ [2]_) and helper functions to apply them to Python sequences.

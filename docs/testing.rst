@@ -4,7 +4,7 @@ Testing
 Hermax ships with three complementary testing layers:
 
 1. A centralized compliance matrix runner for solver regression tracking.
-2. A grammar-aware fuzzing + delta-debugging for bug discovery.
+2. Grammar-aware fuzzing and delta debugging for bug discovery.
 3. A randomized runner over real benchmark instances.
 
 Test Entrypoints

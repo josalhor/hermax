@@ -1,7 +1,7 @@
 Incomplete Non-Incremental Solvers
 ==================================
 
-Documents the solvers in
+This page documents the solvers in
 ``hermax.non_incremental.incomplete``.
 
 These solvers are:
@@ -9,16 +9,15 @@ These solvers are:
 * non-IPAMIR-native (they do not provide native incremental state reuse)
 * incomplete (they may return a non optimal solution)
 
-For this reason, callers should expect :class:`hermax.core.ipamir_solver_interface.SolveStatus`
-values such as ``INTERRUPTED_SAT`` for valid but non-proven solutions.
+They can return ``INTERRUPTED_SAT`` for valid solutions that are not proven
+optimal.
 
 Module Description
 ------------------
 
-The ``hermax.non_incremental.incomplete`` namespace contains fake-incremental
-wrappers that cache the formula in Python and rebuild it on each ``solve()``.
+The wrappers cache the formula in Python and rebuild it on each ``solve()``.
 Current implementations use subprocess isolation around native Python bindings
-to tolerate solver ``exit()`` behavior and provide robust timeouts.
+to tolerate solver ``exit()`` behavior and enforce timeouts.
 
 Available classes
 -----------------

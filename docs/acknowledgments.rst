@@ -59,7 +59,7 @@ Glucose [1]_, CaDiCaL [2]_, MiniSat [3]_, and CominiSatPS [4]_.
    University of Helsinki.
 
 Python and SAT References
-----------------------
+-------------------------
 
 * Alexey Ignatiev, Antonio Morgado, Joao Marques-Silva.
   *PySAT: A Python Toolkit for Prototyping with SAT Oracles*. SAT 2018.
@@ -83,7 +83,7 @@ Python and SAT References
 MaxSAT References
 -----------------
 
-The following MaxSAT-focused academic references are currently cited across the
+The following MaxSAT academic references are cited across the
 Hermax documentation set:
 
 * Andreas Niskanen, Jeremias Berg, Matti Järvisalo.

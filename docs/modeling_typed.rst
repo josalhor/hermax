@@ -274,14 +274,14 @@ expression is represented as:
 
 where ``[x >= t_i]`` is the ladder-threshold literal for the integer variable.
 
-This:
+The expression:
 
-* Burns no new variables
+* creates no variables
 * Emits no clauses
 * Reuses the existing ladder literals of ``x``
 * Composes into later PB constraints
 
-The result is just a :class:`~hermax.model.PBExpr`.
+The result is a :class:`~hermax.model.PBExpr`.
 
 Non-monotonic step functions
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -324,8 +324,8 @@ per threshold bit) and is equivalent to minimizing the integer value.
 ``IntVar`` scaling (multiplication)
 ------------------------------------
 
-The model also provides an eager way to scale an integer by a positive constant
-into a new integer variable:
+The model can also scale an integer by a positive constant into a new integer
+variable:
 
 .. code-block:: python
 
@@ -357,11 +357,10 @@ If you want the explicit eager API, use:
 
    q = model.floor_div(x, 10)
 
-Both forms are equivalent. The lazy form is realized automatically when used in
-``model &= ...``, ``model.obj[...] +=``, or inside a PB expression compiled in
-Stage 2.
+Both forms are equivalent. The lazy form is realized when used in a constraint,
+objective, or PB expression.
 
-Why this is fast
+Why it is fast
 ^^^^^^^^^^^^^^^^
 
 For positive ``d``, if ``q = x // d``, then for every quotient threshold ``m``:
@@ -370,8 +369,8 @@ For positive ``d``, if ``q = x // d``, then for every quotient threshold ``m``:
 
    q_{\ge m} \;\leftrightarrow\; x_{\ge m \cdot d}
 
-The model compiles constant division using direct threshold
-equivalences, without PB/cardinality encoders.
+The model uses direct threshold equivalences, without PB or cardinality
+encoders.
 Divisors must be strictly positive integers.
 
 Lazy array indexing via ``@``
@@ -385,8 +384,8 @@ Lazy array indexing via ``@``
    w = model.int("w", lb=0, ub=3)
    model &= (costs @ w <= 50)
 
-The expression ``costs @ w`` creates a lazy descriptor. On comparison, the
-model unrolls the index domain and compiles a :class:`ClauseGroup`.
+The expression ``costs @ w`` is compiled by unrolling the index domain into a
+:class:`ClauseGroup` when it is compared.
 
 Supported forms:
 
@@ -401,7 +400,7 @@ Variable index on ``IntVector``
 .. code-block:: python
 
    vals = model.int_vector("vals", length=3, lb=0, ub=10)
-   idx = model.int("idx", 0, 3)
+   idx = model.int("idx", 0, 2)
    a = model.int("a", 0, 10)
    model &= (vals[idx] == a)
 
@@ -424,7 +423,7 @@ clauses and avoids generic PB/Card dispatch.
 Intervals
 ---------
 
-The modelling layer also provides a lightweight scheduling object:
+The modelling layer also provides an interval scheduling object:
 
 * :class:`hermax.model.IntervalVar`
 
@@ -456,7 +455,7 @@ and the model enforces:
 Methods
 ^^^^^^^
 
-Currently implemented:
+Implemented:
 
 * ``ends_before(other)``  -> enforces ``self.end <= other.start``
 * ``starts_after(other)`` -> enforces ``self.start >= other.end``
@@ -464,18 +463,15 @@ Currently implemented:
 
 ``no_overlap`` allows touching intervals (i.e. ``end == other.start`` is valid).
 
-Performance
+Encoding
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The interval identity ``end == start + duration`` is **not** compiled through
-the generic PB/Cardinality encoder pipeline.
-
-Instead, because both endpoints use the same ladder width and the
-model welds the endpoint ladders with threshold-bit equivalences:
+The identity ``end == start + duration`` uses threshold equivalences instead of
+the generic PB or cardinality encoders:
 
 * ``start_t[i] <-> end_t[i]`` for each ladder position ``i``
 
-This yields:
+This uses:
 
 * **O(n)** binary clauses (where ``n`` is the ladder width)
 * **zero auxiliary variables**

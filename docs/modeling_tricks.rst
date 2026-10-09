@@ -4,7 +4,7 @@ Modelling Tricks
 Scalar and Pairwise Tricks
 ----------------------------------------
 
-These use threshold literals directly.
+These use threshold literals.
 
 * ``IntVar == IntVar``:
   threshold-wise equivalence, linear in domain width.
@@ -63,7 +63,7 @@ Pseudo Boolean (PB) Tricks
   and merges repeated terms (e.g. ``a + b + 2*b`` -> ``a + 3*b``).
 
 * PB/Card compare compile cache:
-  comparator are cached, so repeated equivalent PB/Card
+  comparators are cached, so repeated equivalent PB/Card
   constraints reuse the same clauses.
 
 

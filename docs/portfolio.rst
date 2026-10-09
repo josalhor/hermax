@@ -1,21 +1,17 @@
 Portfolio Solver
 ================
 
-The :mod:`hermax.portfolio` package provides a process-isolated solver
-portfolio that can race multiple Hermax solver classes on the same MaxSAT
-instance.
+The :mod:`hermax.portfolio` package runs several Hermax solvers on one MaxSAT
+instance in separate processes.
 
-Unlike the incomplete-solver wrappers, the portfolio is a *general* front-end:
-it accepts incremental wrappers, non-incremental wrappers, and incomplete
-solvers in the same run. Each solver is executed in its own subprocess for
-robustness and time-limit control.
+The portfolio accepts incremental, non incremental, and incomplete solvers in
+one run. Each solver gets its own process and time limit.
 
 Module Description
 ------------------
 
 .. warning::
-   The portfolio module is experimental/beta and 
-   may be subject to significant interface changes.
+   The portfolio module is experimental and may change.
 
 ``PortfolioSolver`` is a fake-incremental wrapper:
 
@@ -49,8 +45,7 @@ Hermax also provides auto-discovered preset portfolio subclasses:
 * :class:`hermax.portfolio.IncompletePortfolioSolver`
 * :class:`hermax.portfolio.PerformancePortfolioSolver`
 
-These presets discover solver classes automatically from the public namespace
-structure:
+These presets find solver classes from the public namespaces:
 
 * ``CompletePortfolioSolver``:
   ``hermax.incremental`` + ``hermax.non_incremental``
@@ -59,8 +54,7 @@ structure:
 * ``PerformancePortfolioSolver``:
   union of complete + incomplete namespaces
 
-This discovery is structural and deterministic (no separate static registry is
-required). Presets:
+The result is deterministic and needs no separate registry. Presets:
 
 * use namespace ``__all__`` exports as the membership contract
 * keep only classes implementing :class:`hermax.core.ipamir_solver_interface.IPAMIRSolver`
@@ -111,8 +105,7 @@ Key options
 * ``validate_model`` (default ``True``):
   reject results whose model violates hard clauses.
 * ``recompute_cost_from_model`` (default ``True``):
-  compute the portfolio cost from the returned model using 
-  Hermax/IPAMIR.
+  compute the cost from the returned model using Hermax/IPAMIR.
 * ``invalid_result_policy`` (default ``"warn_drop"``):
   what to do with invalid solver outputs (warn/drop/raise/ignore).
 

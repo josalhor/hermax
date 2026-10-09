@@ -1,7 +1,7 @@
 Boolean and PB Modelling
 ========================
 
-Core modelling objects for Boolean clauses and pseudo-Boolean (PB) constraints.
+Core objects for Boolean clauses and pseudo Boolean (PB) constraints.
 
 Boolean Building Blocks
 -----------------------
@@ -120,27 +120,23 @@ The model dispatches PB comparators automatically:
 PB(AMO)
 ------------------
 
-When the compiler can recover useful ``AMO`` / ``EO`` structure around a PB (or cardinality constraint!), it
-can route that constraint through a reconciliation layer instead of compiling it as a
-plain PB.
+When the compiler finds ``AMO`` / ``EO`` structure around a PB or cardinality
+constraint, it can use the grouped encoder instead of a plain PB encoder.
 
 This path is documented separately in :doc:`encoder_pbamo`.
 
 In short:
 
-* a routing stage decides whether the PB should stay in ordinary
-  ``pblib`` or move to our custom path
-* if our path is chosen, a second routing stage picks one of the grouped
-  encoders such as ``mdd``, ``rggt``, or ``ggpw``
-* if the available ``AMO`` / ``EO`` candidates overlap, Hermax resolves them
-  into one disjoint partition before encoding
+* the compiler chooses ordinary ``pblib`` or the grouped path
+* the grouped path chooses an encoder such as ``mdd``, ``rggt``, or ``ggpw``
+* overlapping ``AMO`` / ``EO`` candidates are resolved into one disjoint
+  partition before encoding
 
 Fast Paths for PB Constraints
 --------------------------------------------
 
-Before falling back to generic PB/Card encoders, the compiler recognizes several
-``IntVar`` patterns and emits ladder clauses instead (no
-``PBEnc``/``CardEnc`` calls):
+Before using generic PB/Card encoders, the compiler recognizes several
+``IntVar`` patterns and emits ladder clauses instead:
 
 * offset precedence/equality: ``x + c <= y``, ``x - c == y``
 * scaled relations: ``a*x <= y``, ``a*x + c == y``
@@ -162,7 +158,7 @@ Examples:
    model &= (x + 1 <= (a + b + c) - 2)
    model &= (x + 1 >= (a + b + c) - 2)
 
-For these bool-sum shapes, the compiler uses a sequential counter and channels
+For these Boolean sum shapes, the compiler uses a sequential counter and maps
 its ``count>=k`` states to ladder thresholds of ``x``:
 
 * ``==`` uses bidirectional channeling

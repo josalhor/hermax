@@ -6,14 +6,12 @@ All examples below are executable Python files in ``examples/``.
 Modelling Gallery
 ------------------
 
-For an introduction of the modelling examples 
-(problem, new primitives, model, code, and output), see:
+For an introduction to the modelling examples, see:
 
 * :doc:`model_examples`
 
-For a gallery focused on optimization modelling tricks
-(piecewise costs, binning, ladder constraints, fast paths,
-interval makespan, and ``all_different`` backends), see:
+For modelling patterns such as piecewise costs, binning, ladder constraints,
+fast paths, interval makespan, and ``all_different`` backends, see:
 
 * :doc:`model_examples_tricks`
 
@@ -40,8 +38,8 @@ constraints:
 CVRP
 ----
 
-This is a capacitated vehicle routing (CVRP) example with depot-to-customer
-routes, capacity tracking, and MTZ load constraints [5]_.
+This capacitated vehicle routing (CVRP) example uses depot to customer routes,
+capacity tracking, and MTZ load constraints [5]_.
 
 Related API: :class:`hermax.model.Model`.
 
@@ -83,10 +81,10 @@ Solution
 Incremental MaxSAT
 ----------------------
 
-Below is the smallest Hermax workflow with Incremental MaxSAT: add hard
+This is the smallest Hermax workflow with Incremental MaxSAT: add hard
 constraints, assign soft penalties, update a soft weight (last write wins), and
-solve under assumptions. This is the mental model for the IPAMIR
-API used across the library, using UWrMaxSAT [1]_.
+solve under assumptions. It shows the IPAMIR API used across the library with
+UWrMaxSAT [1]_.
 
 Related API: :class:`hermax.incremental.UWrMaxSAT`.
 
@@ -103,11 +101,11 @@ Output
 RC2
 ---------------------------------------
 
-Use this if you already have formulas in PySAT's ``WCNF`` format and want to
-run them through Hermax without rewriting your formula-building code. It also
-shows the non-incremental/rebuild wrapper style, which keeps the same API but
-is a better fit for one-time solves than repeated incremental queries. This
-example uses PySAT's ``WCNF`` representation [3]_ together with RC2 [2]_.
+Use this if you already have formulas in PySAT's ``WCNF`` format. It shows how
+to run them through Hermax without rewriting your formula building code. The
+non incremental wrapper keeps the same API and fits one time solves better
+than repeated incremental queries. It uses PySAT's ``WCNF`` representation [3]_
+with RC2 [2]_.
 
 Related API: :class:`hermax.non_incremental.RC2`, :doc:`rc2`.
 
@@ -124,10 +122,9 @@ Output
 Load from WCNF Formula
 ----------------------
 
-Use this constructor path when your formula is already built elsewhere 
-and you want to hand the whole WCNF to a solver instead of 
-replaying clause additions manually. This is useful when the formula
-already comes from a PySAT-based workflow [3]_.
+Use this when a formula is already built elsewhere and you want to pass the
+whole WCNF to a solver instead of replaying clause additions. This fits a
+PySAT based workflow [3]_.
 
 Related API: :class:`hermax.incremental.EvalMaxSAT`.
 
@@ -144,9 +141,9 @@ Output
 OptiLog Compatibility
 ------------------------------
 
-Use this when pipelines produce OptiLog formulas and need to solve
-them in Hermax without rewriting them into PySAT. This example is specifically
-about OptiLog interoperability [4]_.
+Use this when a pipeline produces OptiLog formulas and you want to solve them
+in Hermax without converting them to PySAT. This example covers OptiLog
+interoperability [4]_.
 
 Related API: :class:`hermax.incremental.UWrMaxSAT`.
 External docs: `OptiLog documentation <https://hardlog.udl.cat/static/doc/optilog/html/index.html>`_.
@@ -168,7 +165,7 @@ Custom Portfolio
 
 Use this when a portfolio is needed: combine a complete solver with a
 fast incomplete solver, run both in isolated processes, and let the portfolio
-return the first optimal result, or the best valid result before timeout otherwhise.
+return the first optimal result, or the best valid result before a timeout.
 
 Related API: :class:`hermax.portfolio.PortfolioSolver`, :doc:`portfolio`.
 
@@ -191,7 +188,7 @@ constructors auto-discover backends from Hermax namespaces and build:
 * A complete-only portfolio, or
 * A mixed performance portfolio
 
-This is the fastest way to get a performance boost.
+This is a quick way to try several solver backends.
 
 Related API: :class:`hermax.portfolio.CompletePortfolioSolver`,
 :class:`hermax.portfolio.PerformancePortfolioSolver`, :doc:`portfolio`.
@@ -205,6 +202,15 @@ Output
 
 .. literalinclude:: _generated/example_outputs/portfolio_presets.txt
    :language: console
+
+Next
+----
+
+For advanced modelling examples, continue to :doc:`model_examples_tricks`.
+
+.. raw:: html
+
+   <p class="next-button"><a href="model_examples_tricks.html">Next: Advanced modelling examples</a></p>
 
 References
 ----------

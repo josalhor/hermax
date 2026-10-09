@@ -180,12 +180,10 @@ class IntSetVar:
         return PBExpr(self._model, [Term(1, lit) for lit in self._member_lits.values()], 0)
 
     def card(self, name: Optional[str] = None) -> "IntVar":
-        """Materialize an integer variable constrained to this set's cardinality.
+        """Return an integer variable equal to this set's cardinality.
 
-        The binding clauses are registered lazily: they are only flushed into
-        the model when a constraint consuming the returned ``IntVar`` is
-        actually added to the model.  Calling ``card()`` and discarding the
-        result is a no-op with respect to ``model._hard``.
+        Its clauses are added lazily, when the result is used in a constraint,
+        export, or solve.
         """
         out_name = self._model._reserve_name(None) if name is None else name
         n = len(self.universe)
@@ -474,10 +472,9 @@ class EnumVar:
             self._model._register_literal_definition(lit, group)
 
     def is_in(self, choices: Sequence[str]) -> Clause:
-        """Return a CNF clause asserting the enum is one of ``choices``.
+        """Return a clause asserting that the enum is one of ``choices``.
 
-        This is a fast subset-disjunction helper that directly reuses the
-        underlying choice literals and introduces no auxiliary variables.
+        The clause reuses the enum's choice literals and adds no variables.
 
         Args:
             choices: Sequence of allowed enum labels.
@@ -502,11 +499,10 @@ class EnumVar:
         return Clause.from_iterable(lits)
 
     def is_in_or_none(self, choices: Sequence[str]) -> ClauseGroup:
-        """Return a nullable subset-membership constraint including ``None``.
+        """Return a nullable constraint allowing ``choices`` or ``None``.
 
-        This helper is only valid for nullable enums and encodes membership in
-        ``set(choices) ∪ {None}`` by forbidding all excluded concrete labels.
-        It introduces no auxiliary variables but may require multiple clauses.
+        It is valid only for nullable enums. It may return more than one clause
+        and adds no auxiliary variables.
 
         Args:
             choices: Allowed concrete enum labels. The nullable ``None`` branch
@@ -768,7 +764,7 @@ class _VectorElementInt:
 class IntVar:
     """Bounded integer variable with ladder/order encoding.
 
-    Domain are ``[lb, ub]`` (upper bound included).
+    The domain is ``[lb, ub]`` and includes both bounds.
     """
     __slots__ = ("_model", "name", "lb", "ub", "_threshold_lits", "_eq_lits", "_cmp_cache")
 
@@ -868,7 +864,7 @@ class IntVar:
     def scale(self, factor: int):
         """Return a lazy derived integer expression for ``self * factor``.
 
-        This is the lazy/holding-tank counterpart of :meth:`Model.scale`.
+        The expression is built by :meth:`Model.scale` when it is used.
         """
         if isinstance(factor, bool):
             raise ValueError("Scale factor must be strictly positive.")
@@ -907,9 +903,8 @@ class IntVar:
         Example:
             ``x.piecewise(base_value=10, steps={10: 25, 50: 100})``
 
-        The returned object is a :class:`PBExpr` and burns no new variables or
-        clauses at construction time. Negative deltas are handled by the normal
-        PB normalization pipeline when the expression is later constrained.
+        The returned :class:`PBExpr` creates no variables or clauses until it is
+        used in a constraint. Negative changes are handled during PB encoding.
         """
         if isinstance(base_value, bool) or not isinstance(base_value, int):
             raise TypeError("piecewise() requires integer base_value")
@@ -1089,9 +1084,8 @@ class IntVar:
     def in_range(self, start: int, end: int) -> Literal:
         """Return a lazy indicator literal for inclusive membership ``start <= x <= end``.
 
-        The returned literal is safe to construct and discard: any helper clauses
-        defining the indicator are registered lazily and only materialized when
-        the literal is consumed by a model sink/export.
+        Helper clauses are registered lazily and are added only when the literal
+        is used in a model constraint, export, or solve.
         """
         if isinstance(start, bool) or not isinstance(start, int):
             raise TypeError("in_range() requires integer start")
@@ -1796,8 +1790,8 @@ class IntVector(_BaseVector):
     def upper_bound(self, name: Optional[str] = None):
         """Create an ``IntVar`` constrained to be >= every element in the vector.
 
-        This is a one-sided aggregate (not exact ``max``) and is cheaper than
-        :meth:`max` because it only emits upward-pressure clauses.
+        It is cheaper than :meth:`max` because it emits only the clauses needed
+        for the upper bound.
         """
         if not self._items:
             raise ValueError("Cannot compute upper_bound of an empty IntVector.")
@@ -1808,8 +1802,8 @@ class IntVector(_BaseVector):
     def lower_bound(self, name: Optional[str] = None):
         """Create an ``IntVar`` constrained to be <= every element in the vector.
 
-        This is a one-sided aggregate (not exact ``min``) and is cheaper than
-        :meth:`min` because it only emits downward-pressure clauses.
+        It is cheaper than :meth:`min` because it emits only the clauses needed
+        for the lower bound.
         """
         if not self._items:
             raise ValueError("Cannot compute lower_bound of an empty IntVector.")
@@ -1818,11 +1812,9 @@ class IntVector(_BaseVector):
         return MaxExpr(self._model, self._items, "lower_bound", name=name)
 
     def running_max(self, name: Optional[str] = None) -> "IntVector":
-        """Return prefix maxima as a materialized ``IntVector``.
+        """Return prefix maxima as an ``IntVector``.
 
-        ``out[i]`` equals ``max(self[:i+1])``. This uses a cumulative fold with
-        :meth:`Model.max` to avoid the common ``O(N^2)`` prefix-max modeling
-        trap of recomputing ``max(self[:i])`` independently at each step.
+        ``out[i]`` equals ``max(self[:i+1])``. Values are built cumulatively.
         """
         if not self._items:
             raise ValueError("Cannot compute running_max of an empty IntVector.")
@@ -1840,10 +1832,9 @@ class IntVector(_BaseVector):
         return IntVector(self._model, out_name, out)
 
     def running_min(self, name: Optional[str] = None) -> "IntVector":
-        """Return prefix minima as a materialized ``IntVector``.
+        """Return prefix minima as an ``IntVector``.
 
-        ``out[i]`` equals ``min(self[:i+1])`` using the same cumulative-fold
-        construction pattern as :meth:`running_max`.
+        ``out[i]`` equals ``min(self[:i+1])`` and is built cumulatively.
         """
         if not self._items:
             raise ValueError("Cannot compute running_min of an empty IntVector.")
@@ -1861,11 +1852,10 @@ class IntVector(_BaseVector):
         return IntVector(self._model, out_name, out)
 
     def running_sum(self, name: Optional[str] = None) -> "IntVector":
-        """Return prefix sums as a materialized ``IntVector``.
+        """Return prefix sums as an ``IntVector``.
 
-        ``out[i]`` equals ``sum(self[:i+1])``. This is built as a cumulative
-        fold with one fresh integer variable per prefix step, avoiding repeated
-        re-materialization of larger and larger PB expressions.
+        ``out[i]`` equals ``sum(self[:i+1])``. Each step uses one fresh integer
+        variable.
         """
         if not self._items:
             raise ValueError("Cannot compute running_sum of an empty IntVector.")

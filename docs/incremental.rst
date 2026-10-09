@@ -57,7 +57,7 @@ Incremental MaxSAT
 Incremental MaxSAT behavior differs substantially across solver families [1]_:
 
 * UWrMaxSAT is a trutly incremental MaxSAT solver based on PB optimization [2]_.
-* EvalMaxSAT uses an copy and re-solve strategy [3]_.
+* EvalMaxSAT uses a copy and re-solve strategy [3]_.
 * CoreTrail keeps native core-guided state and supports cooperative
   ``time_limit`` interruption followed by a later resume of the same query.
 

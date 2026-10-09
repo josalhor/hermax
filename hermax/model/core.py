@@ -1021,8 +1021,8 @@ def _map_ipamir_status_to_model_status(status) -> str:
 class Model:
     """Pure-Python SAT/MaxSAT modeling container.
 
-    ``Model`` is the mutable sink for hard constraints and weighted soft
-    constraints. All other modeling objects are immutable-by-operator.
+    ``Model`` stores hard constraints and weighted soft constraints. Other
+    modeling objects stay immutable when operators create new values.
     """
     __slots__ = (
         "_next_id",
@@ -1246,9 +1246,8 @@ class Model:
         """Enable or disable immediate materialization of deferred PB/Card clauses.
 
         By default, pure Boolean PB/Card fallback encodings are deferred until
-        :meth:`_commit_pb`, export, or solve. Enabling this toggle restores eager
-        commit behavior for those deferred constraints while leaving the
-        defer-capable architecture in place.
+        export or solve. Enabling this toggle compiles those clauses as soon as
+        they are added.
         """
         self._auto_commit_pb = bool(enabled)
 
@@ -2090,12 +2089,10 @@ class Model:
         return IntervalVar(self, name, start=start, duration=duration, end=end)
 
     def sum_var(self, items: Sequence[IntVar], name: Optional[str] = None) -> IntVar:
-        """Materialize the sum of integer variables as a single IntVar.
+        """Return one ``IntVar`` equal to the sum of the input variables.
 
-        Uses a binary-tree reduction: repeatedly merge the two
-        narrowest current partial sums. This keeps intermediate
-        widths smaller than a left-fold or,
-        while avoiding the ``O(N)`` linear chain.
+        The implementation merges the narrowest partial sums first to keep
+        intermediate domains small.
         """
         items_list = list(items)
         if not items_list:
@@ -2416,7 +2413,7 @@ class Model:
         raise TypeError("Model.table() items must be Literal, IntVar, or EnumVar instances.")
 
     def table(self, items: Sequence, *, allowed: Iterable[Sequence]) -> ClauseGroup:
-        """Return an allowed-tuples (extensional) constraint.
+        """Return a constraint that allows only the given rows.
 
         Args:
             items: Boolean literals, bounded integers, or enum variables from
@@ -2424,9 +2421,8 @@ class Model:
             allowed: Iterable of rows. Every satisfying assignment must match
                 one row after duplicate and impossible rows are removed.
 
-        The encoder is selected automatically: unary tables become one allowed
-        value clause, binary tables use bidirectional support clauses, and
-        larger tables use row selectors with an exactly-one constraint.
+        The encoder is chosen from the table size. Larger tables use row
+        selectors and an exactly-one constraint.
         """
         items_list = list(items)
         for item in items_list:
@@ -3555,21 +3551,17 @@ class Model:
         lex_strategy: Optional[str] = None,
         time_limit: Optional[float] = None,
     ) -> SolveResult:
-        """Solve the model using built-in convenience backends.
+        """Solve the model using the selected backend.
 
-        Behavior:
-            * hard-only model -> PySAT SAT solver (``sat_solver_name``)
-            * model with soft clauses -> PySAT RC2 (``maxsat_backend='rc2'``)
-            * if ``solver`` is provided, use a Hermax ``IPAMIRSolver`` class (or
-              instance) with the model exported as WCNF (one-shot solve)
+        By default, hard-only models use PySAT and models with soft clauses use
+        RC2. Pass ``solver`` to use a Hermax IPAMIR solver instead.
 
         Notes:
-            Assumptions accept ``int`` DIMACS literals, :class:`Literal`, or
-            unit :class:`Term` with coefficient ``+1``/``-1``; plain ``bool``
-            values are rejected.
-            In incremental mode, SAT binding can upgrade to MaxSAT when soft
-            clauses appear (controlled by ``sat_upgrade``).
-            ``lex_strategy`` is meaningful only when ``model.tier_obj`` is active.
+            Assumptions accept integer DIMACS literals, :class:`Literal`, or
+            unit :class:`Term` values. Plain ``bool`` values are rejected.
+            In incremental mode, adding soft clauses can switch a SAT binding
+            to MaxSAT when ``sat_upgrade`` allows it.
+            ``lex_strategy`` applies only to tiered objectives.
         """
         limit = validate_time_limit(time_limit)
         if not isinstance(incremental, bool):

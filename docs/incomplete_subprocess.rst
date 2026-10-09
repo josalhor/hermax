@@ -1,8 +1,8 @@
 Solver Subprocess Isolation
 ======================================
 
-Some incomplete MaxSAT solvers are exposed through native Python bindings but
-executed in a separate Python subprocess per solve.
+Some incomplete MaxSAT solvers use native Python bindings but run in a separate
+Python process for each solve.
 
 Current public wrappers using this pattern include ``OpenWBOInc``,
 ``TTOpenWBOInc``, ``SPBMaxSATCFPS``, ``NuWLSCIBR``, and ``Loandra``.
@@ -16,8 +16,7 @@ Some research solvers are hard to run safely in-process because they may:
 * crash
 * require hard time-limit enforcement
 
-Hermax keeps native bindings and isolates execution in a one-shot worker
-process.
+Hermax keeps the bindings isolated in a worker process.
 
 Architecture
 ------------------------------

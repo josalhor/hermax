@@ -14,8 +14,8 @@ Example 01: Toy Soft Clauses
 
 
 
-Introduce the basic MaxSAT workflow with hard clauses and weighted soft unit
-clauses.
+This example introduces the basic MaxSAT workflow with hard clauses and
+weighted soft unit clauses.
 
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -29,9 +29,9 @@ New primitives
 Model
 ^^^^^
 
-This is the smallest useful weighted partial MaxSAT instance: a hard CNF core
-plus a weighted set of soft preferences. It exposes Hermax's literal/soft-clause polarity convention without introducing
-PB encoders or finite-domain variables.
+This small weighted partial MaxSAT instance has a hard CNF core and weighted
+soft preferences. It shows Hermax's soft clause polarity without PB encoders or
+finite domain variables.
 
 .. math::
 
@@ -54,7 +54,7 @@ Code
 Output
 ^^^^^^^^^^^^^^^^^^^^
 
-This output shows one optimal assignment and the resulting weighted MaxSAT cost.
+The output shows an optimal assignment and its weighted MaxSAT cost.
 
 .. literalinclude:: _generated/example_outputs/01_toy_soft_clauses.txt
    :language: console
@@ -79,8 +79,8 @@ New primitives
 Model
 ^^^^^
 
-This is the first pseudo-boolean: one weighted capacity inequality and a
-linear profit objective. Knapsack is one of Karp's original NP-complete
+This first pseudo Boolean example has one weighted capacity inequality and a
+linear profit objective. Knapsack is one of Karp's original NP complete
 problems [1]_, and it is also a standard optimization reference problem in its
 own right [2]_.
 
@@ -96,7 +96,8 @@ own right [2]_.
       \min \sum_i \mathrm{profit}_i (1 - x_i)
    \end{aligned}
 
-The code uses soft unit clauses ``[x_i]`` so the cost is paid when ``x_i=0``, which is exactly the transformed minimization objective.
+The code uses soft unit clauses ``[x_i]``. The cost is paid when ``x_i=0``,
+which gives the transformed minimization objective.
 
 Problem
 ^^^^^^^
@@ -158,10 +159,9 @@ New primitives
 Model
 ^^^^^
 
-This is a weighted set-cover formulation. It is an example of disjunctions
-over a dictionary of booleans and an objective tied
-to selected decisions. Set cover is one of Karp's original NP-complete
-problems [1]_ and is also a common problem in Garey and Johnson
+This weighted set cover model uses disjunctions over a Boolean dictionary and
+an objective tied to selected decisions. Set cover is one of Karp's original
+NP complete problems [1]_ and is also a common problem in Garey and Johnson
 [3]_.
 
 .. math::
@@ -369,7 +369,7 @@ Example 06: Enum Subset Disjunction
 
 
 
-Demonstrate the fast categorical subset helper
+Show the fast categorical subset helper
 :meth:`hermax.model.EnumVar.is_in`.
 
 New primitives
@@ -427,7 +427,7 @@ New primitives
 Model
 ^^^^^
 
-This is an extensional constraint (table of valid tuples), a core CP modelling primitive.
+This table constraint lists valid tuples, a common CP modelling primitive.
 The example uses a temporary typed vector view so the syntax stays
 close to the mathematical statement.
 
@@ -477,7 +477,7 @@ New primitives
 Model
 ^^^^^
 
-This is the element-constraint pattern from CP: select a constant from an array
+This element constraint selects a constant from an array
 using an integer variable, then constrain the selected value. The lazy ``@``
 descriptor avoids introducing a separate "selected-cost" integer variable.
 
@@ -540,7 +540,7 @@ Example 09: Sudoku (9x9)
 
 
 
-Demonstrate matrix modelling, NumPy-like slicing, and ``all_different`` on rows,
+Show matrix modelling, NumPy-like slicing, and ``all_different`` on rows,
 columns, and 3x3 subgrids.
 
 New primitives
@@ -675,7 +675,7 @@ Example 11: Int Variables in the Objective
 
 
 
-Demonstrate ``obj[w] += int_var`` (ladder-bit objective lowering) combined with
+Show ``obj[w] += int_var`` (ladder-bit objective lowering) combined with
 hard PB constraints.
 
 New primitives
@@ -801,6 +801,10 @@ Next
 ----
 
 Advanced modelling examples continue in :doc:`model_examples_tricks`.
+
+.. raw:: html
+
+   <p class="next-button"><a href="model_examples_tricks.html">Next: Advanced modelling examples</a></p>
 
 
 

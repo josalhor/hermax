@@ -47,7 +47,7 @@ order, and operations that share a machine cannot overlap.
    \text{Objective:}\quad & \min M
    \end{aligned}
 
-This is one of the classic NP-hard scheduling problems [5]_, and it is a good
+This is a classic NP hard scheduling problem [5]_, and it is a good
 fit for interval variables because the model is fundamentally about start
 times, end times, and resource conflicts.
 
