@@ -932,8 +932,6 @@ public:
 
                         // Remove problematic literals from the assumptions
                         for(auto lit: conflictMin) {
-                            if (!_assumption.count(lit))
-                                std::cout << std::endl;
                             assert(_assumption.count(lit));
                             _assumption.erase(lit);
                             assert(!_assumption.count(lit));

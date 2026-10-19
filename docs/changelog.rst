@@ -1,6 +1,15 @@
 Changelog
 =========
 
+Version 1.2.7
+-------------
+
+Highlights
+~~~~~~~~~~
+* Added ``Model.as_int()`` for Boolean and constant conversion.
+* Added support for Python 3.15.
+* Further cleanup of MaxSAT solver output and logging.
+
 Version 1.2.6
 -------------
 

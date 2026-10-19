@@ -616,7 +616,6 @@ public:
                                     auto curCost = LO.optimize( curSolution, std::min(0.1 * chronoLastOptimize.tacSec(), 60.0) );
 
                                     if(curCost < solutionCost) {
-                                        std::cout << "o " << curCost << std::endl;
                                         solutionCost = curCost;
                                         solution = curSolution;
 

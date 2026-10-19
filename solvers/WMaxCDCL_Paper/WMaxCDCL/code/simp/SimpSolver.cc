@@ -792,12 +792,15 @@ bool SimpSolver::eliminate(bool turn_off_elim)
         double cl_inc_rate  = (double)n_cls_now   / n_cls_last;
         double var_dec_rate = (double)n_vars_last / n_vars_now;
 
-        printf("c Reduced to %d vars, %d cls (grow=%d)\n", n_vars_now, n_cls_now, grow);
-        printf("c cl_inc_rate=%.3f, var_dec_rate=%.3f\n", cl_inc_rate, var_dec_rate);
+        if (verbosity >= 1) {
+            printf("c Reduced to %d vars, %d cls (grow=%d)\n", n_vars_now, n_cls_now, grow);
+            printf("c cl_inc_rate=%.3f, var_dec_rate=%.3f\n", cl_inc_rate, var_dec_rate);
+        }
 
         if (n_cls_now > n_cls_init || cl_inc_rate > var_dec_rate) break;
     }
-    printf("c No. effective iterative eliminations: %d\n", iter);
+    if (verbosity >= 1)
+        printf("c No. effective iterative eliminations: %d\n", iter);
 
     cleanup:
     touched  .clear(true);

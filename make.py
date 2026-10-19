@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -142,10 +143,29 @@ def cmd_clean(_args: argparse.Namespace) -> int:
 
 
 def cmd_current_wheel(args: argparse.Namespace) -> int:
-    WHEELHOUSE.mkdir(exist_ok=True)
     py_tag = f"cp{sys.version_info.major}{sys.version_info.minor}-*"
+    return _build_wheels(args.extra, py_tag=py_tag)
+
+
+def _python_version_tag(value: str) -> str:
+    if re.fullmatch(r"3\.(0|[1-9][0-9]*)", value) is None:
+        raise argparse.ArgumentTypeError("Expected a Python version such as 3.15.")
+    return f"cp{value.replace('.', '')}-*"
+
+
+def cmd_wheel_version(args: argparse.Namespace) -> int:
+    return _build_wheels(args.extra, py_tag=args.version)
+
+
+def cmd_wheels(args: argparse.Namespace) -> int:
+    return _build_wheels(args.extra)
+
+
+def _build_wheels(extra: list[str], *, py_tag: str | None = None) -> int:
+    WHEELHOUSE.mkdir(exist_ok=True)
     env = os.environ.copy()
-    env["CIBW_BUILD"] = py_tag
+    if py_tag is not None:
+        env["CIBW_BUILD"] = py_tag
     # cibuildwheel does not automatically inherit arbitrary host variables.
     _forward_wheel_build_env(env)
     cmd = [
@@ -155,22 +175,7 @@ def cmd_current_wheel(args: argparse.Namespace) -> int:
         "--output-dir",
         str(WHEELHOUSE),
     ]
-    cmd.extend(args.extra)
-    return _run(cmd, env=env)
-
-
-def cmd_wheels(args: argparse.Namespace) -> int:
-    WHEELHOUSE.mkdir(exist_ok=True)
-    env = os.environ.copy()
-    _forward_wheel_build_env(env)
-    cmd = [
-        sys.executable,
-        "-m",
-        "cibuildwheel",
-        "--output-dir",
-        str(WHEELHOUSE),
-    ]
-    cmd.extend(args.extra)
+    cmd.extend(extra)
     return _run(cmd, env=env)
 
 
@@ -213,8 +218,16 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["current_wheel"],
         help="Build a wheel for the current Python interpreter.",
     )
-    current_p.add_argument("extra", nargs=argparse.REMAINDER, help="Extra args passed to python -m build.")
+    current_p.add_argument("extra", nargs=argparse.REMAINDER, help="Extra args passed to python -m cibuildwheel.")
     current_p.set_defaults(func=cmd_current_wheel)
+
+    version_p = sub.add_parser(
+        "wheel-version",
+        help="Build wheels for a specific Python version (e.g. 3.15).",
+    )
+    version_p.add_argument("version", type=_python_version_tag, help="Target Python version, e.g. 3.15.")
+    version_p.add_argument("extra", nargs=argparse.REMAINDER, help="Extra args passed to python -m cibuildwheel.")
+    version_p.set_defaults(func=cmd_wheel_version)
 
     wheels_p = sub.add_parser(
         "wheels",

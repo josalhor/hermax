@@ -1337,8 +1337,9 @@ bool Solver::failedLiteralDetection() {
       if (value(testedVars[i]) == l_Undef)
 	insertVarOrder(testedVars[i]);
     testedVars.clear();
-    printf("c nbFailedLits %d, nbI %d, fixedVarsByFL %d, totalFixedVars %d, nbTested %d, skipped %d, nbeq %d, nbSoftEq %d\n",
-           nbFailedLits, nbI, trail.size()-initTrail, trail.size(), nbTested, skipped, nbeq, myNbSoftEq);
+    if (verbosity >= 1)
+        printf("c nbFailedLits %d, nbI %d, fixedVarsByFL %d, totalFixedVars %d, nbTested %d, skipped %d, nbeq %d, nbSoftEq %d\n",
+               nbFailedLits, nbI, trail.size()-initTrail, trail.size(), nbTested, skipped, nbeq, myNbSoftEq);
 
     //  if (feasible)
     feasibleNbEq += nbeq; nbSoftEq += myNbSoftEq;
@@ -1477,7 +1478,8 @@ bool Solver::eliminateEqLit(CRef cr, Var v, Var targetV) {
     }
   }
   if (c.size() == 1) {
-    printf("c unit clause produced by equLit substitution\n");
+    if (verbosity >= 1)
+        printf("c unit clause produced by equLit substitution\n");
     uncheckedEnqueue(c[0]);
     if (propagate() != CRef_Undef  || softConflictFlag==true){
       // ok = false;
@@ -1528,11 +1530,12 @@ bool Solver::extendEquivLitValue(int debut) {
       Lit p=equivLits[i];
       Lit targetP = rpr[toInt(p)];
       if (value(p) == l_Undef && value(targetP) == l_Undef) {
-      	printf("c eqLit both unassigned %d(%d) %d(%d, %d, %d) at %d with %d vars at %llu confls****\n",
-	       toInt(p), decision[var(p)],
-	       toInt(targetP), decision[var(targetP)],
-	       toInt(getRpr(targetP)), decision[var(getRpr(targetP))], i, staticNbVars,
-	       conflicts);
+        if (verbosity >= 1)
+            printf("c eqLit both unassigned %d(%d) %d(%d, %d, %d) at %d with %d vars at %llu confls****\n",
+                   toInt(p), decision[var(p)],
+                   toInt(targetP), decision[var(targetP)],
+                   toInt(getRpr(targetP)), decision[var(getRpr(targetP))], i, staticNbVars,
+                   conflicts);
       	if (auxiVar(var(targetP))) {
 	  toRepeat=true;
       	  uncheckedEnqueue(softLits[var(targetP)]);
@@ -1566,7 +1569,7 @@ bool Solver::extendEquivLitValue(int debut) {
     for(int i=equivLits.size()-1; i>=debut; i--) {
       Lit p=equivLits[i];
       Lit targetP = rpr[toInt(p)];
-      if (value(p) !=  value(targetP))
+      if (verbosity >= 1 && value(p) != value(targetP))
 	printf("%d %d, %d %d, %d %d\n", i, equivLits.size(), toInt(p), toInt(value(p)), toInt(targetP), toInt(value(targetP)));
       assert(value(p) ==  value(targetP));
     }
@@ -1612,7 +1615,7 @@ bool Solver::eliminateEqLits_(int& debut) {
       Lit targetP = getRpr(p);
       if (value(p) == l_Undef && value(targetP) != l_Undef) {
 	toRepeat=true;
-	printf("c eqLits not both assigned\n");
+	if (verbosity >= 1) printf("c eqLits not both assigned\n");
 	if (value(targetP) == l_True)
 	  uncheckedEnqueue(p);
 	else uncheckedEnqueue(~p);
@@ -1623,7 +1626,7 @@ bool Solver::eliminateEqLits_(int& debut) {
       }
       else if (value(p) != l_Undef && value(targetP) == l_Undef) {
 	toRepeat=true;
-	printf("c eqLits not both assigned\n");
+	if (verbosity >= 1) printf("c eqLits not both assigned\n");
 	if (value(p) == l_True)
 	  uncheckedEnqueue(targetP);
 	else uncheckedEnqueue(~targetP);
@@ -1731,8 +1734,9 @@ bool Solver::eliminateEqLits_(int& debut) {
       nb+=cs.size();
     }
   }
-  printf("c %d clauses modified by %d eqLits with %d eqUse, DecreasedUB %lld, rm soft %d\n",
-	 nb, equivLits.size()-debut, nbEqUse-savedNbEqUse, savedUB-UB, nbSofts);
+  if (verbosity >= 1)
+    printf("c %d clauses modified by %d eqLits with %d eqUse, DecreasedUB %lld, rm soft %d\n",
+           nb, equivLits.size()-debut, nbEqUse-savedNbEqUse, savedUB-UB, nbSofts);
   debut = equivLits.size();
   if (softLitRemoved) {
     int i, j;
@@ -2010,10 +2014,12 @@ bool Solver::simplifyOriginalClauses(vec<CRef>& clauseSet) {
         avg= ((double)nbRemoved)/nbShortened;
     else avg=0;
 #ifndef NDEBUG
-    printf("c nb Clauses before/after: %d / %d, nbShortening: %d, nbShortened: %d, avg nbLits removed: %4.2lf\n",
-           nbOriginalClauses_before, clauseSet.size(), nbShortening, nbShortened, avg);
-    printf("c Original clause minimization time: %5.2lfs, number UPs: %llu\n",
-           cpuTime() - begin_simp_time, s_propagations-saved_s_up);
+    if (verbosity >= 1) {
+        printf("c nb Clauses before/after: %d / %d, nbShortening: %d, nbShortened: %d, avg nbLits removed: %4.2lf\n",
+               nbOriginalClauses_before, clauseSet.size(), nbShortening, nbShortened, avg);
+        printf("c Original clause minimization time: %5.2lfs, number UPs: %llu\n",
+               cpuTime() - begin_simp_time, s_propagations-saved_s_up);
+    }
 #endif
     return true;
 }
@@ -2366,7 +2372,8 @@ void Solver::cancelUntilUB() {
     while(level>0 && countedWeight_lim[level]>UB)
         level--;
 
-    printf("Canceled from %d to %d\n", decisionLevel(), level);
+    if (verbosity >= 1)
+        printf("Canceled from %d to %d\n", decisionLevel(), level);
     cancelUntil(decisionLevel() - 1);
 }
 
@@ -3273,7 +3280,8 @@ void Solver::analyzeSoftConflict(vec<Lit>& out_learnt, int& out_btlevel, int& ou
 
 	assert(pathC > 0 || maxConflLevel==0);
     if (maxConflLevel==0) {
-        printf("c ***** \n");
+        if (verbosity >= 1)
+            printf("c ***** \n");
         assert(pathC == 0 && UBconflictFlag);
         out_btlevel=0; out_lbd=0; out_learnt.clear();
         return;
@@ -4712,7 +4720,8 @@ lbool Solver::search(int& nof_conflicts)
                     checkGarbage();
                 }
 
-				printf("c Satttime wait=%d n=%d\n",sattimeWait,noSattiime);
+				if (verbosity >= 1)
+				    printf("c Satttime wait=%d n=%d\n",sattimeWait,noSattiime);
 				if(sattimeWait==noSattiime || equivLits.size() > prevEquivLitsNb) {
 
 				  for (int i=0; i < learnts_local.size(); i++)
@@ -5648,7 +5657,6 @@ void Solver::analyzeQuasiSoftConflict(vec<Lit>& out_learnt, int& out_btlevel, in
     falseLits.shrink(falseLits.size() - nbFalseLits);
     assert(pathC > 0 || maxConflLevel==0);
     if (maxConflLevel==0) {
-        printf("c ***** top quasi confl at level %d*****\n", decisionLevel());
         assert(pathC == 0);
         out_btlevel=0; out_lbd=0; out_learnt.clear();
         return;
@@ -6571,7 +6579,8 @@ void Solver::partition() {
             nonUnitSoftLits[j++] = nonUnitSoftLits[i];
         }
     nonUnitSoftLits.shrink(i-j);
-    printf("c isets %d, derivedCost %llu\n", nbIsets, derivedCost);
+    if (verbosity >= 1)
+        printf("c isets %d, derivedCost %llu\n", nbIsets, derivedCost);
 }
 
 
@@ -6715,7 +6724,8 @@ void Solver::partition2() {
     nonUnitSoftLits.shrink(i-j);
     assert(allSoftLits.size()==nSoftLits);
     weights.copyTo(weightsBckp);
-    printf("c isets %d, derivedCost %llu, reduction of soft from %d to %d\n", nbIsets, derivedCost,initSoftLits,nSoftLits);
+    if (verbosity >= 1)
+        printf("c isets %d, derivedCost %llu, reduction of soft from %d to %d\n", nbIsets, derivedCost,initSoftLits,nSoftLits);
 }
 
 
@@ -7357,7 +7367,8 @@ bool Solver::detectInitConflicts() {
     trail.shrink(trail.size() - trailRecord);
     qhead = trailRecord;
     // trail_lim.shrink(1);
-    printf("c %d conflict sets found with length %d\n", nbConfl, nbLits);
+    if (verbosity >= 1)
+        printf("c %d conflict sets found with length %d\n", nbConfl, nbLits);
     return true;
 }
 
@@ -7701,13 +7712,15 @@ void Solver::addPBConstraints() {
 
 	if(K<50) {
 		addPBConstraintMDD(Q, X, K);
-		printf("c Added PB MDD for |%d,%d| <= %lld : %d\n",X.size(),nbLits,K,PBC.size());
+		if (verbosity >= 1)
+		    printf("c Added PB MDD for |%d,%d| <= %lld : %d\n",X.size(),nbLits,K,PBC.size());
 		GACPBadded=true;
 		CCPBadded=true;
 	}
 	else {
 		addPBConstraintGPW(Q, X, K);
-		printf("c Added PB GGPW for |%d,%d| <= %lld : %d\n",X.size(),nbLits,K,PBC.size());
+		if (verbosity >= 1)
+		    printf("c Added PB GGPW for |%d,%d| <= %lld : %d\n",X.size(),nbLits,K,PBC.size());
 		CCPBadded=true;
 	}
 
@@ -8200,7 +8213,8 @@ lbool Solver::solve_()
     UB = totalWeight-solutionCost+1;
 	if(initUB<INT64_MAX){
         if(solutionCost > initUB) {
-            printf("c problem solved by preprocessing\n");
+            if (verbosity >= 1)
+                printf("c problem solved by preprocessing\n");
             return l_False;
         }
         else
@@ -8224,12 +8238,14 @@ lbool Solver::solve_()
 	}*/
 
 	if (!findConflictSoftLits()) {
-		printf("c problem solved by preprocessing\n");
+		if (verbosity >= 1)
+		    printf("c problem solved by preprocessing\n");
 		return l_False;
 	}
 
 	if (!findAMOs()) {
-		printf("c problem solved by preprocessing\n");
+		if (verbosity >= 1)
+		    printf("c problem solved by preprocessing\n");
 		return l_False;
 	}
 
@@ -8272,10 +8288,12 @@ lbool Solver::solve_()
         if (initUB >= solutionCost+fixedCostBySearch+derivedCost+relaxedCost) {
             providedUB = initUB - (solutionCost+fixedCostBySearch+derivedCost + relaxedCost) + 1;
             //	sup=UB; feasible=true;
-            printf("c provided UB: %llu\n", providedUB);
+            if (verbosity >= 1)
+                printf("c provided UB: %llu\n", providedUB);
         }
         else {
-            printf("c local search UB proved optimum by preprocessing\n");
+            if (verbosity >= 1)
+                printf("c local search UB proved optimum by preprocessing\n");
             return l_False;
         }
     }
@@ -8333,15 +8351,17 @@ lbool Solver::solve_()
             }
             if (VSIDS) {
                 nbVSIDSphase++;
-                printf("c VSIDS phase %d: conflicts %llu, phase %llu, starts %llu, UP %llu\n",
-                       nbVSIDSphase, conflicts-savedConfl, phase_allotment,
-                       starts-savedRestarts, propagations-savedUP);
+                if (verbosity >= 1)
+                    printf("c VSIDS phase %d: conflicts %llu, phase %llu, starts %llu, UP %llu\n",
+                           nbVSIDSphase, conflicts-savedConfl, phase_allotment,
+                           starts-savedRestarts, propagations-savedUP);
             }
             else  {
                 nbLRBphase++;
-                printf("c LRB phase %d: conflicts %llu, phase %llu, starts %llu, UP %llu\n",
-                       nbLRBphase, conflicts-savedConfl, phase_allotment,
-                       starts-savedRestarts, propagations-savedUP);
+                if (verbosity >= 1)
+                    printf("c LRB phase %d: conflicts %llu, phase %llu, starts %llu, UP %llu\n",
+                           nbLRBphase, conflicts-savedConfl, phase_allotment,
+                           starts-savedRestarts, propagations-savedUP);
             }
 
             // if (status != l_Undef /*|| !withinBudget()*/)

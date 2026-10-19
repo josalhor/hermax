@@ -1960,6 +1960,23 @@ class Model:
         self._reserve_container_name(name)
         return BoolVector(self, name, [self.bool(f"{name}[{i}]") for i in range(length)])
 
+    def as_int(self, value: IntVar | Literal | int | bool) -> IntVar:
+        """Return an integer interpretation, reusing Boolean literals as 0/1.
+
+        Integer variables are returned unchanged; constants become fixed-domain
+        integers. Conversion adds no SAT variables or constraints.
+        """
+        if isinstance(value, (IntVar, Literal)):
+            if value._model is not self:
+                raise ValueError("Integer conversion requires an object from this model.")
+            if isinstance(value, IntVar):
+                return value
+            return IntVar._from_bool(value)
+        if isinstance(value, int):
+            value = int(value)
+            return IntVar(self, f"as_int({value})", value, value)
+        raise TypeError("as_int() expects an IntVar, Literal, integer, or Boolean constant.")
+
     def int_vector(self, name: str, length: int, lb: int, ub: int) -> IntVector:
         """Create a vector of bounded integers sharing the same domain."""
         self._validate_size(length, "length")

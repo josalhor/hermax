@@ -807,8 +807,9 @@ bool Solver::backwardSubsume() {
   for(int i=0; i<staticNbVars; i++)
     occurIn[i].clear();
 
-  printf("c original clauses %d, learnts_core %d, learnts_tier2 %d, learnts_local %d\n",
-	 clauses.size(), learnts_core.size(), learnts_tier2.size(), learnts_local.size());
+  if (verbosity >= 1)
+    printf("c original clauses %d, learnts_core %d, learnts_tier2 %d, learnts_local %d\n",
+           clauses.size(), learnts_core.size(), learnts_tier2.size(), learnts_local.size());
   collectClauses(clauses);
   collectClauses(learnts_core, CORE);
   collectClauses(learnts_tier2, TIER2);
@@ -832,7 +833,8 @@ bool Solver::backwardSubsume() {
       if (removed(cr)) continue;
       nbSubsumes++;
       if (!subsumeClauses(cr, subsumed, deleted_literals)) {
-	printf("c a conflict is found during backwardSubsumptionCheck\n");
+	if (verbosity >= 1)
+	    printf("c a conflict is found during backwardSubsumptionCheck\n");
 	occurIn.cleanAll();
 	return false;
       }
@@ -843,10 +845,12 @@ bool Solver::backwardSubsume() {
       // }
 
       if (i==initQueueSize) {
-	printf("c initQueue %d, %d subsumed, %d deleted literals, %d fixed vars\n", initQueueSize, subsumed, deleted_literals, trail.size() - mySavedTrail);
+        if (verbosity >= 1)
+            printf("c initQueue %d, %d subsumed, %d deleted literals, %d fixed vars\n", initQueueSize, subsumed, deleted_literals, trail.size() - mySavedTrail);
 	//	mySavedTrail=trail.size();
 	initQueueSize=subsumptionQueue.size();
-	printf("c subsumption queue grows to %d\n", initQueueSize);
+	if (verbosity >= 1)
+	    printf("c subsumption queue grows to %d\n", initQueueSize);
 	int j, k;
 	for(j=0, k=i+1; k<subsumptionQueue.size(); k++)
 	  subsumptionQueue[j++] = subsumptionQueue[k];
@@ -857,7 +861,8 @@ bool Solver::backwardSubsume() {
     }
     subsumptionQueue.clear();
   }
-  printf("c %d subsumptions, %5d subsumed, %5d deleted literals, %5d fixed vars\n", nbSubsumes, subsumed, deleted_literals, trail.size() - mySavedTrail);
+  if (verbosity >= 1)
+    printf("c %d subsumptions, %5d subsumed, %5d deleted literals, %5d fixed vars\n", nbSubsumes, subsumed, deleted_literals, trail.size() - mySavedTrail);
   occurIn.cleanAll();
 
   // if (savedOriginal < clauses.size()) {
@@ -972,8 +977,10 @@ bool Solver::sattime(int maxsteps) {
 					    polarity[v] = !assignsLS[v];
 					  //	if(level(v)>0)
 					//		assigns[v]=assignsLS[v]?l_True:l_False;
-					printf("c Solution improved by LS: %lld in flip %d\n",UB, j);
-					printf("o %lld\n",solutionCost+UB+fixedCostBySearch+derivedCost);
+					if (verbosity >= 1) {
+					    printf("c Solution improved by LS: %lld in flip %d\n",UB, j);
+					    printf("o %lld\n",solutionCost+UB+fixedCostBySearch+derivedCost);
+					}
 					checkSolutionLS();
 				}
 				//All soft literals are true, the solution cannot be further improved
@@ -1011,7 +1018,8 @@ bool Solver::sattime(int maxsteps) {
 		}
 	}
 	double totalTime=cpuTime()-beginSattime;
-	printf("c sattime  preproc time: %12.2fs, total time: %12.2fs, flips: %d, \n", preprocTime, totalTime, j);
+	if (verbosity >= 1)
+	    printf("c sattime  preproc time: %12.2fs, total time: %12.2fs, flips: %d, \n", preprocTime, totalTime, j);
 	return true; //nImprovements>0;
 }
 

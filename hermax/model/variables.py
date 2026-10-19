@@ -766,7 +766,7 @@ class IntVar:
 
     The domain is ``[lb, ub]`` and includes both bounds.
     """
-    __slots__ = ("_model", "name", "lb", "ub", "_threshold_lits", "_eq_lits", "_cmp_cache")
+    __slots__ = ("_model", "name", "lb", "ub", "_threshold_lits", "_eq_lits", "_cmp_cache", "_is_view")
 
     def __init__(self, model: "Model", name: str, lb: int, ub: int):
         if (
@@ -778,20 +778,43 @@ class IntVar:
             raise TypeError("lb and ub must be ints")
         if ub < lb:
             raise ValueError("Int domain must satisfy lb <= ub")
-        self._model = model
-        self.name = name
-        self.lb = lb
-        self.ub = ub
         span = ub - lb + 1
         # Compact order/ladder representation:
         # for domain [lb, ub], we only need (span - 1) threshold bits.
         # Each bit i encodes (x >= lb + i + 1).
-        self._threshold_lits = [model.bool(f"{name}<=#{i}") for i in range(max(0, span - 1))]
+        thresholds = [model.bool(f"{name}<=#{i}") for i in range(max(0, span - 1))]
+        self._initialize(model, name, lb, ub, thresholds, is_view=False)
         for idx, lit in enumerate(self._threshold_lits):
             model._intvar_threshold_owner_by_litid[lit.id] = (self, idx)
+        self._add_domain_constraints()
+
+    def _initialize(
+        self, model: "Model", name: str, lb: int, ub: int,
+        thresholds: list[Literal], *, is_view: bool,
+    ) -> None:
+        self._model = model
+        self.name = name
+        self.lb = lb
+        self.ub = ub
+        self._threshold_lits = thresholds
+        self._is_view = is_view
         self._eq_lits: dict[int, Literal] = {}
         self._cmp_cache: dict[tuple[str, int], Literal] = {}
-        self._add_domain_constraints()
+
+    @classmethod
+    def _from_bool(cls, literal: Literal) -> "IntVar":
+        """Interpret a literal as 0/1 without allocating or registering bits.
+
+        Ownership belongs to the original integer, if any. In particular,
+        polarity-blind threshold ownership must never describe a negated view.
+        Equality indicators of views must preserve ownership for the same reason.
+        """
+        out = cls.__new__(cls)
+        label = literal.name if literal.polarity else f"~{literal.name}"
+        out._initialize(
+            literal._model, f"as_int({label})", 0, 1, [literal], is_view=True,
+        )
+        return out
 
     def _add_domain_constraints(self) -> None:
         # Prefix-true unary encoding over (span - 1) bits.
@@ -1344,7 +1367,7 @@ class IntVar:
                     )
                     self._model._register_literal_definition(lit, eq_def)
                 self._eq_lits[value] = lit
-                if self._span() > 1:
+                if self._span() > 1 and not self._is_view:
                     self._model._intvar_eq_owner_by_litid[self._model._lit_to_dimacs(lit)] = (self, int(value))
             return self._eq_lits[value]
         if isinstance(value, IntVar):

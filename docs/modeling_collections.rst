@@ -274,6 +274,17 @@ subset of variables:
 Use this for irregular subsets such as Sudoku subgrids, selected resources,
 custom neighborhoods, or ``.is_in(rows)`` views.
 
+Use ``model.as_int(value)`` to include Boolean literals or constants in an
+integer vector. Booleans are interpreted as 0/1; existing integers are unchanged.
+Conversion adds no solver variables or constraints.
+
+.. code-block:: python
+
+   x = model.int("mixed_x", 0, 4)
+   b = model.bool("mixed_b")
+   values = model.vector([x, model.as_int(b), model.as_int(3)])
+   model &= values.increasing()
+
 Matrices
 --------
 

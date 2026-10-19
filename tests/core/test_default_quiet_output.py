@@ -1,6 +1,7 @@
 """Small smoke checks for the default solver output contract."""
 
 import ctypes
+import random
 from importlib import import_module
 
 import pytest
@@ -134,10 +135,29 @@ def test_wmaxcdcl_default_is_quiet(capfd):
     def run():
         solver = WMaxCDCLSolver()
         try:
-            solver.add_clause([1])
+            # Trigger the old level-0 quasi-conflict diagnostic.
+            solver.set_soft(1, 2)
+            solver.set_soft(-1, 1)
             assert solver.solve()
         finally:
             solver.close()
+
+    _assert_quiet(capfd, run)
+
+
+def test_wmaxcdcl_local_search_default_is_quiet(capfd):
+    backend = pytest.importorskip("hermax.core.wmaxcdcl")
+
+    def run():
+        solver = backend.WMaxCDCL()
+        rng = random.Random(7)
+        n_vars = 24
+        for _ in range(n_vars):
+            solver.newVar()
+        for _ in range(180):
+            clause = [rng.choice((-1, 1)) * rng.randint(1, n_vars) for _ in range(3)]
+            solver.addClause(clause, rng.randint(1, 5))
+        assert solver.solve()
 
     _assert_quiet(capfd, run)
 
@@ -158,12 +178,12 @@ def test_subprocess_solver_default_worker_has_no_diagnostics(module_name, class_
 
     solver = solver_class()
     try:
-        solver.add_clause([1])
+        # Exercise objective/progress paths, not just a trivial SAT return.
+        solver.set_soft(1, 1)
+        solver.set_soft(-1, 1)
         assert solver.solve()
-        assert not any(
-            line.startswith("c ")
-            for line in solver._last_worker_stdout.splitlines()
-        )
+        assert solver._last_worker_stdout == ""
+        assert solver._last_worker_stderr == ""
     finally:
         solver.close()
 
@@ -177,7 +197,8 @@ def test_matrix_solver_default_output_is_quiet(capfd, solver_name):
     solver = solver_class()
     worker_stdout = ""
     try:
-        solver.add_clause([1])
+        solver.set_soft(1, 1)
+        solver.set_soft(-1, 1)
         assert solver.solve()
         worker_stdout = getattr(solver, "_last_worker_stdout", "")
     finally:

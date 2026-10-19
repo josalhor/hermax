@@ -132,7 +132,7 @@ void BLS::initUndefClauses(vec<int>& undefClauses) {
 
 void BLS::LSU() {
 
-  printf("c Warn: changing to LSU algorithm.\n");
+  if (verbosity > 0) printf("c Warn: changing to LSU algorithm.\n");
 
   lbool res = l_True;
   uint64_t newCost = UINT64_MAX;
@@ -153,7 +153,7 @@ void BLS::LSU() {
       nbSatisfiable++;
       newCost = computeCostModel(solver->model);
       saveModel(solver->model);
-      printf("o %" PRId64 "\n", newCost + off_set); 
+      if (verbosity > 0) printf("o %" PRId64 "\n", newCost + off_set);
 
       if (newCost == 0) {
         // If there is a model with value 0 then it is an optimal model
@@ -203,7 +203,7 @@ void BLS::basicSearch(int maxMCS = 30) {
     
     maxMCS--;
   }
-  if (maxMCS == 0) 
+  if (maxMCS == 0 && verbosity > 0)
     printf("c All requested MCSs found\n");
 }
 
@@ -241,12 +241,12 @@ bool BLS::findNextMCS() {
   	uint64_t newCost = computeCostModel(solver->model);
   	if (newCost < _smallestMCS){
   		saveModel(solver->model);	
-  		printf("o %" PRId64 "\n", newCost);
+		if (verbosity > 0) printf("o %" PRId64 "\n", newCost);
   		_smallestMCS = newCost;
   	}
   }
   else {
-    printf("c Warn: SAT Solver exit due to conflict budget.\n");
+    if (verbosity > 0) printf("c Warn: SAT Solver exit due to conflict budget.\n");
     if (costModel < _smallestMCS) {
       _smallestMCS = costModel;
       //Last saved model is smallest MCS...
@@ -275,7 +275,7 @@ bool BLS::findNextMCS() {
       if (costModel < _smallestMCS) {
 	       //saveSmallestModel(solver->model);
       	   saveModel(solver->model);
-	       printf("o %" PRId64 "\n", costModel);
+	       if (verbosity > 0) printf("o %" PRId64 "\n", costModel);
 	       _smallestMCS = costModel;
       }
     }
@@ -299,13 +299,13 @@ bool BLS::findNextMCS() {
     else if (res == l_True) {
       costModel -= maxsat_formula->getSoftClause(satClauses.last()).weight;
       if (undefClauses.size() == 0 && costModel < _smallestMCS){
-        printf("o %" PRId64 "\n", costModel);
+        if (verbosity > 0) printf("o %" PRId64 "\n", costModel);
         saveModel(solver->model);
         _smallestMCS = costModel;
       }
     }
     else {
-      printf("c Warn: SAT Solver exit due to conflict budget.\n");
+      if (verbosity > 0) printf("c Warn: SAT Solver exit due to conflict budget.\n");
       if (costModel < _smallestMCS) {
         _smallestMCS = costModel;
         //Last saved model is smallest MCS...
@@ -349,6 +349,7 @@ void BLS::search() {
 void BLS::printModel(){
   
   assert (model.size() != 0);
+  if (verbosity == 0) return;
   
   printf("v ");
   for (int i = 0; i < model.size(); i++){
@@ -360,6 +361,8 @@ void BLS::printModel(){
 
 // Prints the corresponding answer.
 void BLS::printAnswer(int type){
+
+  if (verbosity == 0) return;
 
   if (type == _UNKNOWN_ && model.size() > 0)
     type = _SATISFIABLE_;
