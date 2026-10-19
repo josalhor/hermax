@@ -405,8 +405,12 @@ class DeferredClauseGroup(ClauseGroup):
     def extend(self, other, *, inplace: bool = False) -> "ClauseGroup":
         if not inplace:
             raise TypeError("ClauseGroup.extend() requires keyword argument inplace=True to mutate.")
-        self._realize()
-        return super().extend(other, inplace=True)
+        group = self._realize()
+        group.extend(other, inplace=True)
+        self._clauses = group._clauses
+        self._amo_groups = group._amo_groups
+        self._eo_groups = group._eo_groups
+        return self
 
     def __repr__(self) -> str:
         if self._compiled is None:
@@ -426,7 +430,51 @@ def _deferred_constant_constraint(model: "Model", value: bool) -> DeferredClause
     return DeferredClauseGroup(model, lambda: ClauseGroup(model, [Clause(model, [])]))
 
 
-class IntRelation(ClauseGroup):
+class _Reifiable:
+    """Implication and equivalence for constraints with a known negation."""
+
+    __slots__ = ()
+
+    def _negated(self) -> ClauseGroup:
+        raise NotImplementedError
+
+    def implies(self, target: "Literal") -> ClauseGroup:
+        """Return ``self -> target``, where target is a Boolean literal."""
+        if not isinstance(target, Literal):
+            raise _detection_error()
+        _ensure_same_model_pair_fast(self, target)
+        return DeferredClauseGroup(
+            self._model,
+            lambda: self._negated().only_if(~target),
+        )
+
+    def iff(self, indicator: "Literal") -> ClauseGroup:
+        """Return ``indicator <-> self`` without posting it to the model."""
+        return self.only_if(indicator) & self.implies(indicator)
+
+
+class _ReifiableClauseGroup(_Reifiable, DeferredClauseGroup):
+    """A lazy constraint with separate positive and negative encodings."""
+
+    __slots__ = ("_negative",)
+
+    def __init__(self, model: "Model", positive_builder, negative_builder):
+        super().__init__(model, positive_builder)
+        self._negative = DeferredClauseGroup(model, negative_builder)
+
+    def _negated(self) -> ClauseGroup:
+        if self._negative is None:
+            raise TypeError("Cannot use .iff() or .implies() after in-place extension.")
+        return self._negative._realize()
+
+    def extend(self, other, *, inplace: bool = False) -> ClauseGroup:
+        super().extend(other, inplace=inplace)
+        # The original negation no longer describes the extended conjunction.
+        self._negative = None
+        return self
+
+
+class IntRelation(_Reifiable, ClauseGroup):
     """ClauseGroup with relation metadata for full Boolean reification.
 
     This represents a normalized integer relation of the form:
@@ -456,11 +504,8 @@ class IntRelation(ClauseGroup):
         raise ValueError(f"Unsupported relation operator {self.op!r}")
 
     def reify(self, indicator: "Literal") -> ClauseGroup:
-        """Return full equivalence ``indicator <-> relation``."""
-        _ensure_same_model_pair_fast(self, indicator)
-        fwd = self.only_if(indicator)
-        rev = self._negated().only_if(~indicator)
-        return ClauseGroup(self._model, [*fwd, *rev])
+        """Compatibility alias for :meth:`iff`."""
+        return self.iff(indicator)
 
 
 class Clause:
@@ -697,9 +742,9 @@ class Literal:
         return self._finalize_pb_comparison(">", other)
 
     def __eq__(self, other):  # type: ignore[override]
-        if isinstance(other, IntRelation):
+        if isinstance(other, _Reifiable):
             _ensure_same_model_pair_fast(self, other)
-            return other.reify(self)
+            return other.iff(self)
         if isinstance(other, Literal):
             if self is other:
                 return True
@@ -720,9 +765,9 @@ class Literal:
         return self._finalize_pb_comparison("==", other)
 
     def __ne__(self, other):  # type: ignore[override]
-        if isinstance(other, IntRelation):
+        if isinstance(other, _Reifiable):
             _ensure_same_model_pair_fast(self, other)
-            return other.reify(~self)
+            return other.iff(~self)
         if isinstance(other, Literal):
             raise _formula_comparison_error(self, other)
         if isinstance(other, (Clause, ClauseGroup, DeferredClauseGroup, PBConstraint)):

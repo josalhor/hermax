@@ -1,24 +1,14 @@
 Conditionals and Implications
 =======================================
 
-The modelling layer supports two important modifier operations:
-
-* ``.only_if(literal)``
-* ``.implies(target)``
+* ``g.only_if(b)``: if ``b`` is true, enforce ``g``.
+* ``g.implies(b)``: if ``g`` holds, ``b`` must be true.
+* ``g.iff(b)``: ``b`` is true exactly when ``g`` holds.
 
 Conditional Enforcement: ``only_if()``
 ----------------------------------------
 
 ``only_if(lit)`` means "enforce this constraint only when ``lit`` is true".
-
-Supported on:
-
-* :class:`hermax.model.Literal`
-* :class:`hermax.model.Clause`
-* :class:`hermax.model.ClauseGroup`
-* :class:`hermax.model.PBConstraint`
-
-Examples:
 
 .. code-block:: python
 
@@ -28,7 +18,7 @@ Examples:
    # If g is true, enforce a PB inequality
    gated_pb = (2 * a + b <= 2).only_if(g)
 
-Chaining gates is supported and remains sound:
+Multiple conditions can be chained:
 
 .. code-block:: python
 
@@ -38,16 +28,30 @@ Chaining gates is supported and remains sound:
 Implication: ``implies()``
 --------------------------
 
-``src.implies(dst)`` is implemented as a safe form of half-reification.
+``src.implies(b)`` means "if ``src`` holds, ``b`` must be true".
+The target must be a Boolean literal.
 
-Supported source forms
+Examples include ``a.implies(b)``, ``(a | b).implies(c)``, and
+``(x <= y).implies(b)``. It also works with weighted sums such as
+``2 * a + b <= 2``, ``all_different()``, and ``table()``.
+
+Equivalence: ``iff()``
 ----------------------
 
-* :class:`hermax.model.Literal`
-* :class:`hermax.model.Clause`
-* :class:`hermax.model.PBConstraint`
+``constraint.iff(b)`` means that ``b`` is true exactly when the constraint holds.
+Use it with comparisons such as ``x <= y`` or ``x == y``, where ``x`` and
+``y`` are integer variables, and with ``all_different()`` or ``table()``/``is_in()``.
 
-Unsupported source forms
-------------------------
+.. code-block:: python
 
-* :class:`hermax.model.ClauseGroup`
+   x = model.int_vector("x", length=3, lb=0, ub=4)
+   b = model.bool("b")
+   g = x.all_different()
+
+   model &= g.iff(b)                  # b <-> AllDifferent(x)
+   # Equivalently: model &= b == g
+
+   t = model.table(x, allowed=[(0, 1, 2), (2, 1, 0)])
+   model &= t.iff(b)
+
+Use ``~b`` as the indicator to reverse its meaning.

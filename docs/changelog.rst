@@ -1,6 +1,13 @@
 Changelog
 =========
 
+Version 1.2.8
+-------------
+
+Highlights
+~~~~~~~~~~
+* Added full reification for ``all_different()`` and ``table()``.
+
 Version 1.2.7
 -------------
 

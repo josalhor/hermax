@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from .core import *
 
 from .expressions import *
-from .expressions import _detection_error, _nonlinear_error, _ensure_same_model, _ensure_same_model_pair_fast, _LazyIntExpr, FLOAT_ZERO_TOL
+from .expressions import _detection_error, _nonlinear_error, _ensure_same_model, _ensure_same_model_pair_fast, _LazyIntExpr, _ReifiableClauseGroup, FLOAT_ZERO_TOL
 from .variables import *
 from .variables import _BaseVector, _BaseDict, _BaseMatrixView, _MultiplexerInt, _VectorElementInt
 from .encoders import *
@@ -2439,7 +2439,8 @@ class Model:
                 one row after duplicate and impossible rows are removed.
 
         The encoder is chosen from the table size. Larger tables use row
-        selectors and an exactly-one constraint.
+        selectors and an at-least-one constraint. Supports ``.iff(literal)``
+        and ``.implies(literal)`` as well as conditional enforcement.
         """
         items_list = list(items)
         for item in items_list:
@@ -2474,15 +2475,23 @@ class Model:
             seen.add(norm_row)
             norm_rows.append(norm_row)
 
+        row_atoms = None
+
+        def _get_row_atoms():
+            nonlocal row_atoms
+            if row_atoms is None:
+                row_atoms = [
+                    tuple(self._table_value_atom(item, value) for item, value in zip(items_list, row))
+                    for row in norm_rows
+                ]
+            return row_atoms
+
         def _build() -> ClauseGroup:
             if not norm_rows:
-                return ClauseGroup(self, [Clause(self, [self._get_bool_constant_literal(False)])])
+                return ClauseGroup(self, [Clause(self, [])])
             if width == 0:
                 return ClauseGroup(self, [])
-            row_atoms = [
-                tuple(self._table_value_atom(item, value) for item, value in zip(items_list, row))
-                for row in norm_rows
-            ]
+            row_atoms = _get_row_atoms()
             if width == 1:
                 return ClauseGroup(self, [Clause(self, [atoms[0] for atoms in row_atoms])])
             if width == 2:
@@ -2507,12 +2516,17 @@ class Model:
                 return ClauseGroup(self, [Clause(self, [atom]) for atom in row_atoms[0]])
 
             selectors = [self.bool() for _ in row_atoms]
-            clauses = list(self._as_clausegroup(BoolVector(self, "_table_sel", selectors).exactly_one()))
+            clauses = [Clause(self, selectors)]
             for selector, atoms in zip(selectors, row_atoms):
                 clauses.extend(Clause(self, [~selector, atom]) for atom in atoms)
             return ClauseGroup(self, clauses)
 
-        return DeferredClauseGroup(self, _build)
+        def _build_negative() -> ClauseGroup:
+            return ClauseGroup(self, [
+                Clause(self, [~atom for atom in atoms]) for atoms in _get_row_atoms()
+            ])
+
+        return _ReifiableClauseGroup(self, _build, _build_negative)
 
     def _as_clausegroup(self, constraint) -> ClauseGroup:
         if isinstance(constraint, bool):
@@ -2622,6 +2636,8 @@ class Model:
                 self._inc_state.route_deltas(hard0, soft0)
                 return self
             group = self._as_clausegroup(constraint)
+            if isinstance(group, DeferredClauseGroup):
+                group = group._realize()
             self._ensure_deferred_defs_in_group(group)
             self._register_clausegroup_structure(group)
             self._hard.extend(group)

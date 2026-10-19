@@ -31,6 +31,7 @@ from .expressions import (
     _unsupported_comparison_error,
     _LazyIntExpr,
     DeferredClauseGroup,
+    _ReifiableClauseGroup,
     _deferred_constant_constraint,
 )
 
@@ -1536,6 +1537,29 @@ class _BaseVector:
         """
         return self._model.table(self._items, allowed=rows)
 
+    def _all_different_pairwise(self) -> ClauseGroup:
+        clauses: list[tuple[int, ...]] = []
+        for i, left in enumerate(self._items):
+            for right in self._items[i + 1:]:
+                clauses.extend(left != right)
+        return ClauseGroup._from_dimacs_trusted(self._model, clauses)
+
+    def _not_all_different(self) -> ClauseGroup:
+        clauses: list[tuple[int, ...]] = []
+        witnesses: list[Literal] = []
+        for i, left in enumerate(self._items):
+            for right in self._items[i + 1:]:
+                if left is right:
+                    return ClauseGroup(self._model, [])
+                if isinstance(left, IntVar) and (left.ub < right.lb or right.ub < left.lb):
+                    continue
+                witness = self._model.bool()
+                # A witness need only establish equality, not detect it in both directions.
+                clauses.extend((left == right).only_if(witness))
+                witnesses.append(witness)
+        clauses.append(tuple(self._model._lit_to_dimacs(w) for w in witnesses))
+        return ClauseGroup._from_dimacs_trusted(self._model, clauses)
+
 
 class _BaseDict:
     """Base class for typed immutable keyed containers."""
@@ -1649,15 +1673,6 @@ class EnumVector(_BaseVector):
         if value not in item._choice_lits:
             raise ValueError(f"Unknown enum choice {value!r}")
 
-    def _all_different_pairwise(self) -> ClauseGroup:
-        clauses: list[Clause] = []
-        for i in range(len(self._items)):
-            for j in range(i + 1, len(self._items)):
-                neq = self._items[i] != self._items[j]
-                if isinstance(neq, ClauseGroup):
-                    clauses.extend(neq)
-        return ClauseGroup(self._model, clauses)
-
     def _all_different_bipartite(self) -> ClauseGroup:
         # Column-wise AMO over existing one-hot choice literals. If nullable enums
         # are present, fallback to pairwise for now because `None` is not tracked
@@ -1669,9 +1684,6 @@ class EnumVector(_BaseVector):
         if not self._items:
             return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
         choices = tuple(self._items[0].choices)
-        for ev in self._items[1:]:
-            if tuple(ev.choices) != choices:
-                raise ValueError("EnumVector.all_different() requires matching enum choices.")
         for label in choices:
             col_lits = [ev._choice_lits[label] for ev in self._items]
             col = BoolVector(self._model, f"{self.name}.col_amo[{label}]", col_lits)
@@ -1680,7 +1692,7 @@ class EnumVector(_BaseVector):
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
     def all_different(self, backend: str = "auto") -> ClauseGroup:
-        """Return an all-different constraint over all enum elements.
+        """Return an all-different constraint supporting ``.iff()`` and ``.implies()``.
 
         Backends:
             ``auto`` (default): column-wise AMO over enum choice literals.
@@ -1690,12 +1702,16 @@ class EnumVector(_BaseVector):
         if backend == "auto":
             backend = "bipartite"
         if backend == "pairwise":
-            return self._all_different_pairwise()
-        if backend == "bipartite":
-            return self._all_different_bipartite()
-        if backend == "sorting":
+            builder = self._all_different_pairwise
+        elif backend == "bipartite":
+            builder = self._all_different_bipartite
+        elif backend == "sorting":
             raise ValueError("sorting backend is not supported for EnumVector.all_different().")
-        raise ValueError("Unknown all_different backend.")
+        else:
+            raise ValueError("Unknown all_different backend.")
+        if self._items and any(ev.choices != self._items[0].choices for ev in self._items[1:]):
+            raise ValueError("EnumVector.all_different() requires matching enum choices.")
+        return _ReifiableClauseGroup(self._model, builder, self._not_all_different)
 
 
 class IntSetVector(_BaseVector):
@@ -1903,18 +1919,9 @@ class IntVector(_BaseVector):
             out.append(step)
         return IntVector(self._model, out_name, out)
 
-    def _all_different_pairwise(self) -> ClauseGroup:
-        clauses: list[Clause] = []
-        for i in range(len(self._items)):
-            for j in range(i + 1, len(self._items)):
-                neq = self._items[i] != self._items[j]
-                if isinstance(neq, ClauseGroup):
-                    clauses.extend(neq)
-        return ClauseGroup(self._model, clauses)
-
-    def _all_different_bipartite(self) -> ClauseGroup:
+    def _all_different_bipartite_domain(self) -> tuple[int, int]:
         if not self._items:
-            return ClauseGroup(self._model, [], amo_groups=[])
+            return (0, -1)
         # Require a common domain for the current implementation.
         lb = self._items[0].lb
         ub = self._items[0].ub
@@ -1923,6 +1930,10 @@ class IntVector(_BaseVector):
                 raise ValueError("IntVector.bipartite all_different currently requires a common domain.")
         if (ub - lb + 1) < len(self._items):
             raise ValueError("IntVector.bipartite all_different requires domain size >= vector length.")
+        return lb, ub
+
+    def _all_different_bipartite(self) -> ClauseGroup:
+        lb, ub = self._all_different_bipartite_domain()
         clauses: list[Clause] = []
         amo_groups: list[list[int]] = []
         for v in range(lb, ub + 1):
@@ -1933,7 +1944,7 @@ class IntVector(_BaseVector):
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
     def all_different(self, backend: str = "auto") -> ClauseGroup:
-        """Return an all-different constraint over all integer elements.
+        """Return an all-different constraint supporting ``.iff()`` and ``.implies()``.
 
         Backends:
             ``auto`` (default): currently aliases to ``pairwise``.
@@ -1945,10 +1956,13 @@ class IntVector(_BaseVector):
         if backend == "auto":
             backend = "pairwise"
         if backend == "pairwise":
-            return self._all_different_pairwise()
-        if backend == "bipartite":
-            return self._all_different_bipartite()
-        raise ValueError("Unknown all_different backend.")
+            builder = self._all_different_pairwise
+        elif backend == "bipartite":
+            self._all_different_bipartite_domain()
+            builder = self._all_different_bipartite
+        else:
+            raise ValueError("Unknown all_different backend.")
+        return _ReifiableClauseGroup(self._model, builder, self._not_all_different)
 
     def increasing(self) -> ClauseGroup:
         """Return nondecreasing chain constraints ``x[i] <= x[i+1]``."""
