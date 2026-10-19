@@ -36,12 +36,12 @@ enum class SolveStatus : int {
 
 struct Consequence {
     int counter{0};
-    long weight{0};
+    std::int64_t weight{0};
     bool is_clique{false};
     std::vector<int> removed_lits{};
     std::vector<int> added_lits{};
     std::vector<int> core{};
-    std::unordered_map<int, long> wdelta{};
+    std::unordered_map<int, std::int64_t> wdelta{};
     std::vector<int> created_sum_deltas{};
 };
 
@@ -50,7 +50,7 @@ public:
     void add(int lit, const std::shared_ptr<Consequence>& c);
     void remove(int consequence_counter);
     void bulk_remove(const std::vector<int>& counters);
-    std::shared_ptr<Consequence> new_consequence(long weight, const std::vector<int>& core);
+    std::shared_ptr<Consequence> new_consequence(std::int64_t weight, const std::vector<int>& core);
     const std::vector<std::shared_ptr<Consequence>>* get(int lit) const;
     std::vector<std::shared_ptr<Consequence>> all() const;
 
@@ -90,9 +90,9 @@ public:
     // Formula loading and incremental interface
     void initialize_external_vars(int nv);
     void add_hard_clause(const std::vector<int>& clause);
-    void add_clause(const std::vector<int>& clause, std::optional<long> weight = std::nullopt);
-    void set_soft(int lit, long weight);
-    void add_soft_unit(int lit, long weight);
+    void add_clause(const std::vector<int>& clause, std::optional<std::int64_t> weight = std::nullopt);
+    void set_soft(int lit, std::int64_t weight);
+    void add_soft_unit(int lit, std::int64_t weight);
 
     // Solve API
     bool solve(
@@ -106,7 +106,7 @@ public:
     bool stop_requested() const noexcept;
     bool interrupted_last_solve() const noexcept;
     SolveStatus get_status() const noexcept;
-    long get_cost() const;
+    std::int64_t get_cost() const;
     int val(int lit) const;
     std::vector<int> get_model() const;
     std::string signature() const;
@@ -115,14 +115,14 @@ public:
 private:
     [[noreturn]] void not_impl(const char* fn) const;
     void ensure_open(const char* fn) const;
-    void set_weight(int lit, long weight);
+    void set_weight(int lit, std::int64_t weight);
     void erase_weight(int lit);
 
     // Query-1 helpers and base loop skeleton
     int map_extlit(int lit);
     CoreSplit split_core_assumptions(const std::vector<int>& core) const;
     void filter_assumps();
-    std::shared_ptr<Consequence> new_consequence(std::optional<long> weight = std::nullopt);
+    std::shared_ptr<Consequence> new_consequence(std::optional<std::int64_t> weight = std::nullopt);
     bool compute_base(const std::vector<int>& assumptions);
     bool compute(const std::vector<int>& assumptions);
     bool compute_(bool run_pre = true);
@@ -135,7 +135,7 @@ private:
     void disable_strat_forever();
 
     // Invocation points kept intact; some are placeholders for later queries.
-    long disable_old_consequences();
+    std::int64_t disable_old_consequences();
     bool redo_conflicting_assumptions();
     bool preprocess_unit_cores_from_base();
     bool adapt_am1();
@@ -151,7 +151,7 @@ private:
     bool is_active_objective_lit(int l) const;
     std::pair<TotTree*, std::string> create_sum();
     std::pair<TotTree*, int> update_sum(int assump);
-    void set_bound(TotTree* tobj, int rhs, std::optional<long> weight = std::nullopt, const std::string& totalizer_id = "");
+    void set_bound(TotTree* tobj, int rhs, std::optional<std::int64_t> weight = std::nullopt, const std::string& totalizer_id = "");
     bool exhaust_core(TotTree* tobj, const std::string& totalizer_id);
     bool trim_core();
     bool minimize_core();
@@ -167,7 +167,7 @@ private:
     CoreTrailOptions opts_{};
 
     // RC2_IX2.__init__ persistent state (1:1 intent)
-    long num_calls_{0};
+    std::int64_t num_calls_{0};
     int verbose_{0};
     bool exhaust_{false};
     std::string solver_name_{"g4"};
@@ -183,12 +183,12 @@ private:
     std::unordered_set<int> model_set_{};
     std::unordered_map<std::string, int> am1_sel_cache_{};
     int levl_{0};
-    std::vector<long> blop_{};
+    std::vector<std::int64_t> blop_{};
     bool full_stratified_{true};
     bool exploit_overlap_{false};
     int bstr_{0};
     bool hard_{false};
-    std::unordered_map<long, std::vector<int>> wstr_{};
+    std::unordered_map<std::int64_t, std::vector<int>> wstr_{};
     double sdiv_{0.0};
     int done_{0};
 
@@ -200,26 +200,26 @@ private:
     std::unordered_set<int> sneg_{};
     // MaxSAT working state
     int pool_top_{0};
-    std::unordered_map<int, long> wght_{};
+    std::unordered_map<int, std::int64_t> wght_{};
     std::vector<int> wght_order_{};
-    std::unordered_map<int, long> original_wght_{};
+    std::unordered_map<int, std::int64_t> original_wght_{};
     ObjectiveStore objective_{};
-    std::optional<long> incumbent_cost_{};
+    std::optional<std::int64_t> incumbent_cost_{};
     std::vector<int> incumbent_model_{};
     std::unordered_set<int> all_sels_{};
-    std::unordered_map<int, long> transition_weights_{};
+    std::unordered_map<int, std::int64_t> transition_weights_{};
     std::vector<int> sums_{};
     std::unordered_map<int, int> bnds_{};
     std::unordered_map<int, int> bnds_history_{};
     std::unordered_map<int, TotTree*> tobj_{};
-    std::unordered_map<int, long> swgt_{};
+    std::unordered_map<int, std::int64_t> swgt_{};
     std::unordered_map<std::string, std::unordered_set<int>> sum_to_rels_{};
     std::shared_ptr<Consequence> consequence_{nullptr};
     std::vector<int> impossible_lits_{};
     std::unordered_map<int, std::string> lit_to_totalizerid_{};
     ConsequenceMap lit_to_consequence_{};
     ItotDag itot_dag_{};
-    long cost_{0};
+    std::int64_t cost_{0};
 
     // assumptions-related state
     std::vector<int> assumptions_{};
@@ -235,7 +235,7 @@ private:
     std::optional<int> fix_nv_{};
 
     // core working fields
-    long minw_{0};
+    std::int64_t minw_{0};
     std::vector<int> original_core_{};
     std::vector<int> core_{};
     std::vector<int> core_sels_{};

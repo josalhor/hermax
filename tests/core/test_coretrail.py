@@ -1,5 +1,6 @@
 import os
 import signal
+import sys
 import threading
 import time
 
@@ -42,6 +43,25 @@ def test_coretrail_incremental_weighted_maxsat():
         solver.close()
 
 
+@pytest.mark.parametrize("method", ["add_clause", "set_soft", "add_soft_unit"])
+def test_coretrail_large_weight_and_cost_round_trip(method):
+    solver = _solver_class()()
+    weight = (1 << 63) - 1
+    try:
+        solver.add_clause([1])
+        if method == "add_clause":
+            # The IPAMIR adapter adds soft clauses via set_soft; exercise the
+            # native clause-weight conversion directly as well.
+            solver.solver.add_clause([-1], weight=weight)
+        else:
+            getattr(solver, method)(-1, weight)
+        assert solver.solve()
+        assert solver.get_cost() == weight
+        assert solver.get_model() == [1]
+    finally:
+        solver.close()
+
+
 def test_coretrail_deadline_resumes_natively_without_rebuild():
     solver = _solver_class()()
     try:
@@ -76,6 +96,7 @@ def test_coretrail_mutation_after_interruption_uses_live_native_state():
         solver.close()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="os.kill(SIGINT) terminates the process on Windows instead of delivering POSIX SIGINT")
 def test_coretrail_sigint_interrupts_and_restores_the_python_handler():
     solver = _solver_class()()
     delivered: list[int] = []
