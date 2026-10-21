@@ -123,7 +123,7 @@ def test_lazy_expr_mul_scale_floordiv_and_eq_paths():
         d.scale(True)
     with pytest.raises(TypeError, match="integer"):
         d.scale(2.5)
-    with pytest.raises(ValueError, match="strictly positive"):
+    with pytest.raises(ValueError, match="nonzero"):
         d.scale(0)
 
     # lazy floordiv nonlinear guard.

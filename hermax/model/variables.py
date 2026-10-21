@@ -34,6 +34,7 @@ from .expressions import (
     _ReifiableClauseGroup,
     _deferred_constant_constraint,
 )
+from ._int_thresholds import ThresholdLiterals
 
 
 class IntSetVar:
@@ -779,19 +780,22 @@ class IntVar:
             raise TypeError("lb and ub must be ints")
         if ub < lb:
             raise ValueError("Int domain must satisfy lb <= ub")
-        span = ub - lb + 1
-        # Compact order/ladder representation:
-        # for domain [lb, ub], we only need (span - 1) threshold bits.
-        # Each bit i encodes (x >= lb + i + 1).
-        thresholds = [model.bool(f"{name}<=#{i}") for i in range(max(0, span - 1))]
+        count = ub - lb
+        if not count:
+            self._initialize(model, name, lb, ub, [], is_view=False)
+            return
+        start = model._next_id
+        if model._inc_state.bound:
+            start = max(start, int(model._inc_state.ip_next_vid) + 1)
+        thresholds = ThresholdLiterals(model, name, start, count)
         self._initialize(model, name, lb, ub, thresholds, is_view=False)
-        for idx, lit in enumerate(self._threshold_lits):
-            model._intvar_threshold_owner_by_litid[lit.id] = (self, idx)
+        model._reserve_literal_ids_up_to(start + count - 1)
+        model._intvar_threshold_owner_by_litid.add(self)
         self._add_domain_constraints()
 
     def _initialize(
         self, model: "Model", name: str, lb: int, ub: int,
-        thresholds: list[Literal], *, is_view: bool,
+        thresholds: Sequence[Literal], *, is_view: bool,
     ) -> None:
         self._model = model
         self.name = name
@@ -820,9 +824,14 @@ class IntVar:
     def _add_domain_constraints(self) -> None:
         # Prefix-true unary encoding over (span - 1) bits.
         ts = self._threshold_lits
-        for i in range(len(ts) - 1):
-            # t_{i+1} -> t_i
-            self._model._hard.append(Clause(self._model, [~ts[i + 1], ts[i]]))
+        if isinstance(ts, ThresholdLiterals):
+            self._model._hard.extend(
+                Clause._from_dimacs_trusted(self._model, (-(ts.start + i + 1), ts.start + i))
+                for i in range(len(ts) - 1)
+            )
+        else:
+            for i in range(len(ts) - 1):
+                self._model._hard.append(Clause(self._model, [~ts[i + 1], ts[i]]))
 
     def _span(self) -> int:
         return self.ub - self.lb + 1
@@ -894,9 +903,12 @@ class IntVar:
             raise ValueError("Scale factor must be strictly positive.")
         if not isinstance(factor, int):
             raise TypeError("Scale factor must be an integer.")
-        if factor <= 0:
-            raise ValueError("Scale factor must be strictly positive.")
+        if factor == 0:
+            raise ValueError("Scale factor must be nonzero.")
         return ScaleExpr(self, factor)
+
+    def __mod__(self, divisor: int):
+        return _LazyIntExpr.__mod__(self, divisor)
 
     def __rmatmul__(self, array: Sequence[int]) -> "_MultiplexerInt":
         """Create a lazy element-constraint descriptor for ``array @ int_var``.
@@ -2265,6 +2277,7 @@ class AssignmentView:
             obj: The object to decode. Supported types include:
                 - :class:`Literal`: returns a ``bool``.
                 - :class:`IntVar`: returns an ``int``.
+                - :class:`Term`, :class:`PBExpr`: returns their numeric value.
                 - :class:`EnumVar`: returns the chosen ``str`` (or ``None`` if nullable).
                 - :class:`IntSetVar`: returns a ``set[int]``.
                 - :class:`IntervalVar`: returns a ``dict`` with ``start``, ``end``, and ``duration``.
@@ -2285,6 +2298,11 @@ class AssignmentView:
         if isinstance(obj, Literal):
             truth = self._true_vars.get(obj.id, False)
             return truth if obj.polarity else (not truth)
+        if isinstance(obj, Term):
+            return obj.coefficient * self.val(obj.literal)
+        if isinstance(obj, PBExpr):
+            return (obj.constant + sum(self.val(term) for term in obj.terms)
+                    + sum(coefficient * self.val(value) for coefficient, value in obj.int_terms))
         if isinstance(obj, EnumVar):
             for choice in obj.choices:
                 lit = obj._choice_lits[choice]
@@ -2295,6 +2313,8 @@ class AssignmentView:
             return {v for v in obj.universe if self.val(obj._member_lits[v])}
         if isinstance(obj, DivExpr):
             return self.val(obj._src) // obj._divisor
+        if isinstance(obj, ModExpr):
+            return self.val(obj._src) % obj._divisor
         if isinstance(obj, ScaleExpr):
             return self.val(obj._src) * obj._factor
         if isinstance(obj, MaxExpr):
@@ -2317,7 +2337,25 @@ class AssignmentView:
                 if self.val(lit):
                     return value
             # Fallback: unary-prefix interpretation over threshold literals.
-            count_true = sum(1 for lit in obj._threshold_lits if self.val(lit))
+            bits = obj._threshold_lits
+            if isinstance(bits, ThresholdLiterals):
+                end = bits.start + len(bits)
+                if len(bits) <= len(self._true_vars):
+                    count_true = sum(bool(self._true_vars.get(var_id))
+                                     for var_id in range(bits.start, end))
+                else:
+                    count_true = sum(1 for var_id, truth in self._true_vars.items()
+                                     if truth and bits.start <= var_id < end)
+                # Literal attributes are exposed and mutable. Match decoding
+                # through the original literal objects if one was modified.
+                for index, lit in bits._cache.items():
+                    original_id = bits.start + index
+                    if lit.id != original_id or not lit.polarity:
+                        count_true -= bool(self._true_vars.get(original_id))
+                        truth = bool(self._true_vars.get(lit.id))
+                        count_true += truth if lit.polarity else not truth
+            else:
+                count_true = sum(1 for lit in bits if self.val(lit))
             value = obj.lb + count_true
             if value > obj.ub:
                 value = obj.ub

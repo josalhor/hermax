@@ -50,8 +50,8 @@ def test_objective_rejects_invalid_weights():
     m = Model()
     a = m.bool("a")
 
-    with pytest.raises(ValueError, match="positive int"):
-        m.obj[0] += a
+    m.obj[0] += a
+    assert not m._soft
 
     with pytest.raises(ValueError, match="positive int"):
         m.obj[-1] += a

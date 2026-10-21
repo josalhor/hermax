@@ -39,8 +39,9 @@ Equivalence: ``iff()``
 ----------------------
 
 ``constraint.iff(b)`` means that ``b`` is true exactly when the constraint holds.
-Use it with comparisons such as ``x <= y`` or ``x == y``, where ``x`` and
-``y`` are integer variables, and with ``all_different()`` or ``table()``/``is_in()``.
+Use it with literals, clauses, PB comparisons, integer comparisons such as
+``x <= y`` or ``x == y``, and globals such as ``all_different()`` and
+``table()``/``is_in()``.
 
 .. code-block:: python
 
@@ -53,5 +54,9 @@ Use it with comparisons such as ``x <= y`` or ``x == y``, where ``x`` and
 
    t = model.table(x, allowed=[(0, 1, 2), (2, 1, 0)])
    model &= t.iff(b)
+
+   a, c = model.bool("a"), model.bool("c")
+   model &= (a | c).iff(b)
+   model &= (2 * a + c <= 2).iff(b)
 
 Use ``~b`` as the indicator to reverse its meaning.

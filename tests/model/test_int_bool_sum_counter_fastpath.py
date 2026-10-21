@@ -216,7 +216,11 @@ def test_bool_sum_intvar_equality_with_offsets_bypasses_pb_and_card(monkeypatch)
     lambda x, b: ((2 * x) == sum(b)),
 ])
 def test_bool_sum_intvar_falls_back_to_pb_for_unsupported_shapes(monkeypatch, expr_builder):
-    # Unsupported forms must not accidentally use this fastpath.
+    # Isolate the unit-counter path: weighted sums now have their own fastpath.
+    from hermax.model.encoders import _EncoderDispatch
+    monkeypatch.setattr(_EncoderDispatch, "_try_weighted_sum_eq_fastpath",
+                        staticmethod(lambda *args: None))
+    # Unsupported forms must not accidentally use the unit-counter fastpath.
     called = {"structured": 0}
     orig_auto = getattr(PBAMOEnc, "auto_eq", None)
 

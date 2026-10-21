@@ -4,6 +4,18 @@ from typing import List, Optional
 import time
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
+from hermax.core.rc2.rc2_reentrant import RC2Reentrant
+
+
+class SlowAfterIncumbentRC2(RC2Reentrant):
+    """Exercise worker interruption after a real RC2 incumbent is reported."""
+
+    def _set_incumbent_callback(self, callback):
+        def report_and_wait(model, cost):
+            callback(model, cost)
+            time.sleep(10)
+
+        super()._set_incumbent_callback(report_and_wait)
 
 
 class BadModelCostSolver(IPAMIRSolver):

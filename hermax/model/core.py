@@ -30,6 +30,7 @@ from .variables import _BaseVector, _BaseDict, _BaseMatrixView, _MultiplexerInt,
 from .encoders import *
 from .encoders import _DeferredPBEntry, _EncoderDispatch
 from .encoders import _canonical_pb_cache_key
+from ._int_thresholds import ThresholdOwners
 from hermax.internal.kmerge import DEFAULT_KMERGE_CONFIG, KMergeConfig
 
 
@@ -56,7 +57,7 @@ class _ObjectiveProxy:
 
     def __getitem__(self, weight: int) -> "_WeightBucket":
         self._model._ensure_no_tier_objective_active()
-        scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=False)
+        scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=(weight == 0))
         return _WeightBucket(self._model, scaled, raw)
 
     def __setitem__(self, weight: int, value) -> None:
@@ -363,6 +364,14 @@ class _WeightBucket:
 
     def __iadd__(self, constraint):
         self._model._ensure_no_tier_objective_active()
+        if self._weight == 0:
+            if not isinstance(constraint, (Literal, IntVar, PBExpr, PBConstraint,
+                                           Term, Clause, ClauseGroup, _LazyIntExpr, int)):
+                raise TypeError("Unsupported zero-weight objective target.")
+            owner = constraint.literal._model if isinstance(constraint, Term) else getattr(constraint, "_model", None)
+            if owner is not None and owner is not self._model:
+                raise ValueError("Variables belong to different models.")
+            return self
         if isinstance(
             constraint,
             (
@@ -587,6 +596,11 @@ class SolveResult:
     def ok(self) -> bool:
         """Return ``True`` when a feasible assignment is available."""
         return self.status in {"sat", "optimum", "interrupted_sat"}
+
+    @property
+    def proven(self) -> bool:
+        """Return ``True`` when satisfiability, unsatisfiability or optimality is established."""
+        return self.status in {"sat", "optimum", "unsat"}
 
     def __getitem__(self, obj):
         return self.assignment[obj]
@@ -1084,7 +1098,7 @@ class Model:
         self._next_id = 1
         self._registry: dict[str, Literal] = {}
         self._lits_by_id: dict[int, Literal] = {}
-        self._intvar_threshold_owner_by_litid: dict[int, tuple["IntVar", int]] = {}
+        self._intvar_threshold_owner_by_litid = ThresholdOwners()
         self._intvar_eq_owner_by_litid: dict[int, tuple["IntVar", int]] = {}
         self._container_names: set[str] = set()
         self._canonical_internal_lits: dict[object, Literal] = {}
@@ -1488,7 +1502,9 @@ class Model:
             id_ = int(var_id)
         if id_ <= 0:
             raise ValueError("Variable id must be positive.")
-        if id_ in self._lits_by_id:
+        if id_ in self._lits_by_id or (
+            var_id is not None and id_ in self._intvar_threshold_owner_by_litid
+        ):
             raise ValueError(f"Variable id {id_} is already allocated.")
         self._next_id = max(self._next_id, id_ + 1)
         pos = Literal(self, id_, name, True)
@@ -1565,11 +1581,23 @@ class Model:
     def _get_or_make_aux_literal(self, var_id: int) -> Literal:
         if var_id <= 0:
             raise ValueError("Variable id must be positive")
-        if var_id in self._lits_by_id:
-            return self._lits_by_id[var_id]
+        existing = self._find_literal_by_id(var_id)
+        if existing is not None:
+            return existing
         self._reserve_literal_ids_up_to(var_id)
         name = self._reserve_name(None)
         return self._new_literal_pair(name, var_id=var_id)
+
+    def _find_literal_by_id(self, var_id: int) -> Optional[Literal]:
+        """Find an ordinary literal or materialize one from a reserved range."""
+        lit = self._lits_by_id.get(var_id)
+        if lit is not None:
+            return lit
+        info = self._intvar_threshold_owner_by_litid.get(var_id)
+        if info is None:
+            return None
+        owner, index = info
+        return owner._threshold_lits[index]
 
     def _equiv_literals_group(self, a: Literal, b: Literal) -> ClauseGroup:
         """Return a constant-folded literal equivalence ``a <-> b``."""
@@ -1653,7 +1681,7 @@ class Model:
         if not self._pending_literal_defs:
             return
         for lit_id in list(self._pending_literal_defs):
-            lit = self._lits_by_id.get(int(lit_id))
+            lit = self._find_literal_by_id(int(lit_id))
             if lit is not None:
                 self._ensure_literal_def_realized(lit)
 
@@ -1662,11 +1690,10 @@ class Model:
         if not pending_defs:
             return
         realized_defs = self._realized_literal_defs
-        lits_by_id = self._lits_by_id
         ensure_realized = self._ensure_literal_def_realized
         pending_contains = pending_defs.__contains__
         realized_contains = realized_defs.__contains__
-        get_lit = lits_by_id.get
+        get_lit = self._find_literal_by_id
         for clause in group:
             for dim in clause:
                 lit_id = dim if dim > 0 else -dim
@@ -1788,23 +1815,20 @@ class Model:
             raise ValueError("Scale factor must be strictly positive.")
         if not isinstance(factor, int):
             raise TypeError("Scale factor must be an integer.")
-        if factor <= 0:
-            raise ValueError("Scale factor must be strictly positive.")
+        if factor == 0:
+            raise ValueError("Scale factor must be nonzero.")
 
-        out_lb = x.lb * factor
-        out_ub = x.ub * factor
+        out_lb = min(x.lb * factor, x.ub * factor)
+        out_ub = max(x.lb * factor, x.ub * factor)
         out_name = self._reserve_name(None) if name is None else name
         self._reserve_container_name(out_name)
         out = IntVar(self, out_name, lb=out_lb, ub=out_ub)
 
-        def ceil_div_pos(n: int, d: int) -> int:
-            return -((-n) // d)
-
         for k in range(x.lb + 1, x.ub + 1):
-            xk = x.__ge__(k)
+            xk = x.__ge__(k) if factor > 0 else x.__lt__(k)
 
-            # Upward: x >= k  =>  out >= factor*k
-            up_q = factor * k
+            # Reverse the input cuts for negative factors.
+            up_q = factor * k if factor > 0 else factor * (k - 1)
             if out.lb < up_q <= out.ub:
                 out_up = out.__ge__(up_q)
                 self._register_literal_definition(
@@ -1812,14 +1836,49 @@ class Model:
                     ClauseGroup(self, [Clause(self, [~xk, out_up])])
                 )
 
-            # Gap-forbidding: out >= factor*(k-1)+1  =>  x >= k
-            gap_q = factor * (k - 1) + 1
+            # Exclude output values between adjacent scaled input values.
+            gap_q = factor * (k - 1) + 1 if factor > 0 else factor * k + 1
             if out.lb < gap_q <= out.ub:
                 out_gap = out.__ge__(gap_q)
                 self._register_literal_definition(
                     out_gap,
                     ClauseGroup(self, [Clause(self, [~out_gap, xk])])
                 )
+        return out
+
+    def modulo(self, x: IntVar | _LazyIntExpr, divisor: int, name: Optional[str] = None) -> IntVar:
+        """Return ``x % divisor`` for a strictly positive integer divisor."""
+        if isinstance(divisor, bool):
+            raise ValueError("Divisor must be strictly positive.")
+        if not isinstance(divisor, int):
+            raise TypeError("Divisor must be an integer.")
+        if divisor <= 0:
+            raise ValueError("Divisor must be strictly positive.")
+        _ensure_same_model(self, x)
+        expr = ModExpr(x, divisor)
+        if name is not None:
+            self._assert_names_available(name)
+        if isinstance(x, _LazyIntExpr):
+            x = x._realize()
+        out_name = self._reserve_name(None) if name is None else name
+        out = self.int(out_name, expr.lb, expr.ub)
+        if out.lb == out.ub:
+            return out
+        clauses = []
+        # An input value is the interval between two neighboring thresholds.
+        # Tie that interval directly to its remainder, without a quotient or PB sum.
+        for value in range(x.lb, x.ub + 1):
+            guard = []
+            if value > x.lb:
+                guard.append(x < value)
+            if value < x.ub:
+                guard.append(x >= value + 1)
+            remainder = value % divisor
+            if remainder > out.lb:
+                clauses.append(Clause(self, [*guard, out >= remainder]))
+            if remainder < out.ub:
+                clauses.append(Clause(self, [*guard, out <= remainder]))
+        self &= ClauseGroup(self, clauses)
         return out
 
     def _build_int_aggregate_extreme(self, items: Sequence[IntVar], kind: str, name: Optional[str] = None) -> IntVar:
@@ -2105,8 +2164,8 @@ class Model:
         self._reserve_container_name(name)
         return IntervalVar(self, name, start=start, duration=duration, end=end)
 
-    def sum_var(self, items: Sequence[IntVar], name: Optional[str] = None) -> IntVar:
-        """Return one ``IntVar`` equal to the sum of the input variables.
+    def sum_var(self, items: Sequence[IntVar | Literal], name: Optional[str] = None) -> IntVar:
+        """Return one ``IntVar`` equal to the sum of integers and Boolean literals.
 
         The implementation merges the narrowest partial sums first to keep
         intermediate domains small.
@@ -2115,8 +2174,9 @@ class Model:
         if not items_list:
             raise ValueError("sum_var() cannot sum an empty sequence.")
         _ensure_same_model(self, *items_list)
-        if any(not isinstance(x, IntVar) for x in items_list):
-            raise TypeError("sum_var() expects IntVar items.")
+        if any(not isinstance(x, (IntVar, Literal)) for x in items_list):
+            raise TypeError("sum_var() expects IntVar or Literal items.")
+        items_list = [self.as_int(x) if isinstance(x, Literal) else x for x in items_list]
         if len(items_list) == 1:
             return items_list[0]
 
@@ -2997,6 +3057,7 @@ class Model:
             eager_fast = None
             for fast_try in (
                 _EncoderDispatch._try_unary_adder_eq_fastpath,
+                _EncoderDispatch._try_weighted_sum_eq_fastpath,
                 _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath,
                 _EncoderDispatch._try_boolsum_bigm_fastpath,
                 _EncoderDispatch._try_mixed_int_boolsum_bigm_fastpath,

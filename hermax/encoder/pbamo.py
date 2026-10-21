@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable
+from dataclasses import dataclass
+from itertools import combinations
 
 from pysat.formula import CNFPlus
 
@@ -108,81 +111,96 @@ def choose_overlap_partition(
 
     if policy not in {OverlapPolicy.baseline_paper, OverlapPolicy.paper_best_fit_dynamic_future}:
         raise ValueError(f"Unknown overlap policy: {policy!r}")
-
-    groups: list[list[int]] = []
-
     if policy == OverlapPolicy.baseline_paper:
-        for lit in lits:
-            placed = False
+        return _baseline_overlap_partition(lits, mutex_neighbors)
+    return _DynamicOverlapPartition(
+        lits, weight_by_lit, pair_support, eo_pair_support, mutex_neighbors,
+    ).partition()
+
+
+def _baseline_overlap_partition(lits, mutex_neighbors):
+    groups: list[list[int]] = []
+    for lit in lits:
+        if mutex_neighbors[lit]:
             for group in groups:
                 if _group_is_compatible(mutex_neighbors, lit, group):
-                    group.append(int(lit))
-                    placed = True
+                    group.append(lit)
                     break
-            if not placed:
-                groups.append([int(lit)])
-        return [sorted(group) for group in groups]
-
-    remaining = set(lits)
-
-    def compatible_groups_count(lit: int) -> int:
-        return sum(1 for group in groups if _group_is_compatible(mutex_neighbors, lit, group))
-
-    def eo_support_degree(lit: int) -> int:
-        return sum(_pair_score(eo_pair_support, lit, other) for other in lits if other != lit)
-
-    def pair_support_degree(lit: int) -> int:
-        return sum(_pair_score(pair_support, lit, other) for other in lits if other != lit)
-
-    def future_compatibility(lit: int, group) -> int:
-        proposed = [*group, int(lit)]
-        total = 0
-        for other in remaining:
-            if other == lit:
-                continue
-            if _group_is_compatible(mutex_neighbors, other, proposed):
-                total += 1
-        return total
-
-    while remaining:
-        lit = min(
-            remaining,
-            key=lambda cur: (
-                compatible_groups_count(cur),
-                -eo_support_degree(cur),
-                -pair_support_degree(cur),
-                -len(mutex_neighbors.get(cur, set())),
-                -weight_by_lit[cur],
-                cur,
-            ),
-        )
-        compatible = [group for group in groups if _group_is_compatible(mutex_neighbors, lit, group)]
-        if not compatible:
-            groups.append([int(lit)])
-            remaining.remove(lit)
-            continue
-
-        def score_group(group):
-            eo_support = sum(_pair_score(eo_pair_support, lit, member) for member in group)
-            support = sum(_pair_score(pair_support, lit, member) for member in group)
-            future = future_compatibility(lit, group)
-            candidate_weights = [weight_by_lit[member] for member in group] + [weight_by_lit[lit]]
-            spread = max(candidate_weights) - min(candidate_weights)
-            return (
-                eo_support,
-                support,
-                future,
-                len(group),
-                -spread,
-                sum(candidate_weights),
-                -min(group),
-            )
-
-        best = max(compatible, key=score_group)
-        best.append(int(lit))
-        remaining.remove(lit)
-
+            else:
+                groups.append([lit])
+        else:
+            groups.append([lit])
     return [sorted(group) for group in groups]
+
+
+class _DynamicOverlapPartition:
+    """Per-call state for the existing greedy policy; no cross-call cache."""
+
+    def __init__(self, lits, weights, pair_support, eo_support, neighbors):
+        self.weights = weights
+        self.pair_support = pair_support
+        self.eo_support = eo_support
+        self.neighbors = neighbors
+        self.groups: list[list[int]] = []
+        self.remaining = set(lits)
+        # These degrees never depend on the evolving groups or remaining set.
+        # Multiplicity preserves the old score even for repeated input literals.
+        counts = Counter(lits)
+        self.pair_degrees = self._support_degrees(pair_support, counts)
+        self.eo_degrees = self._support_degrees(eo_support, counts)
+
+    def _support_degrees(self, support, counts):
+        return {
+            lit: sum(_pair_score(support, lit, other) * counts[other] for other in self.neighbors[lit])
+            for lit in self.remaining
+        }
+
+    def _priority(self, lit):
+        compatible_count = 0
+        if self.neighbors[lit]:
+            compatible_count = sum(
+                _group_is_compatible(self.neighbors, lit, group) for group in self.groups
+            )
+        return (
+            compatible_count, -self.eo_degrees[lit], -self.pair_degrees[lit],
+            -len(self.neighbors[lit]), -self.weights[lit], lit,
+        )
+
+    def _future_compatibility(self, lit, group):
+        proposed = [*group, lit]
+        return sum(
+            _group_is_compatible(self.neighbors, other, proposed)
+            for other in self.remaining if other != lit and self.neighbors[other]
+        )
+
+    def _group_score(self, lit, group):
+        candidate_weights = [self.weights[member] for member in group] + [self.weights[lit]]
+        return (
+            sum(_pair_score(self.eo_support, lit, member) for member in group),
+            sum(_pair_score(self.pair_support, lit, member) for member in group),
+            self._future_compatibility(lit, group),
+            len(group),
+            -(max(candidate_weights) - min(candidate_weights)),
+            sum(candidate_weights),
+            -min(group),
+        )
+
+    def partition(self):
+        while self.remaining:
+            lit = min(self.remaining, key=self._priority)
+            compatible = []
+            if self.neighbors[lit]:
+                compatible = [
+                    group for group in self.groups
+                    if _group_is_compatible(self.neighbors, lit, group)
+                ]
+            if compatible:
+                best = max(compatible, key=lambda group: self._group_score(lit, group))
+                best.append(lit)
+            else:
+                self.groups.append([lit])
+            self.remaining.remove(lit)
+        return [sorted(group) for group in self.groups]
 
 
 def amo_upper_bound(weights, groups, lits=None) -> int:
@@ -292,6 +310,28 @@ def choose_encoding(lits, weights, groups, bound):
     if n_groups <= 7.5:
             return EncType.rggt
     return EncType.ggpw
+
+
+@dataclass(frozen=True)
+class _PreparedStructure:
+    """Owned, immutable grouping data reused only within one encoding call.
+
+    The selected partition is an encoding aid. The original overlapping
+    candidates must still be emitted, even when absent from that partition.
+    """
+
+    groups: tuple[tuple[int, ...], ...]
+    amo_groups: tuple[tuple[int, ...], ...]
+    eo_groups: tuple[tuple[int, ...], ...]
+
+    def append_candidate_clauses(self, cnf: CNFPlus) -> None:
+        for group in self.amo_groups + self.eo_groups:
+            for lit, other in combinations(sorted(set(group)), 2):
+                cnf.clauses.append([-lit, -other])
+        for group in self.eo_groups:
+            ordered = sorted(set(group))
+            if ordered:
+                cnf.clauses.append(ordered)
 
 
 class PBAMOEnc:
@@ -540,6 +580,25 @@ class PBAMOEnc:
         return cnf
 
     @classmethod
+    def _prepare_structure(cls, lits, weights, groups, amo_groups, eo_groups, policy) -> _PreparedStructure:
+        """Normalize candidates and choose their partition once per encoding."""
+        partition = _normalize_groups(groups) if groups is not None else None
+        if partition is not None:
+            cls._validate_partition_groups(lits, partition)
+        amo = _normalize_candidate_groups(amo_groups)
+        eo = _normalize_candidate_groups(eo_groups)
+        if partition is not None and (amo or eo):
+            raise ValueError("Provide either disjoint groups or overlapping AMO/EO candidates, not both.")
+        if partition is None:
+            partition = (
+                choose_overlap_partition(lits, weights, amo_groups=amo, eo_groups=eo, policy=policy)
+                if amo or eo else [[lit] for lit in lits]
+            )
+        return _PreparedStructure(
+            tuple(map(tuple, partition)), tuple(map(tuple, amo)), tuple(map(tuple, eo)),
+        )
+
+    @classmethod
     def auto_leq(
         cls,
         *,
@@ -556,78 +615,33 @@ class PBAMOEnc:
         cls._validate_pb_input(lits, weights, bound)
         lits = [int(lit) for lit in lits]
         weights = [int(weight) for weight in weights]
-        groups_were_explicit = groups is not None
-        normalized_groups = _normalize_groups(groups) if groups is not None else None
-        if normalized_groups is not None:
-            cls._validate_partition_groups(lits, normalized_groups)
-        normalized_amo = _normalize_candidate_groups(amo_groups)
-        normalized_eo = _normalize_candidate_groups(eo_groups)
+        structure = cls._prepare_structure(lits, weights, groups, amo_groups, eo_groups, overlap_policy)
+        top_id = int(top_id) if top_id is not None else max(map(abs, lits), default=0)
+        return cls._encode_leq_prepared(lits, weights, bound, top_id, structure, structured_encoding)
 
-        if normalized_groups is not None and (normalized_amo or normalized_eo):
-            raise ValueError("Provide either disjoint groups or overlapping AMO/EO candidates, not both.")
-
-        if normalized_groups is None:
-            if normalized_amo or normalized_eo:
-                normalized_groups = choose_overlap_partition(
-                    lits,
-                    weights,
-                    amo_groups=normalized_amo,
-                    eo_groups=normalized_eo,
-                    policy=overlap_policy,
-                )
-            else:
-                normalized_groups = [[lit] for lit in lits]
-
-        if top_id is None:
-            top_id = max((abs(int(lit)) for lit in lits), default=0)
-        top_id = int(top_id)
-
-        if all(int(weight) == 1 for weight in weights):
-            return cls._auto_atmost(
-                lits=lits,
-                bound=int(bound),
-                groups=normalized_groups if groups_were_explicit else None,
-                amo_groups=normalized_amo if not groups_were_explicit else None,
-                eo_groups=normalized_eo if not groups_were_explicit else None,
-                top_id=top_id,
-                overlap_policy=overlap_policy,
-                structured_encoding=structured_encoding,
+    @classmethod
+    def _encode_leq_prepared(cls, lits, weights, bound, top_id, structure, structured_encoding):
+        """Encode the upper inequality without repeating structural analysis."""
+        if all(weight == 1 for weight in weights):
+            return cls._encode_atmost_prepared(
+                lits, bound, top_id, structure, structured_encoding, CARD_FLAT_ENCODING,
             )
 
-        portfolio = choose_portfolio(lits, weights, normalized_groups, bound)
-        if portfolio == "pblib":
+        if choose_portfolio(lits, weights, structure.groups, bound) == "pblib":
             from hermax.encoder.pb_enc import EncType as PBEncType
             from hermax.encoder.pb_enc import PBEnc
 
-            cnf = PBEnc.leq(lits=lits, weights=weights, bound=int(bound), top_id=top_id, encoding=PBEncType.best)
+            cnf = PBEnc.leq(lits=lits, weights=weights, bound=bound, top_id=top_id, encoding=PBEncType.best)
         else:
             enc = structured_encoding
             if enc == EncType.best:
-                enc = choose_encoding(lits, weights, normalized_groups, bound)
+                enc = choose_encoding(lits, weights, structure.groups, bound)
             cnf = cls.leq(
-                lits=lits,
-                weights=weights,
-                groups=normalized_groups,
-                bound=int(bound),
-                top_id=top_id,
-                encoding=enc,
-                emit_amo=False,
+                lits=lits, weights=weights, groups=structure.groups, bound=bound,
+                top_id=top_id, encoding=enc, emit_amo=False,
             )
-
-        extra = CNFPlus()
-        extra.nv = int(cnf.nv)
-        for group in normalized_amo + normalized_eo:
-            uniq = sorted({int(lit) for lit in group})
-            if len(uniq) > 1:
-                for i in range(len(uniq)):
-                    for j in range(i + 1, len(uniq)):
-                        extra.clauses.append([-uniq[i], -uniq[j]])
-        for group in normalized_eo:
-            uniq = sorted({int(lit) for lit in group})
-            if uniq:
-                extra.clauses.append(list(uniq))
-        cnf.clauses.extend(extra.clauses)
-        cnf.nv = max(int(cnf.nv), int(extra.nv), top_id)
+        structure.append_candidate_clauses(cnf)
+        cnf.nv = max(int(cnf.nv), top_id)
         return cnf
 
     @classmethod
@@ -647,86 +661,39 @@ class PBAMOEnc:
         cls._validate_pb_input(lits, weights, bound)
         lits = [int(lit) for lit in lits]
         weights = [int(weight) for weight in weights]
-        groups_were_explicit = groups is not None
-        normalized_groups = _normalize_groups(groups) if groups is not None else None
-        if normalized_groups is not None:
-            cls._validate_partition_groups(lits, normalized_groups)
-        normalized_amo = _normalize_candidate_groups(amo_groups)
-        normalized_eo = _normalize_candidate_groups(eo_groups)
+        structure = cls._prepare_structure(lits, weights, groups, amo_groups, eo_groups, overlap_policy)
+        top_id = int(top_id) if top_id is not None else max(map(abs, lits), default=0)
 
-        if normalized_groups is not None and (normalized_amo or normalized_eo):
-            raise ValueError("Provide either disjoint groups or overlapping AMO/EO candidates, not both.")
-
-        if normalized_groups is None:
-            if normalized_amo or normalized_eo:
-                normalized_groups = choose_overlap_partition(
-                    lits,
-                    weights,
-                    amo_groups=normalized_amo,
-                    eo_groups=normalized_eo,
-                    policy=overlap_policy,
-                )
-            else:
-                normalized_groups = [[lit] for lit in lits]
-
-        if top_id is None:
-            top_id = max((abs(int(lit)) for lit in lits), default=0)
-        top_id = int(top_id)
-
-        total_weight = int(sum(weights))
-        if int(bound) < 0 or int(bound) > total_weight:
+        total_weight = sum(weights)
+        if bound < 0 or bound > total_weight:
             cnf = CNFPlus()
             cnf.nv = top_id
             cnf.clauses = [[]]
             return cnf
 
         # No structural signal: keep the stronger dedicated equals backend.
-        has_structure = any(len(group) > 1 for group in normalized_groups)
-        if not has_structure and not normalized_amo and not normalized_eo:
-            if all(int(weight) == 1 for weight in weights):
-                from hermax.encoder.card import EncType as CardEncType
-                return CardEnc.equals(lits=lits, bound=int(bound), top_id=top_id, encoding=CardEncType.kmtotalizer)
-            else:
-                from hermax.encoder.pb_enc import EncType as PBEncType
-                from hermax.encoder.pb_enc import PBEnc
+        has_structure = any(len(group) > 1 for group in structure.groups)
+        if not has_structure and not structure.amo_groups and not structure.eo_groups:
+            if all(weight == 1 for weight in weights):
+                return CardEnc.equals(lits=lits, bound=bound, top_id=top_id, encoding=CardEncType.kmtotalizer)
+            from hermax.encoder.pb_enc import EncType as PBEncType
+            from hermax.encoder.pb_enc import PBEnc
 
-                return PBEnc.equals(
-                    lits=lits,
-                    weights=weights,
-                    bound=int(bound),
-                    top_id=top_id,
-                    encoding=PBEncType.best,
-                )
+            return PBEnc.equals(lits=lits, weights=weights, bound=bound, top_id=top_id, encoding=PBEncType.best)
 
-        upper_kwargs = {}
-        if groups_were_explicit:
-            upper_kwargs["groups"] = normalized_groups
-        else:
-            upper_kwargs["amo_groups"] = normalized_amo
-            upper_kwargs["eo_groups"] = normalized_eo
-
-        # IMPORTANT: candidate AMO/EO groups are safe for the direct (<= bound)
-        # side. They are not generally safe to negate and reuse for the dual
-        # side (sum(-lits) <= total-bound), especially EO groups.
-        lower_kwargs = {}
-
-        upper = cls.auto_leq(
-            lits=lits,
-            weights=weights,
-            bound=int(bound),
-            top_id=top_id,
-            overlap_policy=overlap_policy,
-            structured_encoding=structured_encoding,
-            **upper_kwargs,
+        return cls._encode_eq_prepared(
+            lits, weights, bound, top_id, structure, overlap_policy, structured_encoding,
         )
+
+    @classmethod
+    def _encode_eq_prepared(cls, lits, weights, bound, top_id, structure, overlap_policy, structured_encoding):
+        upper = cls._encode_leq_prepared(lits, weights, bound, top_id, structure, structured_encoding)
+        # Original AMO/EO candidates apply only to the direct upper side.
+        # Negating them for the lower side is unsound, particularly for EO.
         lower = cls.auto_leq(
-            lits=[-int(lit) for lit in lits],
-            weights=weights,
-            bound=int(total_weight - int(bound)),
-            top_id=max(top_id, int(upper.nv)),
-            overlap_policy=overlap_policy,
+            lits=[-lit for lit in lits], weights=weights, bound=sum(weights) - bound,
+            top_id=max(top_id, int(upper.nv)), overlap_policy=overlap_policy,
             structured_encoding=structured_encoding,
-            **lower_kwargs,
         )
         cnf = CNFPlus()
         cnf.clauses = [*upper.clauses, *lower.clauses]
@@ -748,60 +715,24 @@ class PBAMOEnc:
         flat_encoding=CARD_FLAT_ENCODING,
     ):
         lits = [int(lit) for lit in lits]
-        normalized_groups = _normalize_groups(groups) if groups is not None else None
-        normalized_amo = _normalize_candidate_groups(amo_groups)
-        normalized_eo = _normalize_candidate_groups(eo_groups)
+        structure = cls._prepare_structure(lits, [1] * len(lits), groups, amo_groups, eo_groups, overlap_policy)
+        top_id = int(top_id) if top_id is not None else max(map(abs, lits), default=0)
+        return cls._encode_atmost_prepared(lits, int(bound), top_id, structure, structured_encoding, flat_encoding)
 
-        if normalized_groups is not None and (normalized_amo or normalized_eo):
-            raise ValueError("Provide either disjoint groups or overlapping AMO/EO candidates, not both.")
-
-        if normalized_groups is None:
-            if normalized_amo or normalized_eo:
-                normalized_groups = choose_overlap_partition(
-                    lits,
-                    [1] * len(lits),
-                    amo_groups=normalized_amo,
-                    eo_groups=normalized_eo,
-                    policy=overlap_policy,
-                )
-            else:
-                normalized_groups = [[lit] for lit in lits]
-
-        if top_id is None:
-            top_id = max((abs(int(lit)) for lit in lits), default=0)
-        top_id = int(top_id)
-
-        portfolio = choose_cardinality_portfolio(lits, normalized_groups, bound)
-        if portfolio == "card":
-            cnf = CardEnc.atmost(lits=lits, bound=int(bound), top_id=top_id, encoding=flat_encoding)
+    @classmethod
+    def _encode_atmost_prepared(cls, lits, bound, top_id, structure, structured_encoding, flat_encoding):
+        if choose_cardinality_portfolio(lits, structure.groups, bound) == "card":
+            cnf = CardEnc.atmost(lits=lits, bound=bound, top_id=top_id, encoding=flat_encoding)
         else:
             enc = structured_encoding
             if enc == EncType.best:
-                enc = choose_encoding(lits, [1] * len(lits), normalized_groups, bound)
+                enc = choose_encoding(lits, [1] * len(lits), structure.groups, bound)
             cnf = cls.leq(
-                lits=lits,
-                weights=[1] * len(lits),
-                groups=normalized_groups,
-                bound=int(bound),
-                top_id=top_id,
-                encoding=enc,
-                emit_amo=False,
+                lits=lits, weights=[1] * len(lits), groups=structure.groups,
+                bound=bound, top_id=top_id, encoding=enc, emit_amo=False,
             )
-
-        extra = CNFPlus()
-        extra.nv = int(cnf.nv)
-        for group in normalized_amo + normalized_eo:
-            uniq = sorted({int(lit) for lit in group})
-            if len(uniq) > 1:
-                for i in range(len(uniq)):
-                    for j in range(i + 1, len(uniq)):
-                        extra.clauses.append([-uniq[i], -uniq[j]])
-        for group in normalized_eo:
-            uniq = sorted({int(lit) for lit in group})
-            if uniq:
-                extra.clauses.append(list(uniq))
-        cnf.clauses.extend(extra.clauses)
-        cnf.nv = max(int(cnf.nv), int(extra.nv), top_id)
+        structure.append_candidate_clauses(cnf)
+        cnf.nv = max(int(cnf.nv), top_id)
         return cnf
 
 

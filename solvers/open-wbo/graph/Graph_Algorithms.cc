@@ -25,10 +25,7 @@
  *
  */
 
-#include <iostream>
-
 #include <float.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #include "Graph.h"
@@ -49,12 +46,10 @@ void Graph::visitedVertexes(int u, vec<int> &reachedVertexes) {
 
 void Graph::DFSVisitIter(int u, vec<int> &reachedVertexes) {
   vec<int> *l = new vec<int>;
-  int n = 0;
 
   l->push(u);
 
   while (l->size() > 0) {
-    n++;
     u = l->last();
     l->pop();
     if (_marks[u] == WHITE) {
@@ -69,7 +64,6 @@ void Graph::DFSVisitIter(int u, vec<int> &reachedVertexes) {
     }
   }
 
-  printf("Reached %d vertexes.\n", n);
   delete l;
 }
 

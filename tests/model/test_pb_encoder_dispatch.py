@@ -228,7 +228,9 @@ def test_unit_coefficients_use_cardinality_equals(monkeypatch):
     assert r[a] is True
     assert r[b] is False
     kinds = [c[0] for c in calls]
-    assert kinds == ["structured.auto_eq", "structured.auto_leq", "card.atmost", "structured.auto_leq", "card.atmost"]
+    # Equality encodes its prepared upper side directly, then prepares the
+    # unstructured lower side. Both still select the cardinality backend.
+    assert kinds == ["structured.auto_eq", "card.atmost", "structured.auto_leq", "card.atmost"]
 
 
 def test_weighted_coefficients_use_pb_equals(monkeypatch):

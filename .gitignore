@@ -425,3 +425,8 @@ build.ninja
 /wheelhouse-*
 /pbamo/setup.py
 /cpmpy
+
+# Local weighted-sum encoder benchmarks and studies
+/tools/
+/tests/data/encoder_assessment_benchmark.json
+/tests/data/encoder_assessment_benchmark.md

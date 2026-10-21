@@ -17,6 +17,7 @@ from hermax.internal.maxsat_cli_parse import parse_maxsat_cli_output
 from hermax.internal.model_check import check_model
 from hermax.internal.subprocess_oneshot import (
     _dumps_frame,
+    _HEADER_STRUCT,
     _interrupt_process,
     _kill_process,
     _loads_frame_from_bytes,
@@ -181,12 +182,19 @@ class _WorkerProc:
     response: Optional[Dict[str, Any]] = None
     protocol_error: Optional[str] = None
     elapsed_s: float = 0.0
+    incumbent_path: Optional[str] = None
+    incumbent_offset: int = 0
 
     def cleanup(self) -> None:
         try:
             self.stdout_file.close()
         except Exception:
             pass
+        if self.incumbent_path is not None:
+            try:
+                os.unlink(self.incumbent_path)
+            except FileNotFoundError:
+                pass
         try:
             self.stderr_file.close()
         except Exception:
@@ -489,25 +497,41 @@ class PortfolioSolver(IPAMIRSolver):
             )
             return None
         worker_class_path = _worker_solver_path_for_class(cls)
+        with tempfile.NamedTemporaryFile(prefix="hermax-incumbent-", delete=False) as incumbent_file:
+            incumbent_path = incumbent_file.name
         req = {
             "solver_class_path": worker_class_path,
             "ops": self._ops_for_worker_replay(),
             "assumptions": [int(a) for a in assumptions],
+            "incumbent_path": incumbent_path,
         }
         req_bytes = _dumps_frame(req)
-        stdout_f = tempfile.TemporaryFile()
-        stderr_f = tempfile.TemporaryFile()
-        kwargs = _popen_kwargs()
-        kwargs["stdout"] = stdout_f
-        kwargs["stderr"] = stderr_f
-        proc = __import__("subprocess").Popen(_worker_cmd(), **kwargs)
-        assert proc.stdin is not None
-        proc.stdin.write(req_bytes)
-        proc.stdin.flush()
-        proc.stdin.close()
+        stdout_f = stderr_f = proc = None
+        try:
+            stdout_f = tempfile.TemporaryFile()
+            stderr_f = tempfile.TemporaryFile()
+            kwargs = _popen_kwargs()
+            kwargs["stdout"] = stdout_f
+            kwargs["stderr"] = stderr_f
+            proc = __import__("subprocess").Popen(_worker_cmd(), **kwargs)
+            assert proc.stdin is not None
+            proc.stdin.write(req_bytes)
+            proc.stdin.flush()
+            proc.stdin.close()
+        except BaseException:
+            if proc is not None and proc.poll() is None:
+                _kill_process(proc)
+                proc.wait()
+            if stdout_f is not None:
+                stdout_f.close()
+            if stderr_f is not None:
+                stderr_f.close()
+            os.unlink(incumbent_path)
+            raise
         return _WorkerProc(
             solver_name=cls.__name__,
             worker_class_path=worker_class_path,
+            incumbent_path=incumbent_path,
             proc=proc,
             stdout_file=stdout_f,
             stderr_file=stderr_f,
@@ -604,6 +628,43 @@ class PortfolioSolver(IPAMIRSolver):
         if (not self._recompute_cost) and (cost is not None) and self._validate_model and chk.reported_cost_matches is False:
             return False, None, f"reported cost {cost} != recomputed {chk.recomputed_cost}"
         return True, final_cost, None
+
+    def _read_incumbents(self, w: _WorkerProc) -> list[dict[str, Any]]:
+        """Read complete incumbent reports; leave partial frames for the next poll."""
+        if w.incumbent_path is None:
+            return []
+        candidates = []
+        with open(w.incumbent_path, "rb") as stream:
+            stream.seek(w.incumbent_offset)
+            while True:
+                header = stream.read(_HEADER_STRUCT.size)
+                if len(header) != _HEADER_STRUCT.size:
+                    break
+                (size,) = _HEADER_STRUCT.unpack(header)
+                payload = stream.read(size)
+                if len(payload) != size:
+                    break
+                w.incumbent_offset = stream.tell()
+                try:
+                    report = _loads_frame_from_bytes(header + payload)
+                    model = report["model"]
+                    cost = report["cost"]
+                    if not isinstance(model, list) or any(
+                        isinstance(lit, bool) or not isinstance(lit, int) or lit == 0
+                        for lit in model
+                    ) or isinstance(cost, bool) or not isinstance(cost, int):
+                        raise ValueError("invalid incumbent model or cost")
+                    valid, final_cost, reason = self._validate_candidate(
+                        w, SolveStatus.INTERRUPTED_SAT, model, cost
+                    )
+                    if not valid:
+                        self._handle_invalid(w.solver_name, reason or "invalid incumbent")
+                        continue
+                    candidates.append({"solver": w.solver_name, "status": SolveStatus.INTERRUPTED_SAT,
+                                       "cost": final_cost, "model": model})
+                except (KeyError, TypeError, ValueError) as exc:
+                    self._handle_invalid(w.solver_name, str(exc))
+        return candidates
 
     def _handle_invalid(self, solver_name: str, reason: str) -> None:
         if self._invalid_result_policy == "ignore":
@@ -824,13 +885,35 @@ class PortfolioSolver(IPAMIRSolver):
         next_callback_s = t0 + float(self.CALLBACK_HEARTBEAT_S)
         pending_incumbent_event: Optional[PortfolioEvent] = None
 
+        def collect_incumbents(worker: _WorkerProc, worker_id: int) -> None:
+            nonlocal best, pending_incumbent_event
+            for candidate in self._read_incumbents(worker):
+                previous = best
+                best = self._choose_best(best, candidate)
+                if self._is_strict_improvement(previous, best):
+                    pending_incumbent_event = PortfolioEvent(
+                        event_type="INCUMBENT", elapsed_s=max(0.0, time.monotonic() - t0),
+                        worker_id=worker_id, cost=best["cost"], model=list(best["model"]),
+                        is_optimal=False,
+                    )
+
         try:
             while active:
                 now = time.monotonic()
+                for i in list(active):
+                    collect_incumbents(workers[i], i)
+                    if best is not None and self._selection_policy == "first_valid":
+                        for j in list(active):
+                            self._timeout_worker(workers[j])
+                            active.discard(j)
+                        break
+                if not active:
+                    break
                 if overall_deadline is not None and now >= overall_deadline:
                     for i in list(active):
                         worker = workers[i]
                         self._timeout_worker(worker)
+                        collect_incumbents(worker, i)
                         cand = self._apply_worker_result(worker)
                         if cand:
                             best = self._choose_best(best, cand)
@@ -842,6 +925,7 @@ class PortfolioSolver(IPAMIRSolver):
                     w = workers[i]
                     if now >= w.deadline_s:
                         self._timeout_worker(w)
+                        collect_incumbents(w, i)
                         cand = self._apply_worker_result(w)
                         if cand:
                             prev_best = best
@@ -860,6 +944,7 @@ class PortfolioSolver(IPAMIRSolver):
                         continue
                     self._finalize_worker(w)
                     if w.done:
+                        collect_incumbents(w, i)
                         cand = self._apply_worker_result(w)
                         if cand:
                             prev_best = best
@@ -1027,6 +1112,10 @@ class PortfolioSolver(IPAMIRSolver):
 
     def _load_initial_formula(self, formula) -> None:
         data = extract_wcnf_data(formula)
+        max_hard = max((abs(int(lit)) for clause in data.hard for lit in clause), default=0)
+        max_soft = max((abs(int(lit)) for clause, _ in data.soft for lit in clause), default=0)
+        for _ in range(max(data.num_vars, max_hard, max_soft)):
+            self.new_var()
         for cl in data.hard:
             self.add_clause(list(map(int, cl)))
         for cl, w in data.soft:

@@ -42,6 +42,9 @@ PB Layer
 .. autoclass:: hermax.model.DivExpr
    :members:
 
+.. autoclass:: hermax.model.ModExpr
+   :members:
+
 .. autoclass:: hermax.model.MaxExpr
    :members:
 

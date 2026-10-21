@@ -156,9 +156,13 @@ or via the convenience result object from ``Model.solve()``.
 * ``Literal`` -> ``bool``
 * ``EnumVar`` -> ``str | None``
 * ``IntVar`` -> ``int``
+* linear expressions -> their numeric value
 * vectors -> lists
 * matrices / matrix views -> nested lists
 * dicts -> dicts
+
+For example, ``result[3 * x + 2 * b]`` evaluates the expression using the
+returned assignment.
 
 Convenience Solving
 -------------------
@@ -178,6 +182,8 @@ Behavior:
 Returns :class:`hermax.model.SolveResult` with:
 
 * ``status``
+* ``ok``: whether an assignment is available
+* ``proven``: whether satisfiability, unsatisfiability, or optimality was established
 * ``cost`` (``None`` for SAT)
 * ``raw_model``
 * ``assignment`` (decoded view)
@@ -245,7 +251,6 @@ Example:
    m.obj.update_soft(ref, 7)
 
 Weight updates use positive weights in the public API.
-Zero-weight removal is used internally by objective replacement and diffing.
 
 Floating objective weights
 --------------------------
@@ -335,7 +340,8 @@ one-shot solve:
        print(result.status, result.cost)
 
 When a search stops after finding an incumbent, ``result.status`` is
-``"interrupted_sat"`` and the decoded assignment is available.
+``"interrupted_sat"`` and the decoded assignment is available. In this case,
+``result.ok`` is true but ``result.proven`` is false.
 
 Notes:
 

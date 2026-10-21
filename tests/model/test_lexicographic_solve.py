@@ -99,6 +99,7 @@ def test_lex_incremental_does_not_advance_after_interrupted_tier():
     result = m.solve(solver=solver, lex_strategy="incremental")
 
     assert result.status == "interrupted_sat"
+    assert result.ok and not result.proven
     assert result.tier_costs is None
     assert solver.calls == 1
 

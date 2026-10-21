@@ -126,7 +126,7 @@ def test_floor_div_rejects_non_integer_divisor():
         m.floor_div(x, 2.5)
 
 
-@pytest.mark.parametrize("bad", [True, 0, -3])
+@pytest.mark.parametrize("bad", [True, 0])
 def test_scale_rejects_bad_factor_values(bad):
     m = Model()
     x = m.int("x", 0, 6)

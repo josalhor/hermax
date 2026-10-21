@@ -31,8 +31,8 @@ def test_int_scale_returns_lazy_object_with_expected_bounds_negative_domain():
     assert y.ub == 12  # values -10..12
 
 
-@pytest.mark.parametrize("bad", [True, False, 0, -1, -3])
-def test_int_scale_rejects_nonpositive_factor(bad):
+@pytest.mark.parametrize("bad", [True, False, 0])
+def test_int_scale_rejects_zero_and_boolean_factor(bad):
     m = Model()
     x = m.int("x", 0, 10)
     with pytest.raises(ValueError):

@@ -1,6 +1,20 @@
 Changelog
 =========
 
+Version 1.2.9
+-------------
+
+Highlights
+~~~~~~~~~~
+* Switched to RC2 with stratification as default solver model with support for solutions on time limits.
+* Added ``SolveResult.proven`` to quickly check optimality.
+* Added expression decoding and mixed Boolean/integer sums.
+* Added constant integer remainder and negative scaling.
+* Improved PB encoding and integer sum compilation performance.
+* Fixed unnecessary raise on zero weight objective terms.
+* PB comparisons support Boolean disjunction.
+* Added ``.iff()`` for reification of literals, clauses and PB comparisons.
+
 Version 1.2.8
 -------------
 

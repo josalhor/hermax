@@ -50,7 +50,7 @@ def test_interval_identity_is_linear_ladder_weld_without_pb_aux_blowup():
     # start and end each allocate `span-1` threshold literals.
     assert len(task.start._threshold_lits) == ncuts
     assert len(task.end._threshold_lits) == ncuts
-    assert len(m._registry) == 2 * ncuts
+    assert len(m._registry) == 0
 
     # Weld clauses should be binary and pairwise over the aligned ladders.
     weld = m._hard[-(2 * ncuts):]

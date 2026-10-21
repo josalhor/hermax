@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
 from hermax.encoder.pbamo import PBAMOEnc
+from hermax.encoder import _weighted_sum
 from hermax.internal.pb_normalize import normalize_signed_terms
 from hermax.utils import batcher_odd_even_unary_add_network
 
@@ -1387,6 +1388,65 @@ class _EncoderDispatch:
         return clauses, [True, *ladders[0]]
 
     @staticmethod
+    def _try_weighted_sum_eq_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
+        """Encode IntVar == weighted Boolean sum with our smaller construction."""
+        if op != "==":
+            return None
+
+        for integer, expression in ((lhs, rhs), (rhs, lhs)):
+            affine = _EncoderDispatch._extract_multi_int_affine(model, integer)
+            if affine is None or len(affine[0]) != 1:
+                continue
+            (total, coefficient), = affine[0]
+            if coefficient != 1 or total.lb != 0 or affine[1] or expression.constant:
+                continue
+            if len(expression.terms) < 2 or any(
+                term.coefficient <= 0
+                or term.literal.id in model._intvar_threshold_owner_by_litid
+                for term in expression.terms
+            ):
+                continue
+            lits = [model._lit_to_dimacs(term.literal) for term in expression.terms]
+            weights = [int(term.coefficient) for term in expression.terms]
+            if all(weight == 1 for weight in weights):
+                continue  # The existing unit-sum fastpath owns this case.
+
+            pairs, constant = _EncoderDispatch._normalize_pb(lhs, rhs)
+            cache_key = _canonical_pb_cache_key(
+                "==", -constant, [model._lit_to_dimacs(lit) for _, lit in pairs],
+                [weight for weight, _ in pairs],
+            )
+            cached = model._pb_clause_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+            available, used, groups = set(lits), set(), []
+            for group in sorted(model._known_eo_groups.values(), key=lambda g: (-len(g), g)):
+                if set(group) <= available and not used.intersection(map(abs, group)):
+                    groups.append(group)
+                    used.update(map(abs, group))
+            plans = _weighted_sum.plan_candidates(lits, weights, total.ub, groups)
+            if not plans:
+                continue  # Unsupported expression shape; never reject by size.
+
+            # Both candidates share these cached predicates and the same private
+            # ID range. Losing clauses and auxiliary IDs never enter the model.
+            values = {
+                value: model._lit_to_dimacs(total == value)
+                for value in range(total.ub + 1)
+            }
+            thresholds = [model._lit_to_dimacs(lit) for lit in total._threshold_lits]
+            cnf = _weighted_sum.encode_best(plans, thresholds, model._top_id(), values)
+            model._debug(
+                model.DEBUG_COMPILE,
+                f"encode path=fast_weighted_sum_eq clauses={len(cnf.clauses)}",
+            )
+            result = model._cnfplus_to_clausegroup(cnf)
+            model._pb_clause_cache[cache_key] = result
+            return result
+        return None
+
+    @staticmethod
     def _try_int_equals_unit_bool_sum_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
         """Detect and compile ``IntVar + c1 OP sum(unit-bools) + c2``.
 
@@ -1801,6 +1861,9 @@ class _EncoderDispatch:
         if unary_adder_eq_fast is not None:
             model._debug(model.DEBUG_COMPILE, f"encode path=fast_unary_adder_eq op={op} clauses={len(unary_adder_eq_fast)}")
             return unary_adder_eq_fast
+        weighted_sum_fast = _EncoderDispatch._try_weighted_sum_eq_fastpath(model, lhs, op, rhs)
+        if weighted_sum_fast is not None:
+            return weighted_sum_fast
         boolsum_fast = _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath(model, lhs, op, rhs)
         if boolsum_fast is not None:
             model._debug(model.DEBUG_COMPILE, f"encode path=fast_boolsum op={op} clauses={len(boolsum_fast)}")

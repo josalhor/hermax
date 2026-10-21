@@ -25,7 +25,7 @@ def _normalize_dimacs_literal(value: object) -> int:
 
 def _detection_error() -> TypeError:
     return TypeError(
-        "Conditions for only_if()/implies() must be a Literal."
+        "Conditions for only_if()/implies()/iff() must be a Literal."
     )
 
 
@@ -666,6 +666,17 @@ class Clause:
                 raise TypeError("Unsupported implication target.")
         return ClauseGroup(self._model, parts)
 
+    def iff(self, indicator: "Literal") -> "ClauseGroup":
+        """Return clauses enforcing ``indicator <-> self``."""
+        if not isinstance(indicator, Literal):
+            raise _detection_error()
+        _ensure_same_model_pair_fast(self, indicator)
+        flag = self._model._lit_to_dimacs(indicator)
+        return ClauseGroup._from_dimacs_trusted(
+            self._model,
+            ((*self._dimacs, -flag), *((-lit, flag) for lit in self._dimacs)),
+        )
+
     def __repr__(self) -> str:
         return f"Clause({self.literals!r})"
 
@@ -694,6 +705,8 @@ class Literal:
             _ensure_same_model_pair_fast(self, other)
             return Clause(self._model, [self, other])
         if isinstance(other, Clause):
+            return other.__or__(self)
+        if isinstance(other, PBConstraint):
             return other.__or__(self)
         raise TypeError("OR only supports Literal or Clause.")
 
@@ -805,6 +818,15 @@ class Literal:
             raise _detection_error()
         _ensure_same_model_pair_fast(self, condition)
         return Clause(self._model, [self, ~condition])
+
+    def iff(self, indicator: "Literal") -> ClauseGroup:
+        """Return clauses enforcing ``indicator <-> self``."""
+        if not isinstance(indicator, Literal):
+            raise _detection_error()
+        _ensure_same_model_pair_fast(self, indicator)
+        lit = self._model._lit_to_dimacs(self)
+        flag = self._model._lit_to_dimacs(indicator)
+        return ClauseGroup._from_dimacs_trusted(self._model, ((-lit, flag), (-flag, lit)))
 
     def implies(self, target):
         """Return encoding of ``self -> target``.
@@ -975,9 +997,20 @@ class _LazyIntExpr:
             raise ValueError("Scale factor must be strictly positive.")
         if not isinstance(factor, int):
             raise TypeError("Scale factor must be an integer.")
-        if factor <= 0:
-            raise ValueError("Scale factor must be strictly positive.")
+        if factor == 0:
+            raise ValueError("Scale factor must be nonzero.")
         return ScaleExpr(self, factor)
+
+    def __mod__(self, divisor: int):
+        if isinstance(divisor, (Literal, Term, PBExpr, IntVar, _LazyIntExpr)):
+            raise _nonlinear_error(self, divisor, op="%")
+        if isinstance(divisor, bool):
+            raise ValueError("Divisor must be strictly positive.")
+        if not isinstance(divisor, int):
+            raise TypeError("Divisor must be an integer.")
+        if divisor <= 0:
+            raise ValueError("Divisor must be strictly positive.")
+        return ModExpr(self, divisor)
 
     def __eq__(self, rhs):  # type: ignore[override]
         result = _compare_pb_operands(self, "==", rhs)
@@ -1036,6 +1069,34 @@ class DivExpr(_LazyIntExpr):
         return self._realized
 
 
+class ModExpr(_LazyIntExpr):
+    """Lazy integer remainder for a positive constant divisor."""
+
+    __slots__ = ("_src", "_divisor", "_lb", "_ub")
+
+    def __init__(self, src: "IntVar | _LazyIntExpr", divisor: int):
+        super().__init__(src._model)
+        self._src = src
+        self._divisor = divisor
+        if src.lb // divisor == src.ub // divisor:
+            self._lb, self._ub = src.lb % divisor, src.ub % divisor
+        else:
+            self._lb, self._ub = 0, divisor - 1
+
+    @property
+    def lb(self) -> int:
+        return self._lb
+
+    @property
+    def ub(self) -> int:
+        return self._ub
+
+    def _realize(self) -> "IntVar":
+        if self._realized is None:
+            self._realized = self._model.modulo(self._src, self._divisor)
+        return self._realized
+
+
 class ScaleExpr(_LazyIntExpr):
     """Lazy ``IntVar * constant`` derived integer expression."""
 
@@ -1045,8 +1106,8 @@ class ScaleExpr(_LazyIntExpr):
         super().__init__(src._model)
         self._src = src
         self._factor = factor
-        self._lb = src.lb * factor
-        self._ub = src.ub * factor
+        self._lb = min(src.lb * factor, src.ub * factor)
+        self._ub = max(src.lb * factor, src.ub * factor)
 
     @property
     def lb(self) -> int:
@@ -1579,6 +1640,14 @@ class PBConstraint:
         _ensure_same_model_pair_fast(self, condition)
         return PBConstraint(self._model, self._lhs, self._op, self._rhs, [*self._conditions, condition])
 
+    def __or__(self, other):
+        if not isinstance(other, Literal):
+            raise TypeError("PB constraint OR only supports Literal operands.")
+        return self.only_if(~other)
+
+    def __ror__(self, other):
+        return self.__or__(other)
+
     def _negated(self) -> "PBConstraint | tuple[PBConstraint, PBConstraint]":
         # Logical negation of the PB comparator. Equality negation is a disjunction.
         if self._op == "<=":
@@ -1626,6 +1695,28 @@ class PBConstraint:
                 & right.only_if(~target).only_if(~sel).clauses()
             ),
         )
+
+    def iff(self, indicator: Literal) -> ClauseGroup:
+        """Return a lazy encoding of ``indicator <-> self``.
+
+        For a gated PB constraint, the represented formula is the implication
+        from all its conditions to the comparison.
+        """
+        if not isinstance(indicator, Literal):
+            raise _detection_error()
+        _ensure_same_model_pair_fast(self, indicator)
+        positive = self.only_if(indicator)
+        comparison = PBConstraint(self._model, self._lhs, self._op, self._rhs)
+        negative = comparison.implies(indicator)
+
+        def build() -> ClauseGroup:
+            result = positive.clauses()
+            for condition in self._conditions:
+                result = result & condition.only_if(~indicator)
+            reverse = negative.clauses() if isinstance(negative, PBConstraint) else negative
+            return result & reverse
+
+        return DeferredClauseGroup(self._model, build)
 
     def clauses(self) -> ClauseGroup:
         """Compile to a :class:`ClauseGroup` and cache the result."""

@@ -196,13 +196,16 @@ def test_one_shot_pysat_model_accepts_a_time_limit():
     assert result.assignment[x] is True
 
 
-def test_in_process_replay_solver_rejects_unenforceable_time_limit():
+def test_rc2_replay_solver_supports_time_limit():
     from hermax.non_incremental import RC2
 
     solver = RC2()
     try:
-        with pytest.raises(NotImplementedError, match="does not support time_limit"):
-            solver.solve(time_limit=1.0)
+        solver.add_clause([1])
+        solver.add_soft_unit(-1, 2)
+        assert solver.solve(time_limit=1.0)
+        assert solver.get_model() == [1]
+        assert solver.get_cost() == 2
     finally:
         solver.close()
 

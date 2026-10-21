@@ -324,13 +324,14 @@ per threshold bit) and is equivalent to minimizing the integer value.
 ``IntVar`` scaling (multiplication)
 ------------------------------------
 
-The model can also scale an integer by a positive constant into a new integer
+The model can also scale an integer by a nonzero integer constant into a new integer
 variable:
 
 .. code-block:: python
 
    y = model.scale(x, 3)
    model &= (y <= 12)
+   negated = model.scale(x, -1)
 
 This uses direct ladder-threshold ties (no PB/Card encoder).
 
@@ -372,6 +373,28 @@ For positive ``d``, if ``q = x // d``, then for every quotient threshold ``m``:
 The model uses direct threshold equivalences, without PB or cardinality
 encoders.
 Divisors must be strictly positive integers.
+
+Constant remainder via ``%``
+----------------------------
+
+Use ``x % d`` or ``model.modulo(x, d)`` for a positive integer constant ``d``.
+The result follows Python remainder semantics, including for negative ``x``.
+
+.. code-block:: python
+
+   model &= (x % 3) == 0
+
+Derived comparisons can be combined with a Boolean literal:
+
+.. code-block:: python
+
+   model &= ((x // 3) != 2) | y
+
+Summing integers and Booleans
+-----------------------------
+
+``model.sum_var([x, b, ~c])`` returns an integer equal to their sum.
+Boolean literals contribute zero or one.
 
 Lazy array indexing via ``@``
 -----------------------------

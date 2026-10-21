@@ -1272,7 +1272,7 @@ class RC2Stratified(RC2, object):
 
     def __init__(self, formula, solver='g3', adapt=False, blo='div',
             exhaust=False, incr=False, minz=False, nohard=False, trim=0,
-            verbose=0):
+            verbose=0, on_model=None):
         """
             Constructor.
         """
@@ -1283,6 +1283,7 @@ class RC2Stratified(RC2, object):
                 verbose=verbose)
 
         self.levl = 0    # initial optimization level
+        self.on_model = on_model
         self.blop = []   # a list of blo levels
 
         # BLO strategy
@@ -1335,7 +1336,10 @@ class RC2Stratified(RC2, object):
             :func:`activate_clauses`.
         """
 
-        if self.done == 0 and self.levl != None:
+        if not self.blop:
+            if not self.compute_():
+                return
+        elif self.done == 0 and self.levl != None:
             # it is a fresh start of the solver
             # i.e. no optimization level is finished yet
 
@@ -1352,6 +1356,8 @@ class RC2Stratified(RC2, object):
                 # call RC2
                 if self.compute_() == False:
                     return
+
+                self._report_model()
 
                 # updating the list of distinct weight levels
                 self.blop = sorted([w for w in self.wstr], reverse=True)
@@ -1399,6 +1405,18 @@ class RC2Stratified(RC2, object):
         )
 
         return self.model
+
+    def _report_model(self):
+        """Report the current SAT assignment in the original variable space."""
+        if self.on_model is None:
+            return
+        model = self.oracle.get_model()
+        if model is not None:
+            self.on_model(sorted(
+                (int(copysign(self.vmap.i2e[abs(l)], l))
+                 for l in model if abs(l) in self.vmap.i2e),
+                key=abs,
+            ))
 
     
     def next_level(self):

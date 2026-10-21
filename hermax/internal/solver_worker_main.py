@@ -104,6 +104,14 @@ def _run_request(req: Dict[str, Any]) -> Dict[str, Any]:
     solver_cls = resolve_object(cls_path)
     solver = solver_cls()
     try:
+        incumbent_path = req.get("incumbent_path")
+        set_incumbent_callback = getattr(solver, "_set_incumbent_callback", None)
+        if incumbent_path and callable(set_incumbent_callback):
+            def report_incumbent(model, cost):
+                with open(incumbent_path, "ab") as stream:
+                    _write_frame(stream, {"model": model, "cost": cost})
+
+            set_incumbent_callback(report_incumbent)
         if ops is not None:
             _ops_replay_to_solver(solver, ops)
         else:

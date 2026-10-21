@@ -4,3 +4,6 @@
 /_random
 /MaxSATRegressionSuite
 /test_maxsat_regression_suite.py
+/benchmarks
+/data/*.jsonl
+/data/*.md
