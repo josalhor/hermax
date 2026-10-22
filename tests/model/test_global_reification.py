@@ -240,16 +240,14 @@ def test_integer_relations_share_the_logical_api(mode):
     _check(model, xs, [range(-1, 2)] * 2, xs[0] <= xs[1], lambda values: values[0] <= values[1], mode)
 
 
-def test_conditioned_and_combined_groups_do_not_keep_original_global_semantics():
+def test_conditioned_and_combined_groups_support_reification():
     model = Model()
     xs = model.int_vector("x", 2, 0, 2)
     b = model.bool("b")
     g = xs.all_different()
     for group in (g.only_if(b), g & b):
-        with pytest.raises(TypeError):
-            group.implies(b)
-        with pytest.raises(TypeError):
-            _ = b == group
+        assert group.implies(b) is not None
+        assert (b == group) is not None
 
 
 def test_mutating_a_global_keeps_added_constraints_and_invalidates_reification():

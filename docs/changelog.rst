@@ -1,6 +1,13 @@
 Changelog
 =========
 
+Version 1.2.10
+--------------
+
+Highlights
+~~~~~~~~~~
+* Expanded ``.iff()`` support across modeling constraints.
+
 Version 1.2.9
 -------------
 
@@ -13,7 +20,6 @@ Highlights
 * Improved PB encoding and integer sum compilation performance.
 * Fixed unnecessary raise on zero weight objective terms.
 * PB comparisons support Boolean disjunction.
-* Added ``.iff()`` for reification of literals, clauses and PB comparisons.
 
 Version 1.2.8
 -------------

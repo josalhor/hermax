@@ -285,7 +285,7 @@ class IntSetVar:
                 clauses.append(Clause(self._model, diff_lits))
             return ClauseGroup(self._model, clauses)
 
-        return DeferredClauseGroup(self._model, _build)
+        return _ReifiableClauseGroup(self._model, _build, lambda: self._eq_group_set(other))
 
     def _neq_group_constant(self, values) -> ClauseGroup:
         const_vals = self._coerce_constant_values(values)
@@ -313,7 +313,7 @@ class IntSetVar:
                 clauses.append(Clause(self._model, diff_lits))
             return ClauseGroup(self._model, clauses)
 
-        return DeferredClauseGroup(self._model, _build)
+        return _ReifiableClauseGroup(self._model, _build, lambda: self._eq_group_constant(const_vals))
 
     def _binary_set_op(self, other: "IntSetVar", op: str, name: Optional[str] = None) -> "IntSetVar":
         if not isinstance(other, IntSetVar):
@@ -1415,7 +1415,7 @@ class IntVar:
                 # using compact exact-value boundary patterns (clause size <= 4).
                 atoms = [*self._exact_value_atoms(v), *value._exact_value_atoms(v)]
                 clauses.append(Clause(self._model, [~lit for lit in atoms]))
-            return ClauseGroup(self._model, clauses)
+            return IntRelation(self._model, clauses, self, value, "!=", 0)
         result = _compare_pb_operands(self, "!=", value)
         if result is NotImplemented:
             raise _unsupported_comparison_error(self, value)
@@ -1495,14 +1495,17 @@ class IntervalVar:
             raise TypeError("no_overlap expects IntervalVar")
         _ensure_same_model_pair_fast(self, other)
         if other is self:
-            return ClauseGroup(self._model, [Clause(self._model, [self._model._get_bool_constant_literal(False)])])
+            return _deferred_constant_constraint(self._model, False)
         def _build() -> ClauseGroup:
             key = ("interval_no_overlap_sel", id(self), id(other))
             sel = self._model.canonical_internal_bool(key)
             left = self.ends_before(other).only_if(sel)
             right = other.ends_before(self).only_if(~sel)
             return left & right
-        return DeferredClauseGroup(self._model, _build)
+        def _build_negative() -> ClauseGroup:
+            return (self.start < other.end) & (other.start < self.end)
+
+        return _ReifiableClauseGroup(self._model, _build, _build_negative)
 
 
 class _BaseVector:
@@ -1617,10 +1620,14 @@ class BoolVector(_BaseVector):
 
     def at_most_one(self):
         """Return a cardinality constraint enforcing at most one true literal."""
+        if not self._items:
+            return _deferred_constant_constraint(self._model, True)
         return sum_expr(self._items) <= 1
 
     def exactly_one(self):
         """Return a cardinality constraint enforcing exactly one true literal."""
+        if not self._items:
+            return _deferred_constant_constraint(self._model, False)
         return sum_expr(self._items) == 1
 
     def at_least_one(self):
@@ -1763,13 +1770,7 @@ class IntSetVector(_BaseVector):
             seen.add(normalized)
             norm_rows.append(normalized)
         if not norm_rows:
-            return DeferredClauseGroup(
-                self._model,
-                lambda: ClauseGroup(
-                    self._model,
-                    [Clause(self._model, [self._model._get_bool_constant_literal(False)])],
-                ),
-            )
+            return _deferred_constant_constraint(self._model, False)
 
         def _build() -> ClauseGroup:
             selectors = [self._model.bool() for _ in norm_rows]
@@ -1779,7 +1780,18 @@ class IntSetVector(_BaseVector):
                     clauses.extend(self._model._as_clausegroup(item == value).only_if(selector))
             return ClauseGroup(self._model, clauses)
 
-        return DeferredClauseGroup(self._model, _build)
+        def _build_negative() -> ClauseGroup:
+            result = ClauseGroup(self._model, [])
+            for row in norm_rows:
+                matches = []
+                for item, value in zip(self._items, row):
+                    match = self._model.bool()
+                    matches.append(match)
+                    result = result & (item == value).iff(match)
+                result = result & Clause(self._model, [~match for match in matches])
+            return result
+
+        return _ReifiableClauseGroup(self._model, _build, _build_negative)
 
 
 class IntVector(_BaseVector):
@@ -1992,7 +2004,7 @@ class IntVector(_BaseVector):
         if len(self) != len(other):
             raise ValueError("Vector lengths differ")
         if len(self) == 0:
-            return ClauseGroup(self._model, [Clause(self._model, [self._model._get_bool_constant_literal(False)])])
+            return _deferred_constant_constraint(self._model, False)
 
         def _build() -> ClauseGroup:
             prefix_eq: list[Literal] = [self._model._get_bool_constant_literal(True)]
@@ -2036,7 +2048,16 @@ class IntVector(_BaseVector):
             clauses.append(Clause(self._model, lt_inds))
             return ClauseGroup(self._model, clauses)
 
-        return DeferredClauseGroup(self._model, _build)
+        def _build_negative() -> ClauseGroup:
+            # self >=lex other means other <lex self or both vectors equal.
+            selector = self._model.bool()
+            less = other.lexicographic_less_than(self)._realize().only_if(selector)
+            equal = ClauseGroup(self._model, [])
+            for left, right in zip(self._items, other._items):
+                equal = equal & (left == right)
+            return less & equal.only_if(~selector)
+
+        return _ReifiableClauseGroup(self._model, _build, _build_negative)
 
     def __eq__(self, other):  # type: ignore[override]
         raise TypeError("Vector equality is ambiguous; use explicit methods.")

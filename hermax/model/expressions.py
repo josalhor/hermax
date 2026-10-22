@@ -261,7 +261,46 @@ class ClauseGroup:
         """Reject ClauseGroup-as-condition usage in this modeling API."""
         raise _detection_error()
 
+    def iff(self, indicator: "Literal") -> "ClauseGroup":
+        """Reify the conjunction of the clauses in this group.
+
+        The reverse direction chooses a clause to falsify.  The group is
+        treated as a CNF over all its literals, including any auxiliary ones.
+        """
+        if not isinstance(indicator, Literal):
+            raise _detection_error()
+        _ensure_same_model_pair_fast(self, indicator)
+
+        def build() -> ClauseGroup:
+            group = self._realize() if isinstance(self, DeferredClauseGroup) else self
+            clauses = tuple(group.iter_dimacs())
+            flag = self._model._lit_to_dimacs(indicator)
+            if any(not clause for clause in clauses):
+                return ClauseGroup._from_dimacs_trusted(self._model, ((-flag,),))
+            if len(clauses) == 1:
+                clause = clauses[0]
+                return ClauseGroup._from_dimacs_trusted(
+                    self._model, ((*clause, -flag), *((-lit, flag) for lit in clause))
+                )
+            result = [(*clause, -flag) for clause in clauses]
+            witnesses = []
+            for clause in clauses:
+                if len(clause) == 1:
+                    witnesses.append(-clause[0])
+                    continue
+                witness = self._model._lit_to_dimacs(self._model.bool())
+                witnesses.append(witness)
+                result.extend((-witness, -lit) for lit in clause)
+            result.append((flag, *witnesses))
+            return ClauseGroup._from_dimacs_trusted(self._model, result)
+
+        return _ReifiableClauseGroup(
+            self._model, build, lambda: self.iff(~indicator)._realize()
+        )
+
     def __and__(self, other):
+        if isinstance(other, _Reifiable):
+            return _semantic_and(self, other)
         if isinstance(other, DeferredClauseGroup):
             _ensure_same_model_pair_fast(self, other)
             # A pending deferred group intentionally has no clauses yet.
@@ -392,6 +431,8 @@ class DeferredClauseGroup(ClauseGroup):
         raise _detection_error()
 
     def __and__(self, other):
+        if isinstance(other, _Reifiable):
+            return _semantic_and(self, other)
         if isinstance(other, (Literal, Clause, ClauseGroup, DeferredClauseGroup)):
             _ensure_same_model_pair_fast(self, other)
             if isinstance(other, DeferredClauseGroup):
@@ -425,9 +466,10 @@ def _deferred_constant_constraint(model: "Model", value: bool) -> DeferredClause
     ``__true``/``__false`` literals for a comparison that may never be added.
     In particular, gating false realizes directly as the negated gate.
     """
-    if value:
-        return DeferredClauseGroup(model, lambda: ClauseGroup(model, []))
-    return DeferredClauseGroup(model, lambda: ClauseGroup(model, [Clause(model, [])]))
+    def constant_group(truth: bool) -> ClauseGroup:
+        return ClauseGroup(model, [] if truth else [Clause(model, [])])
+
+    return _ReifiableClauseGroup(model, lambda: constant_group(value), lambda: constant_group(not value))
 
 
 class _Reifiable:
@@ -438,14 +480,32 @@ class _Reifiable:
     def _negated(self) -> ClauseGroup:
         raise NotImplementedError
 
+    def __and__(self, other):
+        if not isinstance(other, (Literal, Clause, ClauseGroup)):
+            return NotImplemented
+        return _semantic_and(self, other)
+
+    def only_if(self, condition: "Literal") -> ClauseGroup:
+        """Gate the constraint while retaining its semantic negation."""
+        if not isinstance(condition, Literal):
+            raise _detection_error()
+        _ensure_same_model_pair_fast(self, condition)
+        positive = super().only_if(condition)
+        return _ReifiableClauseGroup(
+            self._model,
+            lambda: positive,
+            lambda: self._negated() & condition,
+        )
+
     def implies(self, target: "Literal") -> ClauseGroup:
         """Return ``self -> target``, where target is a Boolean literal."""
         if not isinstance(target, Literal):
             raise _detection_error()
         _ensure_same_model_pair_fast(self, target)
-        return DeferredClauseGroup(
+        return _ReifiableClauseGroup(
             self._model,
             lambda: self._negated().only_if(~target),
+            lambda: self.only_if(~target) & ~target,
         )
 
     def iff(self, indicator: "Literal") -> ClauseGroup:
@@ -474,14 +534,50 @@ class _ReifiableClauseGroup(_Reifiable, DeferredClauseGroup):
         return self
 
 
+def _semantic_and(left, right) -> _ReifiableClauseGroup:
+    """Conjoin formulas without losing the meaning of their helper variables."""
+    model = _ensure_same_model_pair_fast(left, right)
+
+    def realized_group(formula):
+        group = model._as_clausegroup(formula)
+        while isinstance(group, DeferredClauseGroup):
+            group = group._realize()
+        return group
+
+    def positive():
+        a, b = realized_group(left), realized_group(right)
+        return ClauseGroup._from_dimacs_trusted(
+            model, (*a._clauses, *b._clauses),
+            amo_groups=a._copy_groups(a._amo_groups) + b._copy_groups(b._amo_groups),
+            eo_groups=a._copy_groups(a._eo_groups) + b._copy_groups(b._eo_groups),
+        )
+
+    def negative():
+        selector = model.bool()
+
+        def negated(formula):
+            if isinstance(formula, _Reifiable):
+                return formula._negated()
+            if isinstance(formula, Literal):
+                return model._as_clausegroup(~formula)
+            if isinstance(formula, Clause):
+                return ClauseGroup(model, [Clause(model, [~lit]) for lit in formula.literals])
+            value = model.bool()
+            return formula.iff(value) & ~value
+
+        return negated(left).only_if(selector) & negated(right).only_if(~selector)
+
+    return _ReifiableClauseGroup(model, positive, negative)
+
+
 class IntRelation(_Reifiable, ClauseGroup):
     """ClauseGroup with relation metadata for full Boolean reification.
 
     This represents a normalized integer relation of the form:
-    ``lhs + offset OP rhs`` where ``OP`` is one of ``<=,<,>=,>``.
+    ``lhs + offset OP rhs`` where ``OP`` is a supported comparison.
     """
 
-    __slots__ = ("lhs", "rhs", "op", "offset")
+    __slots__ = ("lhs", "rhs", "op", "offset", "_reification_valid")
 
     def __init__(self, model: "Model", clauses: Sequence["Clause"], lhs: "IntVar", rhs: "IntVar", op: str, offset: int = 0):
         super().__init__(model, clauses)
@@ -489,8 +585,16 @@ class IntRelation(_Reifiable, ClauseGroup):
         self.rhs = rhs
         self.op = op
         self.offset = int(offset)
+        self._reification_valid = True
+
+    def extend(self, other, *, inplace: bool = False) -> ClauseGroup:
+        super().extend(other, inplace=inplace)
+        self._reification_valid = False
+        return self
 
     def _negated(self) -> ClauseGroup:
+        if not self._reification_valid:
+            raise TypeError("Cannot use .iff() or .implies() after in-place extension.")
         if self.op == "<=":
             return self.lhs._relop_intvar(self.rhs, ">", self.offset)  # type: ignore[return-value]
         if self.op == "<":
@@ -501,6 +605,8 @@ class IntRelation(_Reifiable, ClauseGroup):
             return self.lhs._relop_intvar(self.rhs, "<=", self.offset)  # type: ignore[return-value]
         if self.op == "==":
             return self.lhs._relop_intvar(self.rhs, "!=", self.offset)  # type: ignore[return-value]
+        if self.op == "!=":
+            return self.lhs == self.rhs
         raise ValueError(f"Unsupported relation operator {self.op!r}")
 
     def reify(self, indicator: "Literal") -> ClauseGroup:
@@ -613,6 +719,8 @@ class Clause:
         raise TypeError("Cannot directly negate a Clause. Negate literals individually to maintain strict CNF.")
 
     def __and__(self, other):
+        if isinstance(other, _Reifiable):
+            return _semantic_and(self, other)
         if isinstance(other, DeferredClauseGroup):
             _ensure_same_model_pair_fast(self, other)
             # See ClauseGroup.__and__: retain pending deferred work.
@@ -652,6 +760,21 @@ class Clause:
         Clause implication is distributed over source literals:
         ``(a | b) -> X`` becomes ``(a -> X) & (b -> X)``.
         """
+        if isinstance(target, (PBConstraint, _Reifiable)):
+            _ensure_same_model_pair_fast(self, target)
+
+            def positive() -> ClauseGroup:
+                result = ClauseGroup(self._model, [])
+                for lit in self.literals:
+                    gated = target.only_if(lit)
+                    result = result & (gated.clauses() if isinstance(gated, PBConstraint) else gated)
+                return result
+
+            def negative() -> ClauseGroup:
+                value = self._model.bool()
+                return target.iff(value) & ~value & self
+
+            return _ReifiableClauseGroup(self._model, positive, negative)
         # (a | b) -> X  == (a -> X) & (b -> X)
         parts: list[Clause] = []
         for lit in self.literals:
@@ -711,6 +834,8 @@ class Literal:
         raise TypeError("OR only supports Literal or Clause.")
 
     def __and__(self, other):
+        if isinstance(other, _Reifiable):
+            return _semantic_and(self, other)
         if isinstance(other, Literal):
             _ensure_same_model_pair_fast(self, other)
             return ClauseGroup(
@@ -1688,12 +1813,13 @@ class PBConstraint:
         # Equality antecedent: (~target) -> (A OR B), where A/B are PB constraints.
         # Encode the disjunction with a selector and two half-reified branches.
         left, right = neg
-        return DeferredClauseGroup(
+        return _ReifiableClauseGroup(
             self._model,
             lambda: (
                 left.only_if(~target).only_if((sel := self._model.bool())).clauses()
                 & right.only_if(~target).only_if(~sel).clauses()
             ),
+            lambda: self.clauses() & ~target,
         )
 
     def iff(self, indicator: Literal) -> ClauseGroup:
@@ -1716,7 +1842,9 @@ class PBConstraint:
             reverse = negative.clauses() if isinstance(negative, PBConstraint) else negative
             return result & reverse
 
-        return DeferredClauseGroup(self._model, build)
+        return _ReifiableClauseGroup(
+            self._model, build, lambda: self.iff(~indicator)._realize()
+        )
 
     def clauses(self) -> ClauseGroup:
         """Compile to a :class:`ClauseGroup` and cache the result."""

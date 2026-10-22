@@ -18,7 +18,7 @@ _ORDERING = {
 @pytest.mark.parametrize("op", ["==", "!="])
 @pytest.mark.parametrize(
     "formula_kind",
-    ["int_inequality", "clause", "clausegroup", "deferred_clausegroup", "pb", "gated_pb"],
+    ["clause", "clausegroup", "pb", "gated_pb"],
 )
 def test_literal_rejects_non_native_formula_comparison(formula_kind, op):
     m = Model()
@@ -28,10 +28,8 @@ def test_literal_rejects_non_native_formula_comparison(formula_kind, op):
     x = m.int("x", 0, 1)
     y = m.int("y", 0, 1)
     formula = {
-        "int_inequality": x != y,
         "clause": a | b,
         "clausegroup": a & b,
-        "deferred_clausegroup": (x + a == 1).implies(indicator),
         "pb": x + a >= 1,
         "gated_pb": (x >= 1).only_if(a),
     }[formula_kind]
