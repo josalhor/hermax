@@ -41,6 +41,7 @@ def _build_pbamo() -> None:
         ROOT / "encodings" / "pbamo" / "src" / "ggpw.cpp",
         ROOT / "encodings" / "pbamo" / "src" / "gmto.cpp",
         ROOT / "encodings" / "pbamo" / "src" / "rggt.cpp",
+        ROOT / "encodings" / "pbamo" / "src" / "rggt_equality.cpp",
         ROOT / "encodings" / "pbamo" / "src" / "registry.cpp",
     ]
     ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")

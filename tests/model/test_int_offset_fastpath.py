@@ -6,6 +6,7 @@ import hermax.model as hm
 from hermax.internal.card import CardEnc
 from hermax.internal.pb import PBEnc
 from hermax.model import Model
+from hermax.internal import _integer_sum_native as integer_native
 
 
 def _solve_ok(m: Model):
@@ -127,18 +128,20 @@ def test_offset_fast_path_bypasses_card_and_pb_encoders(monkeypatch):
 
 def test_non_offset_general_pb_still_uses_pb_encoder(monkeypatch):
     seen = {"pb": 0}
-    real_pb_leq = PBEnc.leq
+    real_encode = integer_native.encode_pb
 
-    def wrapped_pb_leq(*args, **kwargs):
+    def wrapped_encode(*args, **kwargs):
         seen["pb"] += 1
-        return real_pb_leq(*args, **kwargs)
+        assert kwargs["state_limit"] == 20_000
+        assert kwargs["clause_limit"] == 50_000
+        return real_encode(*args, **kwargs)
 
-    monkeypatch.setattr(PBEnc, "leq", staticmethod(wrapped_pb_leq))
+    monkeypatch.setattr(integer_native, "encode_pb", wrapped_encode)
 
     m = Model()
     x = m.int("x", 0, 8)
     y = m.int("y", 0, 8)
-    # Three IntVars force the generic PB path (bivariate fast path does not apply).
+    # Three weighted IntVars use a bounded native PB attempt; no binary view is needed here.
     z = m.int("z", 0, 8)
     m &= (2 * x + 3 * y + z <= 20)
     m &= (x == 1)

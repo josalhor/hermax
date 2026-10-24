@@ -6,6 +6,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import combinations
+from math import gcd
 
 from pysat.formula import CNFPlus
 
@@ -290,25 +291,26 @@ def choose_cardinality_portfolio(lits, groups, bound):
 
 
 def choose_encoding(lits, weights, groups, bound):
-    lits = [int(lit) for lit in lits]
+    """Select an encoder with a fitted, propagation-weighted depth-three tree.
+
+    The fit counts GGPW's sizes twice to favor the stronger propagation of
+    MDD, GSWC and RGGT. Every leaf selects an encoder directly.
+    """
     weights = [int(weight) for weight in weights]
     groups = _normalize_groups(groups)
-    n_terms = float(len(lits))
-    n_groups = float(len(groups))
-    amo_cap = float(amo_upper_bound(weights, groups, lits=lits)) if groups else 0.0
-    non_singleton_groups = float(sum(1 for group in groups if len(group) > 1))
+    reduced_bound = int(bound) // (gcd(*weights) or 1)
 
-    if n_terms <= 35.5:
-        if amo_cap > 4381.0:
-            return EncType.ggpw
-        if amo_cap > 477.5 and non_singleton_groups > 8.5:
-            return EncType.ggpw
+    if len(groups) <= 24:
+        if reduced_bound <= 2:
+            return EncType.gswc
+        if sum(len(group) > 1 for group in groups) <= 11:
+            return EncType.mdd
         return EncType.rggt
 
-    if amo_cap <= 222.5:
-        return EncType.rggt
-    if n_groups <= 7.5:
-            return EncType.rggt
+    # Compare the mean with the fitted threshold 15.171875 (= 971/64)
+    # using integer arithmetic, including at the exact boundary.
+    if 64 * sum(weights) <= 971 * len(weights):
+        return EncType.rggt if reduced_bound <= 95 else EncType.mdd
     return EncType.ggpw
 
 
@@ -577,6 +579,28 @@ class PBAMOEnc:
         cnf = CNFPlus()
         cnf.clauses = clauses
         cnf.nv = max(int(top_id), int(max_aux))
+        return cnf
+
+    @classmethod
+    def equals(cls, lits, weights, groups, bound, top_id=None, encoding=EncType.rggt, emit_amo=True):
+        """Encode a grouped equality with one shared RGGT sum tree.
+
+        With ``emit_amo=False``, callers must enforce the supplied AMO groups.
+        This explicit path does not change the routing of ``auto_eq``.
+        """
+        cls._validate_pb_input(lits, weights, bound)
+        cls._validate_partition_groups(lits, groups)
+        if encoding != EncType.rggt:
+            raise ValueError("Native equality is supported only by the rggt encoder.")
+        if top_id is None:
+            top_id = max(map(abs, lits), default=0)
+        clauses, nv = _native_pbamo.encode_eq(
+            wlits=list(zip(lits, weights)), groups=_normalize_groups(groups),
+            bound=bound, top_id=int(top_id), encoder=encoding, emit_amo=bool(emit_amo),
+        )
+        cnf = CNFPlus()
+        cnf.clauses = clauses
+        cnf.nv = int(nv)
         return cnf
 
     @classmethod

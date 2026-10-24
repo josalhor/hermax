@@ -108,6 +108,40 @@ std::vector<int> weight_digits(Weight value, const std::vector<int>& base) {
     return digits;
 }
 
+int select_radix(const std::vector<Weight>& quotients) {
+    // Zero quotients contribute equally to every candidate. Any winning
+    // radix >= 2 must divide at least one positive quotient.
+    std::unordered_map<Weight, std::size_t> divisor_counts;
+    for (Weight q : quotients) {
+        if (q < 2) {
+            continue;
+        }
+        for (Weight divisor = 1; divisor <= q / divisor; ++divisor) {
+            if (q % divisor != 0) {
+                continue;
+            }
+            if (divisor >= 2) {
+                ++divisor_counts[divisor];
+            }
+            const Weight other = q / divisor;
+            if (other >= 2 && other != divisor) {
+                ++divisor_counts[other];
+            }
+        }
+    }
+
+    int best_radix = 0;
+    std::size_t best_count = 0;
+    for (const auto& entry : divisor_counts) {
+        const int radix = static_cast<int>(entry.first);
+        if (entry.second > best_count || (entry.second == best_count && radix > best_radix)) {
+            best_count = entry.second;
+            best_radix = radix;
+        }
+    }
+    return best_radix > 1 ? best_radix : 2;
+}
+
 std::vector<int> select_base_greedy(const GroupedLeqConstraint& constraint) {
     std::vector<int> base;
     if (constraint.bound <= 1) {
@@ -122,31 +156,7 @@ std::vector<int> select_base_greedy(const GroupedLeqConstraint& constraint) {
 
     Weight product = 1;
     while (product <= constraint.bound) {
-        Weight max_coeff = 0;
-        for (Weight q : reduced) {
-            max_coeff = std::max(max_coeff, q);
-        }
-
-        int best_lambda = 0;
-        std::size_t best_count = 0;
-        if (max_coeff >= 2) {
-            for (Weight candidate = 2; candidate <= max_coeff; ++candidate) {
-                std::size_t divisible = 0;
-                for (Weight q : reduced) {
-                    if (q % candidate == 0) {
-                        ++divisible;
-                    }
-                }
-                if (divisible > best_count || (divisible == best_count && static_cast<int>(candidate) > best_lambda)) {
-                    best_count = divisible;
-                    best_lambda = static_cast<int>(candidate);
-                }
-            }
-        }
-
-        if (best_lambda <= 1) {
-            best_lambda = 2;
-        }
+        const int best_lambda = select_radix(reduced);
         base.push_back(best_lambda);
 
         const Weight lambda_w = static_cast<Weight>(best_lambda);

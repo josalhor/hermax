@@ -68,8 +68,8 @@ def test_paper_intro_example_mdd_matches_oracle_and_shrinks_formula(
         baseline.clauses.extend(amo.clauses)
         baseline.nv = max(baseline.nv, amo.nv)
 
-    assert len(cnf.clauses) == 9
-    assert sum(len(c) for c in cnf.clauses) == 18
+    assert len(cnf.clauses) == 8
+    assert sum(len(c) for c in cnf.clauses) == 16
     assert len(cnf.clauses) < len(baseline.clauses)
     assert sum(len(c) for c in cnf.clauses) < sum(len(c) for c in baseline.clauses)
 
@@ -216,8 +216,8 @@ def test_paper_example1_mdd_matches_oracle_and_reduces_against_flat_baseline(
         encoding=pbamo_module.EncType.mdd,
         emit_amo=True,
     )
-    assert len(cnf.clauses) == 7
-    assert sum(len(c) for c in cnf.clauses) == 15
+    assert len(cnf.clauses) == 6
+    assert sum(len(c) for c in cnf.clauses) == 12
 
 
 def test_paper_example1_rggt_matches_oracle_and_is_smallest_of_tested(

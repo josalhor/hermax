@@ -14,9 +14,10 @@ private:
     virtual PreEncoder& operator=(const PreEncoder& other) = delete;
     void join_duplicat_literals();
     void normalize_variables();
+    void divide_out_common_factor();
     void remove_lits_with_w_greater_leq_and_check_isamk(ClauseDatabase& formula);
     template <class PBCon>
-    void init_and_normalize(PBCon const & pbconstraint, ClauseDatabase& formula);
+    void init_and_normalize(PBCon const & pbconstraint, ClauseDatabase& formula, bool reduce_coefficients);
     void check_for_trivial_constraints(ClauseDatabase& formula);
     void sort_literals();
 

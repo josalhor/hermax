@@ -1,0 +1,18 @@
+cmake_minimum_required(VERSION 3.15)
+project(hermax_integer_sum LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+set(INTEGER_SUM_CORE_ONLY "${HERMAX_CORE_ONLY}")
+set(HERMAX_CORE_ONLY ON)
+add_subdirectory(../pblib pblib)
+if(INTEGER_SUM_CORE_ONLY)
+    return()
+endif()
+
+find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(pybind11 CONFIG REQUIRED)
+pybind11_add_module(_integer_sum_native bindings.cpp)
+target_include_directories(_integer_sum_native PRIVATE ../pblib/pblib/pblib)
+target_link_libraries(_integer_sum_native PRIVATE pblib_core)

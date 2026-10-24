@@ -430,3 +430,6 @@ build.ninja
 /tools/
 /tests/data/encoder_assessment_benchmark.json
 /tests/data/encoder_assessment_benchmark.md
+
+# Local comparison checkout
+/pindakaas/

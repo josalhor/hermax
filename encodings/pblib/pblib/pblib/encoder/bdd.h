@@ -62,6 +62,7 @@ public:
   void encode(const SimplePBConstraint& pbconstraint, ClauseDatabase& formula, AuxVarManager& auxvars);
 
   int64_t encodingValue(const SimplePBConstraint& pbconstraint);
+  int64_t encodingValue(const SimplePBConstraint& pbconstraint, int64_t clause_limit);
 
 
   BDD_Encoder(PBConfig & config) : Encoder(config) { };

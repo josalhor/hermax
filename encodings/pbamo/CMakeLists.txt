@@ -13,6 +13,7 @@ set(PBAMO_CORE_SOURCES
     "${PBAMO_SRC_DIR}/ggpw.cpp"
     "${PBAMO_SRC_DIR}/gmto.cpp"
     "${PBAMO_SRC_DIR}/rggt.cpp"
+    "${PBAMO_SRC_DIR}/rggt_equality.cpp"
     "${PBAMO_SRC_DIR}/registry.cpp")
 
 if(HERMAX_CORE_ARCHIVE)

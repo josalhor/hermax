@@ -52,31 +52,36 @@ std::vector<int> totalizer_merge(
     const std::vector<int>& left,
     const std::vector<int>& right,
     VariableManager& vm,
-    CnfFormula& cnf) {
+    CnfFormula& cnf,
+    const std::vector<bool>* needed = nullptr) {
     const std::size_t out_size = left.size() + right.size();
     if (out_size == 0) {
         return {};
     }
     std::vector<int> out(out_size, 0);
     for (std::size_t i = 0; i < out_size; ++i) {
-        out[i] = vm.new_var();
+        if (!needed || (*needed)[i]) {
+            out[i] = vm.new_var();
+        }
     }
 
     for (std::size_t i = 0; i < left.size(); ++i) {
-        cnf.add_clause({-left[i], out[i]});
+        if (out[i]) cnf.add_clause({-left[i], out[i]});
     }
     for (std::size_t j = 0; j < right.size(); ++j) {
-        cnf.add_clause({-right[j], out[j]});
+        if (out[j]) cnf.add_clause({-right[j], out[j]});
     }
     for (std::size_t i = 0; i < left.size(); ++i) {
         for (std::size_t j = 0; j < right.size(); ++j) {
-            cnf.add_clause({-left[i], -right[j], out[i + j + 1]});
+            if (out[i + j + 1]) cnf.add_clause({-left[i], -right[j], out[i + j + 1]});
         }
     }
     return out;
 }
 
-std::vector<int> totalizer_encode(std::vector<int> vars, VariableManager& vm, CnfFormula& cnf) {
+std::vector<int> totalizer_encode(
+    std::vector<int> vars, const std::vector<bool>& needed,
+    VariableManager& vm, CnfFormula& cnf) {
     if (vars.empty()) {
         return {};
     }
@@ -95,7 +100,9 @@ std::vector<int> totalizer_encode(std::vector<int> vars, VariableManager& vm, Cn
             if (i + 1 == layers.size()) {
                 next.push_back(std::move(layers[i]));
             } else {
-                next.push_back(totalizer_merge(layers[i], layers[i + 1], vm, cnf));
+                next.push_back(totalizer_merge(
+                    layers[i], layers[i + 1], vm, cnf,
+                    layers.size() == 2 ? &needed : nullptr));
             }
         }
         layers = std::move(next);
@@ -176,7 +183,18 @@ EncodeResult GgpwEncoder::encode(const GroupedLeqConstraint& constraint,
                 inputs.push_back(prev_sum[idx]);
             }
         }
-        current_sum = totalizer_encode(std::move(inputs), vm, result.cnf);
+        // Only even-count outputs feed carries; the last bucket needs just
+        // the comparator output. Other root outputs are unused positive heads.
+        // Internal merges remain complete because their outputs feed parents.
+        std::vector<bool> needed(inputs.size(), false);
+        if (r < p) {
+            for (std::size_t i = 1; i < needed.size(); i += 2) {
+                needed[i] = true;
+            }
+        } else if (m > 0 && m <= needed.size()) {
+            needed[static_cast<std::size_t>(m - 1)] = true;
+        }
+        current_sum = totalizer_encode(std::move(inputs), needed, vm, result.cnf);
         prev_sum = current_sum;
     }
 

@@ -2,13 +2,14 @@
 
 #include <algorithm>
 #include <unordered_map>
+#include <limits>
 #include <utility>
 #include <vector>
 
 namespace structuredpb {
 namespace {
 
-using WeightMap = std::unordered_map<int, int>;
+using WeightMap = std::unordered_map<int, Weight>;
 
 void add_pairwise_amo(const GroupedLeqConstraint& constraint, CnfFormula& cnf) {
     if (!constraint.emit_amo) {
@@ -27,7 +28,7 @@ WeightMap make_weight_map(const GroupedLeqConstraint& constraint) {
     WeightMap out;
     out.reserve(constraint.terms.size());
     for (const auto& term : constraint.terms) {
-        out.emplace(term.lit, static_cast<int>(term.weight));
+        out.emplace(term.lit, term.weight);
     }
     return out;
 }
@@ -45,6 +46,9 @@ EncodeResult GswcEncoder::encode(const GroupedLeqConstraint& constraint,
     const auto weights = make_weight_map(constraint);
 
     const std::size_t num_groups = constraint.groups.size();
+    if (constraint.bound >= static_cast<Weight>(std::numeric_limits<int>::max())) {
+        throw std::invalid_argument("structuredpb: GSWC bound exceeds supported counter dimensions");
+    }
     const int k = static_cast<int>(constraint.bound);
     if (num_groups == 0) {
         result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
@@ -54,9 +58,20 @@ EncodeResult GswcEncoder::encode(const GroupedLeqConstraint& constraint,
 
     std::vector<std::vector<int>> rows;
     if (num_groups >= 2 && k > 0) {
-        rows.resize(num_groups - 1, std::vector<int>(static_cast<std::size_t>(k) + 1, 0));
+        rows.resize(num_groups - 1);
+        int prefix_cap = 0;
         for (std::size_t i = 0; i + 1 < num_groups; ++i) {
-            for (int j = 1; j <= k; ++j) {
+            // Under the group's AMO, only its largest feasible weight can
+            // contribute. Thresholds above this prefix capacity are unreachable.
+            int group_cap = 0;
+            for (int lit : constraint.groups[i]) {
+                if (weights.at(lit) <= static_cast<Weight>(k)) {
+                    group_cap = std::max(group_cap, static_cast<int>(weights.at(lit)));
+                }
+            }
+            prefix_cap += std::min(k - prefix_cap, group_cap);
+            rows[i].resize(static_cast<std::size_t>(prefix_cap) + 1, 0);
+            for (int j = 1; j <= prefix_cap; ++j) {
                 rows[i][static_cast<std::size_t>(j)] = vm.new_var();
             }
         }
@@ -66,32 +81,28 @@ EncodeResult GswcEncoder::encode(const GroupedLeqConstraint& constraint,
         const bool has_output = gi + 1 < num_groups && k > 0;
         const bool has_input = gi > 0 && k > 0;
 
-        if (has_output) {
-            for (int j = 1; j <= k; ++j) {
-                if (has_input) {
-                    result.cnf.add_clause({
-                        -rows[gi - 1][static_cast<std::size_t>(j)],
-                        rows[gi][static_cast<std::size_t>(j)],
-                    });
-                }
+        if (has_output && has_input) {
+            for (std::size_t j = 1; j < rows[gi - 1].size(); ++j) {
+                result.cnf.add_clause({-rows[gi - 1][j], rows[gi][j]});
             }
         }
 
         for (int lit : constraint.groups[gi]) {
-            const int w = weights.at(lit);
-            if (w > k) {
+            const Weight weight = weights.at(lit);
+            if (weight > static_cast<Weight>(k)) {
                 result.cnf.add_clause({-lit});
                 continue;
             }
 
+            const int w = static_cast<int>(weight);
             if (has_output) {
-                for (int j = 1; j <= std::min(w, k); ++j) {
+                for (int j = 1; j <= w; ++j) {
                     result.cnf.add_clause({-lit, rows[gi][static_cast<std::size_t>(j)]});
                 }
             }
 
             if (has_input) {
-                for (int j = 1; j + w <= k; ++j) {
+                for (int j = 1; j <= std::min(k - w, static_cast<int>(rows[gi - 1].size()) - 1); ++j) {
                     if (has_output) {
                         result.cnf.add_clause({
                             -rows[gi - 1][static_cast<std::size_t>(j)],
@@ -100,10 +111,12 @@ EncodeResult GswcEncoder::encode(const GroupedLeqConstraint& constraint,
                         });
                     }
                 }
-                result.cnf.add_clause({
-                    -rows[gi - 1][static_cast<std::size_t>(k + 1 - w)],
-                    -lit,
-                });
+                const int overflow_threshold = k - w + 1;
+                if (overflow_threshold < static_cast<int>(rows[gi - 1].size())) {
+                    result.cnf.add_clause({
+                        -rows[gi - 1][static_cast<std::size_t>(overflow_threshold)], -lit,
+                    });
+                }
             }
         }
     }

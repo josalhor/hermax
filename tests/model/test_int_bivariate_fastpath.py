@@ -8,6 +8,7 @@ import hermax.model as hm
 from hermax.internal.card import CardEnc
 from hermax.internal.pb import PBEnc
 from hermax.model import Model
+from hermax.internal import _integer_sum_native as integer_native
 
 
 OPS = ("<=", "<", ">=", ">", "==")
@@ -134,13 +135,15 @@ def test_bivariate_int_fastpath_bypasses_pb_and_card_encoders(monkeypatch):
 
 def test_three_ints_still_fall_back_to_pb_encoder(monkeypatch):
     seen = {"pb": 0}
-    real_pb_leq = PBEnc.leq
+    real_encode = integer_native.encode_pb
 
-    def wrapped_pb_leq(*args, **kwargs):
+    def wrapped_encode(*args, **kwargs):
         seen["pb"] += 1
-        return real_pb_leq(*args, **kwargs)
+        assert kwargs["state_limit"] == 20_000
+        assert kwargs["clause_limit"] == 50_000
+        return real_encode(*args, **kwargs)
 
-    monkeypatch.setattr(PBEnc, "leq", staticmethod(wrapped_pb_leq))
+    monkeypatch.setattr(integer_native, "encode_pb", wrapped_encode)
 
     m = Model()
     x = m.int("x", 0, 5)

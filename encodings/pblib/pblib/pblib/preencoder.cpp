@@ -1,11 +1,12 @@
 #include "preencoder.h"
 
 #include <vector>
+#include <numeric>
 
 using namespace PBLib;
 using namespace std;
 template <class PBCon>
-void PreEncoder::init_and_normalize(PBCon const & pbconstraint, ClauseDatabase& formula)
+void PreEncoder::init_and_normalize(PBCon const & pbconstraint, ClauseDatabase& formula, bool reduce_coefficients)
 {
   literals = pbconstraint.getWeightedLiterals();
   comparator = pbconstraint.getComparator();
@@ -33,7 +34,33 @@ void PreEncoder::init_and_normalize(PBCon const & pbconstraint, ClauseDatabase& 
   leq += bound_offset;
   geq += bound_offset;
 
+  if (reduce_coefficients)
+    divide_out_common_factor();
+
   remove_lits_with_w_greater_leq_and_check_isamk(formula);
+}
+
+void PreEncoder::divide_out_common_factor()
+{
+  // Signs, duplicate variables and constant offsets have already been
+  // normalized. Every remaining weight is positive.
+  int64_t divisor = 0;
+  for (const auto& literal : literals)
+  {
+    divisor = std::gcd(divisor, literal.weight);
+    if (divisor == 1)
+      return;
+  }
+  if (divisor <= 1)
+    return;
+
+  for (auto& literal : literals)
+    literal.weight /= divisor;
+
+  // The sum is a multiple of divisor. Round bounds inward, including negative
+  // bounds (C++ integer division alone truncates towards zero).
+  leq = leq / divisor - (leq < 0 && leq % divisor != 0 ? 1 : 0);
+  geq = geq / divisor + (geq > 0 && geq % divisor != 0 ? 1 : 0);
 }
 
 
@@ -189,7 +216,9 @@ shared_ptr< IncSimplePBConstraint > PreEncoder::preEncodeIncPBConstraint(IncPBCo
 {
   formula.addConditionals(pbconstraint.getConditionals());
 
-  init_and_normalize(pbconstraint, formula);
+  // Incremental bound updates use the original coefficient units and offset.
+  // Keep those units until incremental scaling is supported explicitly.
+  init_and_normalize(pbconstraint, formula, false);
   check_for_trivial_constraints(formula);
 
   if (type != DONTCARE)
@@ -247,7 +276,7 @@ shared_ptr< IncSimplePBConstraint > PreEncoder::preEncodeIncPBConstraint(IncPBCo
 SimplePBConstraint PreEncoder::preEncodePBConstraint(const PBConstraint& pbconstraint, ClauseDatabase& formula)
 {
   formula.addConditionals(pbconstraint.getConditionals());
-  init_and_normalize(pbconstraint, formula);
+  init_and_normalize(pbconstraint, formula, true);
   check_for_trivial_constraints(formula);
 
   if (type == DONTCARE)

@@ -552,23 +552,35 @@ bool PB2CNF::encodeWithBestEncoder(vector< Encoder*> encoders, SimplePBConstrain
   if (encoders.size() == 0)
     return false;
 
-  Encoder* bestEncoder = encoders[0];
-  int64_t  bestValue= encoders[0]->encodingValue(constraint);
-
-  for (int i = 1; i < encoders.size(); ++i)
+  // Obtain competing scores first. BDD's score is its clause count, so a
+  // trial that has already exceeded another score cannot become the winner.
+  vector<int64_t> scores(encoders.size(), -1);
+  int64_t bestValue = -1;
+  for (size_t i = 0; i < encoders.size(); ++i)
   {
-    int64_t encodingValue = encoders[i]->encodingValue(constraint);
-    if (encodingValue < 0)
+    if (encoders[i] == &bdd_encoder)
       continue;
-
-    if ( (bestValue < 0) || (encodingValue < bestValue))
-    {
-      bestValue = encodingValue;
-      bestEncoder = encoders[i];
-    }
+    scores[i] = encoders[i]->encodingValue(constraint);
+    if (scores[i] >= 0 && (bestValue < 0 || scores[i] < bestValue))
+      bestValue = scores[i];
   }
 
-  if (bestValue < 0)
+  for (size_t i = 0; i < encoders.size(); ++i)
+    if (encoders[i] == &bdd_encoder)
+      scores[i] = bestValue < 0 ? bdd_encoder.encodingValue(constraint)
+                               : bdd_encoder.encodingValue(constraint, bestValue);
+
+  // Scan in the original order to preserve priority on equal scores.
+  Encoder* bestEncoder = nullptr;
+  bestValue = -1;
+  for (size_t i = 0; i < encoders.size(); ++i)
+    if (scores[i] >= 0 && (bestValue < 0 || scores[i] < bestValue))
+    {
+      bestValue = scores[i];
+      bestEncoder = encoders[i];
+    }
+
+  if (bestEncoder == nullptr)
     return false;
 
   bestEncoder->encode(constraint, formula, auxVars);

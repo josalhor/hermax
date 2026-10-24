@@ -108,6 +108,9 @@ void BDD_Encoder::iterativeEncoding(const SimplePBConstraint& pbconstraint, Clau
     if (node.low == node.high)
     {
       node.result = node.low;
+      // Reduced nodes still answer this (literal, sum) subproblem. Without
+      // memoizing them, later paths can traverse the same subtree again.
+      sumHistory[pair<int32_t, int64_t>(inputVars[index].lit, node.currentsum)] = node.result;
       index--;
       down = true;
       continue;
@@ -117,6 +120,7 @@ void BDD_Encoder::iterativeEncoding(const SimplePBConstraint& pbconstraint, Clau
     if (config->use_real_robdds && nodeHistory.count(make_tuple(inputVars[index].lit, node.high, node.low)) > 0)
     {
       node.result = nodeHistory[make_tuple(inputVars[index].lit, node.high, node.low)];
+      sumHistory[pair<int32_t, int64_t>(inputVars[index].lit, node.currentsum)] = node.result;
       index--;
       down = true;
       continue;
@@ -262,9 +266,15 @@ void BDD_Encoder::encode(const SimplePBConstraint& pbconstraint, ClauseDatabase&
 
 int64_t BDD_Encoder::encodingValue(const SimplePBConstraint& pbconstraint)
 {
+  return encodingValue(pbconstraint, config->MAX_CLAUSES_PER_CONSTRAINT);
+}
+
+int64_t BDD_Encoder::encodingValue(const SimplePBConstraint& pbconstraint, int64_t clause_limit)
+{
   CountingClauseDatabase formula(config);
   AuxVarManager auxvars(1000000);
-  bddEncode(pbconstraint, formula, auxvars, false, config->MAX_CLAUSES_PER_CONSTRAINT);
+  bddEncode(pbconstraint, formula, auxvars, false,
+            std::min(clause_limit, config->MAX_CLAUSES_PER_CONSTRAINT));
 
   if (canceled)
     return -1;

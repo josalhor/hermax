@@ -3,15 +3,42 @@
 
 #include <stdexcept>
 #include <string_view>
+#include <numeric>
+#include <limits>
+#include <algorithm>
 
 #include "structuredpb/encoder.hpp"
+#include "structuredpb/rggt_equality.hpp"
 
 namespace {
 
-PyObject* py_encode_leq(PyObject*, PyObject* args, PyObject* kwargs) {
+bool divide_common_factor(structuredpb::GroupedLeqConstraint& constraint, bool equality) {
+    structuredpb::Weight divisor = 0;
+    for (const auto& term : constraint.terms) {
+        divisor = std::gcd(divisor, term.weight);
+        if (divisor == 1) {
+            return true;
+        }
+    }
+    if (divisor <= 1) {
+        return true;
+    }
+    if (equality && constraint.bound % divisor != 0) {
+        return false;
+    }
+    for (auto& term : constraint.terms) {
+        term.weight /= divisor;
+    }
+    // All weights and the upper bound are unsigned. The equivalent bound
+    // rounds down; AMO groups and literal IDs do not change.
+    constraint.bound /= divisor;
+    return true;
+}
+
+PyObject* py_encode_grouped(PyObject* args, PyObject* kwargs, bool equality) {
     PyObject* wlits_obj = nullptr;
     PyObject* groups_obj = nullptr;
-    unsigned long long bound = 0;
+    PyObject* bound_obj = nullptr;
     int top_id = 0;
     PyObject* encoder_obj = nullptr;
     int emit_amo = 1;
@@ -20,14 +47,25 @@ PyObject* py_encode_leq(PyObject*, PyObject* args, PyObject* kwargs) {
     if (!PyArg_ParseTupleAndKeywords(
             args,
             kwargs,
-            "OOKiOp",
+            "OOOiOp",
             const_cast<char**>(kwlist),
             &wlits_obj,
             &groups_obj,
-            &bound,
+            &bound_obj,
             &top_id,
             &encoder_obj,
             &emit_amo)) {
+        return nullptr;
+    }
+
+    // Unlike the K parser format, this conversion rejects negative values
+    // instead of silently wrapping them to an unsigned upper bound.
+    const auto bound = PyLong_AsUnsignedLongLong(bound_obj);
+    if (PyErr_Occurred()) {
+        return nullptr;
+    }
+    if (top_id < 0 || top_id == std::numeric_limits<int>::max()) {
+        PyErr_SetString(PyExc_ValueError, "top_id is outside the supported variable ID range");
         return nullptr;
     }
 
@@ -62,6 +100,11 @@ PyObject* py_encode_leq(PyObject*, PyObject* args, PyObject* kwargs) {
             if (PyErr_Occurred()) {
                 return nullptr;
             }
+            if (lit <= -std::numeric_limits<int>::max() || lit >= std::numeric_limits<int>::max()) {
+                PyErr_SetString(PyExc_ValueError, "literal ID is outside the supported range");
+                return nullptr;
+            }
+            top_id = std::max(top_id, static_cast<int>(lit < 0 ? -lit : lit));
             unsigned long long weight = PyLong_AsUnsignedLongLong(PyTuple_GET_ITEM(item, 1));
             if (PyErr_Occurred()) {
                 return nullptr;
@@ -83,6 +126,10 @@ PyObject* py_encode_leq(PyObject*, PyObject* args, PyObject* kwargs) {
                 if (PyErr_Occurred()) {
                     return nullptr;
                 }
+                if (lit <= -std::numeric_limits<int>::max() || lit >= std::numeric_limits<int>::max()) {
+                    PyErr_SetString(PyExc_ValueError, "literal ID is outside the supported range");
+                    return nullptr;
+                }
                 group.push_back(static_cast<int>(lit));
             }
             constraint.groups.push_back(std::move(group));
@@ -90,8 +137,22 @@ PyObject* py_encode_leq(PyObject*, PyObject* args, PyObject* kwargs) {
 
         structuredpb::EncodeOptions options;
         options.top_id = top_id;
-        auto encoder = structuredpb::make_encoder(std::string_view(encoder_cstr));
-        const auto result = encoder->encode(constraint, options);
+        if (equality) {
+            if (std::string_view(encoder_cstr) != "rggt") {
+                throw std::invalid_argument("structuredpb: native equality is supported only by rggt");
+            }
+            constraint.validate();
+        }
+        structuredpb::EncodeResult result;
+        if (!divide_common_factor(constraint, equality)) {
+            result.cnf.num_vars = options.top_id;
+            result.cnf.add_clause({});
+        } else if (equality) {
+            result = structuredpb::encode_rggt_equality(constraint, options);
+        } else {
+            auto encoder = structuredpb::make_encoder(std::string_view(encoder_cstr));
+            result = encoder->encode(constraint, options);
+        }
 
         PyObject* py_clauses = PyList_New(static_cast<Py_ssize_t>(result.cnf.clauses.size()));
         if (py_clauses == nullptr) {
@@ -139,6 +200,14 @@ PyObject* py_encode_leq(PyObject*, PyObject* args, PyObject* kwargs) {
     }
 }
 
+PyObject* py_encode_leq(PyObject*, PyObject* args, PyObject* kwargs) {
+    return py_encode_grouped(args, kwargs, false);
+}
+
+PyObject* py_encode_eq(PyObject*, PyObject* args, PyObject* kwargs) {
+    return py_encode_grouped(args, kwargs, true);
+}
+
 PyObject* py_available_encoders(PyObject*, PyObject*) {
     try {
         const auto names = structuredpb::available_encoders();
@@ -164,6 +233,8 @@ PyObject* py_available_encoders(PyObject*, PyObject*) {
 PyMethodDef module_methods[] = {
     {"encode_leq", reinterpret_cast<PyCFunction>(py_encode_leq), METH_VARARGS | METH_KEYWORDS,
      "Encode one grouped <= pseudo-Boolean constraint."},
+    {"encode_eq", reinterpret_cast<PyCFunction>(py_encode_eq), METH_VARARGS | METH_KEYWORDS,
+     "Encode one grouped equality with a shared sum tree."},
     {"available_encoders", py_available_encoders, METH_NOARGS, "Return the list of encoder names."},
     {nullptr, nullptr, 0, nullptr},
 };

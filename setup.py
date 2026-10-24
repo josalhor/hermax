@@ -1785,7 +1785,10 @@ CMAKE_NATIVE_CORE_SPECS = {
     },
 }
 CORETRAIL_EXTENSION = CMakeExtension(CORETRAIL_EXTENSION_NAME, sourcedir=str(CORETRAIL_ROOT))
+CMAKE_NATIVE_CORE_SPECS["hermax.internal._integer_sum_native"] = CMAKE_NATIVE_CORE_SPECS["hermax.internal._pblib"]
+
 PBLIB_EXTENSION = CMakeExtension("hermax.internal._pblib", sourcedir="encodings/pblib")
+INTEGER_SUM_EXTENSION = CMakeExtension("hermax.internal._integer_sum_native", sourcedir="encodings/integer_sum")
 PBAMO_EXTENSION = CMakeExtension("hermax.internal._pbamo", sourcedir="encodings/pbamo")
 
 
@@ -1810,7 +1813,7 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
 
 setup(
     name="hermax",
-    version="1.2.10",
+    version="1.2.11",
     author="Josep Maria Salvia Hornos",
     author_email="josh.salvia@gmail.com",
     description="A Python library of incremental MaxSAT solvers",
@@ -1853,6 +1856,7 @@ setup(
         ),
         PBLIB_EXTENSION,
         PBAMO_EXTENSION,
+        INTEGER_SUM_EXTENSION,
         *SOLVER_EXTENSIONS,
     ],
     cmdclass={'build_ext': CMakeBuildURMaxSAT},

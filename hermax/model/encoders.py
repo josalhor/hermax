@@ -7,6 +7,8 @@ from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
 from hermax.encoder.pbamo import PBAMOEnc
 from hermax.encoder import _weighted_sum
+from ._integer_sum import compile_sum
+from ._weighted_integer_sum import compile_weighted_sum
 from hermax.internal.pb_normalize import normalize_signed_terms
 from hermax.utils import batcher_odd_even_unary_add_network
 
@@ -1903,6 +1905,31 @@ class _EncoderDispatch:
         if bivar_fast is not None:
             model._debug(model.DEBUG_COMPILE, f"encode path=fast_bivariate op={op} clauses={len(bivar_fast)}")
             return bivar_fast
+
+        # Existing small-arity and mixed Boolean fast paths keep precedence.
+        difference = lhs - rhs
+        affine = _EncoderDispatch._extract_multi_int_affine(model, difference)
+        if (affine is not None and len(affine[0]) >= 3
+                and any(x.ub - x.lb > 1 for x, _ in affine[0])):
+            scale = abs(affine[0][0][1])
+            uniform = all(abs(c) == scale for _, c in affine[0])
+            if not uniform:
+                cmp_op, sum_bound = _EncoderDispatch._bound_from_zero_compare(op, int(difference.constant))
+                result = compile_weighted_sum(model, affine[0], sum_bound, cmp_op)
+                if result is not None:
+                    return result
+            elif len(affine[0]) >= 4:
+                cmp_op, sum_bound = _EncoderDispatch._bound_from_zero_compare(op, int(difference.constant))
+                if cmp_op == '==':
+                    if sum_bound % scale:
+                        return ClauseGroup._from_dimacs_trusted(model, [[]])
+                    sum_bound //= scale
+                elif cmp_op == '<=':
+                    sum_bound //= scale
+                else:
+                    sum_bound = -((-sum_bound) // scale)
+                items = [(x, c // scale) for x, c in affine[0]]
+                return compile_sum(model, items, -sum_bound, cmp_op)
 
         pairs, const = _EncoderDispatch._normalize_pb(lhs, rhs)
         cmp_op, bound = _EncoderDispatch._bound_from_zero_compare(op, const)

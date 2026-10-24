@@ -31,6 +31,7 @@ from .encoders import *
 from .encoders import _DeferredPBEntry, _EncoderDispatch
 from .encoders import _canonical_pb_cache_key
 from ._int_thresholds import ThresholdOwners
+from ._integer_objective import lower_integer_objective
 from hermax.internal.kmerge import DEFAULT_KMERGE_CONFIG, KMergeConfig
 
 
@@ -101,7 +102,7 @@ class _ObjectiveProxy:
             raise TypeError("Objective replacement expects a linear expression.") from exc
         if expr._model is not None and expr._model is not self._model:
             raise ValueError("Variables belong to different models.")
-        expr = expr._realize_int_terms(self._model)
+        expr = lower_integer_objective(expr, self._model)
         lit_weights: dict[int, int] = {}
         offset_raw: int | float = weight * int(expr.constant)
         for t in expr.terms:
@@ -421,7 +422,7 @@ class _TierObjectiveProxy:
             raise TypeError("Tier objective expects a linear expression.") from exc
         if expr._model is not None and expr._model is not self._model:
             raise ValueError("Variables belong to different models.")
-        expr = expr._realize_int_terms(self._model)
+        expr = lower_integer_objective(expr, self._model)
         lit_weights: dict[int, int] = {}
         offset_raw: int | float = int(weight) * int(expr.constant)
         for t in expr.terms:
@@ -2787,21 +2788,12 @@ class Model:
                     "obj[weight] += IntVar currently requires IntVar.lb >= 0 "
                     "(negative objective offsets are temporarily disallowed)."
                 )
-            # Minimize the actual integer value:
-            #   x = lb + sum(threshold_bits)
-            # Each threshold bit contributes +1 when true, so add soft (~t) with
-            # the same weight to penalize t=True. The constant lb * weight is
-            # tracked separately as an objective offset.
-            self._objective_constant += weight * constraint.lb
-            for t in constraint._threshold_lits:
-                sid = _append_or_merge_soft(weight, (self._lit_to_dimacs(~t),), group_id, raw_weight)
-                sids.append(sid)
-            return group_id, _done()
+            constraint = constraint._as_pbexpr()
 
         if isinstance(constraint, PBExpr):
             if constraint._model is not None and constraint._model is not self:
                 raise ValueError("Variables belong to different models.")
-            expr = constraint._realize_int_terms(self)
+            expr = lower_integer_objective(constraint, self)
             # Direct objective lowering for linear PB expressions:
             #   c * lit  -> soft unit on (~lit) with weight c        (c > 0)
             #  -c * lit  -> soft unit on ( lit) with weight -c and

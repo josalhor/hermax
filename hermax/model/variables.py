@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
 from pysat.formula import CNF, WCNF
+from ._integer_views import binary_view as _binary_view_for
 from hermax.encoder.card import CardEnc, EncType as CardEncType
 from hermax.encoder.pb_enc import PBEnc
 from hermax.encoder.pbamo import PBAMOEnc
@@ -768,7 +769,7 @@ class IntVar:
 
     The domain is ``[lb, ub]`` and includes both bounds.
     """
-    __slots__ = ("_model", "name", "lb", "ub", "_threshold_lits", "_eq_lits", "_cmp_cache", "_is_view")
+    __slots__ = ("_model", "name", "lb", "ub", "_threshold_lits", "_eq_lits", "_cmp_cache", "_is_view", "_binary_view")
 
     def __init__(self, model: "Model", name: str, lb: int, ub: int):
         if (
@@ -803,8 +804,12 @@ class IntVar:
         self.ub = ub
         self._threshold_lits = thresholds
         self._is_view = is_view
+        self._binary_view: tuple[int, ...] | None = None
         self._eq_lits: dict[int, Literal] = {}
         self._cmp_cache: dict[tuple[str, int], Literal] = {}
+
+    def _get_binary_view(self) -> tuple[int, ...]:
+        return _binary_view_for(self)
 
     @classmethod
     def _from_bool(cls, literal: Literal) -> "IntVar":

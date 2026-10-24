@@ -95,34 +95,42 @@ void seqcounter_encode_atmostN(
 		return;
 	}
 
-	// initialize the map
-	Pair2IntMap p2i_map;
+	// Every cell in this rectangular grid is used. Allocate IDs on first
+	// access to preserve the existing variable and clause order.
+	const size_t width = vars.size() - tval;
+	vector<int> cells(static_cast<size_t>(tval) * width, 0);
+	const auto cell = [&](int row, size_t column) {
+		int& id = cells[static_cast<size_t>(row) * width + column];
+		if (id == 0)
+			id = ++top_id;
+		return id;
+	};
 
 	/* the new implementation follows Donald Knuth's irredundant */
 	/* variant of the encoding, as suggested by Alex Healy */
 	for (size_t j = 0; j < vars.size() - tval; ++j) {
 		// k = 0, eq 19:
-		int s0j = mk_yvar(top_id, p2i_map, make_pair(0, j));
+		int s0j = cell(0, j);
 		clset.create_binary_clause(-vars[j], s0j);
 
 		// main part, i.e. when 0 <= k < tval - 1:
 		for (int k = 0; k < tval - 1; ++k) {
 			// eq 18:
-			int skj = mk_yvar(top_id, p2i_map, make_pair(k, j));
+			int skj = cell(k, j);
 			if (j < vars.size() - tval - 1) {
-				int skj1 = mk_yvar(top_id, p2i_map, make_pair(k, j + 1));
+				int skj1 = cell(k, j + 1);
 				clset.create_binary_clause(-skj, skj1);
 			}
 
 			// eq 19:
-			int sk1j = mk_yvar(top_id, p2i_map, make_pair(k + 1, j));
+			int sk1j = cell(k + 1, j);
 			clset.create_ternary_clause(-vars[j + k + 1], -skj, sk1j);
 		}
 
 		// k = tval - 1, eq 18:
-		int stj = mk_yvar(top_id, p2i_map, make_pair(tval - 1, j));
+		int stj = cell(tval - 1, j);
 		if (j < vars.size() - tval - 1) {
-			int stj1 = mk_yvar(top_id, p2i_map, make_pair(tval - 1, j + 1));
+			int stj1 = cell(tval - 1, j + 1);
 			clset.create_binary_clause(-stj, stj1);
 		}
 

@@ -6,6 +6,7 @@
 #include <initializer_list>
 #include <stdexcept>
 #include <vector>
+#include <limits>
 
 namespace structuredpb {
 
@@ -32,22 +33,22 @@ struct CnfFormula {
 
 class VariableManager {
 public:
-    explicit VariableManager(int top_id = 0) : next_var_(top_id + 1), max_var_(top_id) {
+    explicit VariableManager(int top_id = 0) : max_var_(top_id) {
         if (top_id < 0) {
             throw std::invalid_argument("structuredpb: top_id must be non-negative");
         }
     }
 
     int new_var() {
-        const int var = next_var_++;
-        max_var_ = std::max(max_var_, var);
-        return var;
+        if (max_var_ == std::numeric_limits<int>::max()) {
+            throw std::overflow_error("structuredpb: variable ID range exhausted");
+        }
+        return ++max_var_;
     }
 
     int max_var() const { return max_var_; }
 
 private:
-    int next_var_;
     int max_var_;
 };
 

@@ -1,5 +1,7 @@
 #include "structuredpb/rggt.hpp"
 
+#include "min_ratio_tree.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <limits>
@@ -132,46 +134,22 @@ Node* build_min_ratio_tree(std::vector<std::vector<TermRef>> const& groups,
     if (active.empty()) {
         return nullptr;
     }
-    while (active.size() > 1) {
-        std::size_t best_i = 0;
-        std::size_t best_j = 1;
-        std::size_t best_size = std::numeric_limits<std::size_t>::max();
-        std::size_t best_prod = 1;
-        for (std::size_t i = 0; i < active.size(); ++i) {
-            for (std::size_t j = i + 1; j < active.size(); ++j) {
-                const auto vals = combine_vals(active[i]->vals, active[j]->vals, cap);
-                const std::size_t size = vals.size();
-                const std::size_t prod = active[i]->vals.size() * active[j]->vals.size();
-                const std::size_t lhs = size * best_prod;
-                const std::size_t rhs = best_size * prod;
-                if (best_size == std::numeric_limits<std::size_t>::max() || lhs < rhs ||
-                    (lhs == rhs && size < best_size)) {
-                    best_i = i;
-                    best_j = j;
-                    best_size = size;
-                    best_prod = prod;
-                }
-            }
-        }
-        if (best_j < best_i) {
-            std::swap(best_i, best_j);
-        }
-        Node* left = active[best_i];
-        Node* right = active[best_j];
-        Node* parent = merge_nodes(storage, left, right, cap);
-        active.erase(active.begin() + static_cast<std::ptrdiff_t>(best_j));
-        active.erase(active.begin() + static_cast<std::ptrdiff_t>(best_i));
-        active.push_back(parent);
-    }
-    active.front()->is_root = true;
-    return active.front();
+    Node* root = detail::merge_min_ratio_tree(
+        std::move(active),
+        [cap](const Node* left, const Node* right) {
+            return combine_vals(left->vals, right->vals, cap).size();
+        },
+        [&](Node* left, Node* right) { return merge_nodes(storage, left, right, cap); });
+    root->is_root = true;
+    return root;
+
 }
 
 std::size_t interval_index(const std::vector<Interval>& intervals, Weight value) {
-    for (std::size_t i = 0; i < intervals.size(); ++i) {
-        if (intervals[i].lo <= value && value <= intervals[i].hi) {
-            return i;
-        }
+    const auto it = std::lower_bound(intervals.begin(), intervals.end(), value,
+                                    [](const Interval& interval, Weight v) { return interval.hi < v; });
+    if (it != intervals.end() && it->lo <= value) {
+        return static_cast<std::size_t>(it - intervals.begin());
     }
     throw std::logic_error("structuredpb: interval lookup failed");
 }
@@ -179,30 +157,24 @@ std::size_t interval_index(const std::vector<Interval>& intervals, Weight value)
 void merge_adjacent_child_intervals(const Node* parent, Node* child, const Node* sibling, Weight cap) {
     child->intervals.clear();
     for (Weight value : child->vals) {
-        child->intervals.push_back(Interval{value, value});
-    }
-    bool changed = true;
-    while (changed && child->intervals.size() > 1) {
-        changed = false;
-        for (std::size_t idx = 0; idx + 1 < child->intervals.size(); ++idx) {
-            const Interval first = child->intervals[idx];
-            const Interval second = child->intervals[idx + 1];
-            bool can_merge = true;
+        bool can_merge = !child->intervals.empty();
+        if (can_merge) {
             for (Weight other : sibling->vals) {
-                const Weight sum_first = clip_sum(first.hi, other, cap);
-                const Weight sum_second = clip_sum(second.lo, other, cap);
+                const Weight sum_first = clip_sum(child->intervals.back().hi, other, cap);
+                const Weight sum_second = clip_sum(value, other, cap);
                 if (interval_index(parent->intervals, sum_first) != interval_index(parent->intervals, sum_second)) {
                     can_merge = false;
                     break;
                 }
             }
-            if (!can_merge) {
-                continue;
-            }
-            child->intervals[idx] = Interval{first.lo, second.hi};
-            child->intervals.erase(child->intervals.begin() + static_cast<std::ptrdiff_t>(idx + 1));
-            changed = true;
-            break;
+        }
+        // Mergeability depends only on this boundary, the fixed sibling
+        // values and the parent's fixed intervals. Earlier merges cannot
+        // change a failed boundary, so no restart or vector erasure is needed.
+        if (can_merge) {
+            child->intervals.back().hi = value;
+        } else {
+            child->intervals.push_back(Interval{value, value});
         }
     }
 }
@@ -290,12 +262,8 @@ BuiltTree build_reduced_tree(const GroupedLeqConstraint& constraint, Weight cap)
         make_child_intervals(built.root, cap);
         changed = reduce_leaf_terms(built.groups, built.storage, cap);
     } while (changed);
-    built.storage.clear();
-    built.root = build_min_ratio_tree(built.groups, built.storage, cap);
-    if (built.root != nullptr) {
-        initialize_root_intervals(built.root, cap);
-        make_child_intervals(built.root, cap);
-    }
+    // The last pass made no reductions, so its tree and intervals already
+    // describe built.groups. Keep that tree instead of rebuilding it unchanged.
     return built;
 }
 

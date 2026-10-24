@@ -1,6 +1,16 @@
 Changelog
 =========
 
+Version 1.2.11
+--------------
+
+Highlights
+~~~~~~~~~~
+* Improved native encoding performance and automatic PBAMO encoder selection.
+* Added a grouped weighted sum equality encoder to PBAMO.
+* Reduced encoding overhead for sums of integer variables.
+* Avoided excessive encoding growth in weighted integer constraints.
+
 Version 1.2.10
 --------------
 

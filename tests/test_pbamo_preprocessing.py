@@ -103,7 +103,11 @@ def test_encoding_does_not_mutate_caller_inputs(pbamo_module, operation, unit_we
     "record", _records("pbamo_preprocessing_cnf.jsonl"), ids=lambda row: row["name"],
 )
 def test_preprocessing_preserves_exact_existing_cnf(pbamo_module, record):
-    cnf = getattr(pbamo_module.PBAMOEnc, record["operation"])(**record["input"])
+    # These snapshots test preprocessing with the original RGGT backend,
+    # independently of changes to the automatic encoder selector.
+    cnf = getattr(pbamo_module.PBAMOEnc, record["operation"])(
+        **record["input"], structured_encoding=pbamo_module.EncType.rggt,
+    )
     serialized = json.dumps(cnf.clauses, separators=(",", ":")).encode()
 
     assert cnf.nv == record["variables"]
