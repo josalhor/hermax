@@ -171,16 +171,17 @@ def test_univariate_fastpath_point_witness_cases(a, op, c, xv):
     assert (r.ok if expected else r.status == "unsat")
 
 
-def test_univariate_fastpath_fallback_for_non_affine_mixed_boolean_uses_pb(monkeypatch):
+def test_mixed_boolean_expression_uses_budgeted_pb(monkeypatch):
     called = {"pb": 0}
 
-    orig = PBEnc.leq
+    import hermax.model.encoders as encoders
+    orig = encoders.compile_weighted_sum
 
     def wrapped(*args, **kwargs):
         called["pb"] += 1
         return orig(*args, **kwargs)
 
-    monkeypatch.setattr(PBEnc, "leq", staticmethod(wrapped))
+    monkeypatch.setattr(encoders, "compile_weighted_sum", wrapped)
 
     m = Model()
     x = m.int("x", 0, 6)

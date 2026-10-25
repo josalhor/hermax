@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from hermax.encoder._integer_sum import weighted
 from hermax.encoder._integer_sum.encoding import binary_pb
 from .expressions import ClauseGroup
+from ._integer_sum import compile_binary_sum
 
 if TYPE_CHECKING:
     from .core import Model
@@ -15,8 +16,8 @@ if TYPE_CHECKING:
 
 def compile_weighted_sum(
     model: "Model", items: list[tuple["IntVar", int]], bound: int, comparator: str
-) -> ClauseGroup | None:
-    """Compile sum(c*(x-lb)) OP bound; return None for explicit AMO/EO structure."""
+) -> ClauseGroup:
+    """Compile weighted integer counts, retaining any separate AMO/EO clauses."""
     divisor = reduce(gcd, (abs(c) for _, c in items))
     if comparator == "==" and bound % divisor:
         return ClauseGroup._from_dimacs_trusted(model, [[]])
@@ -48,7 +49,13 @@ def compile_weighted_sum(
             model._known_amo_groups.values(), model._known_eo_groups.values()
         )
         if any(len(literals.intersection(group)) > 1 for group in groups):
-            return None
+            normalized = [(x, c) for (x, _), c in zip(items, coefficients)]
+            result = compile_binary_sum(model, normalized, bound, comparator)
+            model._debug(
+                model.DEBUG_COMPILE,
+                f"encode path=weighted_integer_binary_amo op={comparator} clauses={len(result)}",
+            )
+            return result
 
     if model._inc_state.bound:
         model._reserve_literal_ids_up_to(int(model._inc_state.ip_next_vid))

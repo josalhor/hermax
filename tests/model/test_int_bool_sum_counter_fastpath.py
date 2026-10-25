@@ -215,29 +215,27 @@ def test_bool_sum_intvar_equality_with_offsets_bypasses_pb_and_card(monkeypatch)
     lambda x, b: (x == (b[0] + b[1] + b[2] + b[3] + b[4] + b[5] + b[0])),
     lambda x, b: ((2 * x) == sum(b)),
 ])
-def test_bool_sum_intvar_falls_back_to_pb_for_unsupported_shapes(monkeypatch, expr_builder):
+def test_bool_sum_intvar_rejects_unit_counter_for_unsupported_shapes(monkeypatch, expr_builder):
     # Isolate the unit-counter path: weighted sums now have their own fastpath.
     from hermax.model.encoders import _EncoderDispatch
     monkeypatch.setattr(_EncoderDispatch, "_try_weighted_sum_eq_fastpath",
                         staticmethod(lambda *args: None))
     # Unsupported forms must not accidentally use the unit-counter fastpath.
-    called = {"structured": 0}
-    orig_auto = getattr(PBAMOEnc, "auto_eq", None)
-
-    def wrapped(*args, **kwargs):
-        called["structured"] += 1
-        if orig_auto is None:
-            raise NotImplementedError("PBAMOEnc.auto_eq is not implemented")
-        return orig_auto(*args, **kwargs)
-
-    monkeypatch.setattr(PBAMOEnc, "auto_eq", staticmethod(wrapped), raising=False)
+    called = []
+    original = _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath
+    def rejected(*args):
+        result = original(*args)
+        assert result is None
+        called.append(True)
+        return result
+    monkeypatch.setattr(_EncoderDispatch, "_try_int_equals_unit_bool_sum_fastpath", staticmethod(rejected))
 
     m = Model()
     x = m.int("x", 0, 8)
     b = [m.bool(f"b{i}") for i in range(6)]
     m &= expr_builder(x, b)
     _solve(m)
-    assert called["structured"] >= 1
+    assert called
 
 
 def test_bool_sum_intvar_equality_adds_aux_bools_but_no_new_intvars():
@@ -348,16 +346,15 @@ def test_bool_sum_intvar_shifted_orientation_equivalence_pointwise():
 
 def test_bool_sum_intvar_fastpath_does_not_trigger_with_int_terms_on_bool_side(monkeypatch):
     # If bool side contains Int terms, detection must reject and fallback.
-    called = {"structured": 0}
-    orig_auto = getattr(PBAMOEnc, "auto_eq", None)
-
-    def wrapped(*args, **kwargs):
-        called["structured"] += 1
-        if orig_auto is None:
-            raise NotImplementedError("PBAMOEnc.auto_eq is not implemented")
-        return orig_auto(*args, **kwargs)
-
-    monkeypatch.setattr(PBAMOEnc, "auto_eq", staticmethod(wrapped), raising=False)
+    from hermax.model.encoders import _EncoderDispatch
+    called = []
+    original = _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath
+    def rejected(*args):
+        result = original(*args)
+        assert result is None
+        called.append(True)
+        return result
+    monkeypatch.setattr(_EncoderDispatch, "_try_int_equals_unit_bool_sum_fastpath", staticmethod(rejected))
 
     m = Model()
     x = m.int("x", 0, 6)
@@ -365,7 +362,7 @@ def test_bool_sum_intvar_fastpath_does_not_trigger_with_int_terms_on_bool_side(m
     b = [m.bool(f"b{i}") for i in range(3)]
     m &= (x == (sum(b) + y))
     _solve(m)
-    assert called["structured"] >= 1
+    assert called
 
 
 @pytest.mark.parametrize("op", ["<=", ">=", "<", ">"])

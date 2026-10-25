@@ -70,7 +70,8 @@ def test_both_orientations_and_conditional_equality():
                 assert solver.solve(assumptions=inputs + wrong + [-condition.id])
 
 
-def test_unsupported_restricted_domain_is_read_only_and_keeps_fallback():
+def test_unsupported_restricted_domain_is_read_only_and_uses_budgeted_fallback():
+    import hermax.model.encoders as encoders
     model = Model()
     bits = [model.bool() for _ in range(3)]
     total = model.int('t', 0, 60)
@@ -80,7 +81,7 @@ def test_unsupported_restricted_domain_is_read_only_and_keeps_fallback():
         model, PBExpr.from_item(total), '==', expr)
     assert result is None
     assert (model._top_id(), tuple(model._hard)) == before
-    with patch.object(PBAMOEnc, 'auto_eq', wraps=PBAMOEnc.auto_eq) as fallback:
+    with patch.object(encoders, 'compile_weighted_sum', wraps=encoders.compile_weighted_sum) as fallback:
         model &= total == expr
     fallback.assert_called_once()
 

@@ -240,29 +240,20 @@ def test_pb_fastpath_scaled_intvar_relations_bypass_pb_and_card_encoders():
         CardEnc.equals = orig_card_eq
 
 
-def test_weighted_pb_still_uses_pb_encoder_when_not_scaled_intvar_pattern():
-    import hermax.model as hm
-    from hermax.internal.card import CardEnc
-    from hermax.internal.pb import PBEnc
-
+def test_mixed_weighted_expression_uses_budgeted_pb_encoder(monkeypatch):
+    import hermax.model.encoders as encoders
     m = Model()
-    a = m.bool("a")
-    b = m.bool("b")
+    a, b = m.bool("a"), m.bool("b")
     x = m.int("x", 0, 10)
-    called = {"pb": 0}
-    orig_pb_leq = PBEnc.leq
-
+    called = []
+    original = encoders.compile_weighted_sum
     def wrapped(*args, **kwargs):
-        called["pb"] += 1
-        return orig_pb_leq(*args, **kwargs)
+        called.append(True)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(encoders, "compile_weighted_sum", wrapped)
+    m &= 2 * a + b + 3 * x <= 20
+    assert called
 
-    PBEnc.leq = wrapped
-    try:
-        # One IntVar + two booleans is not covered by the specialized fast paths.
-        m &= (2 * a + b + 3 * x <= 20)
-        assert called["pb"] >= 1
-    finally:
-        PBEnc.leq = orig_pb_leq
 
 
 def test_int_scale_incremental_non_multiple_unsat_soundness():

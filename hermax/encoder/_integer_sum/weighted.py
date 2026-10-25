@@ -17,12 +17,24 @@ def encode_thresholds(
     comparator: str,
     top_id: int,
 ) -> CNFPlus:
-    terms = []
+    if len(chains) != len(coefficients):
+        raise ValueError("one coefficient per chain is required")
+    totals = {}
     for row, coefficient in zip(chains, coefficients):
-        weight = abs(coefficient)
-        terms.extend((lit if coefficient > 0 else -lit, weight) for lit in row)
+        for literal in row:
+            if literal < 0:
+                bound -= coefficient
+                literal, contribution = -literal, -coefficient
+            else:
+                contribution = coefficient
+            totals[literal] = totals.get(literal, 0) + contribution
+    terms = []
+    for literal, coefficient in totals.items():
         if coefficient < 0:
-            bound += weight * len(row)
+            bound -= coefficient
+            terms.append((-literal, -coefficient))
+        elif coefficient > 0:
+            terms.append((literal, coefficient))
     clauses, top = native.encode_pb(
         wlits=terms,
         comparator={"<=": native.LEQ, ">=": native.GEQ, "==": native.BOTH}[comparator],

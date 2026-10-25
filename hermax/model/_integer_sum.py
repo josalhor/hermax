@@ -10,6 +10,30 @@ if TYPE_CHECKING:
     from .variables import IntVar
 
 
+UNARY_CLAUSE_LIMIT = 50_000
+
+
+def unary_sum_too_large(left: int, right: int, *, equality: bool = False) -> bool:
+    if not left or not right:
+        return False
+    padded = 1 << (max(left, right) - 1).bit_length()
+    comparisons = padded * (padded.bit_length() - 1) + 1
+    links = 2 * (left + right + 2) if equality else left + right + 1
+    merge = 6 * comparisons + links
+    cost = merge if equality else min(merge, (left + 1) * (right + 1))
+    return cost > UNARY_CLAUSE_LIMIT
+
+
+def compile_binary_sum(
+    model: "Model", items: list[tuple["IntVar", int]], bound: int, comparator: str
+) -> ClauseGroup:
+    if model._inc_state.bound:
+        model._reserve_literal_ids_up_to(int(model._inc_state.ip_next_vid))
+    views = [owner._get_binary_view() for owner, _ in items]
+    cnf = binary_pb(views, [c for _, c in items], bound, comparator, model._top_id())
+    return model._cnfplus_to_clausegroup(cnf)
+
+
 def compile_sum(
     model: "Model", items: list[tuple["IntVar", int]], constant: int, comparator: str
 ) -> ClauseGroup:

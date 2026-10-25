@@ -209,7 +209,7 @@ def test_other_native_errors_are_not_silently_treated_as_budget_overflow(monkeyp
     assert all(x._binary_view is None for x in xs)
 
 
-def test_boolean_mixed_and_small_arity_constraints_keep_existing_routes(monkeypatch):
+def test_boolean_and_bivariate_constraints_keep_existing_routes(monkeypatch):
     original = integer_native.encode_pb
 
     def unbudgeted(**kwargs):
@@ -222,34 +222,29 @@ def test_boolean_mixed_and_small_arity_constraints_keep_existing_routes(monkeypa
     m &= sum((i + 2) * b for i, b in enumerate(bs)) <= 7
     m.to_cnf()
     m = Model()
-    xs = [m.int(f"x{i}", 0, 3) for i in range(3)]
-    b = m.bool("b")
-    m &= 2 * xs[0] + 3 * xs[1] + 5 * xs[2] + 7 * b <= 12
-    m.to_cnf()
-    assert all(x._binary_view is None for x in xs)
-    m = Model()
     x = m.int("x", 0, 3)
     y = m.int("y", 0, 3)
     m &= 2 * x + 3 * y <= 7
     m.to_cnf()
-    assert all(x._binary_view is None for x in xs)
+    assert x._binary_view is None and y._binary_view is None
 
 
-def test_explicit_amo_structure_keeps_the_existing_pbamo_route(monkeypatch):
-    original = integer_native.encode_pb
+def test_explicit_amo_structure_uses_binary_without_threshold_attempt(monkeypatch):
+    from hermax.encoder._integer_sum import weighted
 
-    def unbudgeted(**kwargs):
-        assert not kwargs.get("state_limit") and not kwargs.get("clause_limit")
-        return original(**kwargs)
+    def fail(*args, **kwargs):
+        raise AssertionError("AMO integer sums must select Binary directly")
 
-    monkeypatch.setattr(integer_native, "encode_pb", unbudgeted)
+    monkeypatch.setattr(weighted, "encode_thresholds", fail)
     model = Model()
     xs = [model.int(f"x{i}", 0, 3) for i in range(3)]
     model &= ((xs[0] >= 1) + (xs[1] >= 1)) <= 1
     # Explicit structural metadata, as supplied by a group encoder.
     model._register_amo_group([(xs[0] >= 1).id, (xs[1] >= 1).id])
     model &= 2 * xs[0] + 3 * xs[1] + 5 * xs[2] <= 10
-    with Solver(name="g4", bootstrap_with=model.to_cnf().clauses) as solver:
+    cnf = model.to_cnf()
+    assert all(x._binary_view is not None for x in xs)
+    with Solver(name="g4", bootstrap_with=cnf.clauses) as solver:
         for vs in itertools.product(range(4), repeat=3):
             expected = (int(vs[0] >= 1) + int(vs[1] >= 1) <= 1) and 2 * vs[0] + 3 * vs[
                 1

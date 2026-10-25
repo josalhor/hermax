@@ -9,7 +9,7 @@ Highlights
 * Improved native encoding performance and automatic PBAMO encoder selection.
 * Added a grouped weighted sum equality encoder to PBAMO.
 * Reduced encoding overhead for sums of integer variables.
-* Avoided excessive encoding growth in weighted integer constraints.
+* Avoided excessive encoding growth in weighted and mixed integer constraints, including AMO cases.
 * Improved performance when comparing integer variables.
 * Reused variables for repeated exact expressions.
 

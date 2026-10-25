@@ -7,8 +7,9 @@ from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
 from hermax.encoder.pbamo import PBAMOEnc
 from hermax.encoder import _weighted_sum
-from ._integer_sum import compile_sum
+from ._integer_sum import compile_sum, compile_binary_sum, unary_sum_too_large
 from ._weighted_integer_sum import compile_weighted_sum
+from ._integer_affine import extract_integer_sum
 from hermax.internal.pb_normalize import normalize_signed_terms
 from hermax.utils import batcher_odd_even_unary_add_network
 
@@ -271,6 +272,8 @@ class _EncoderDispatch:
             coeffs.append((x, c))
             offset -= c * x.lb
         return coeffs, offset
+
+    _extract_integer_sum_with_bools = staticmethod(extract_integer_sum)
 
     @staticmethod
     def _flip_op_for_negative_scale(op: str) -> str:
@@ -560,6 +563,9 @@ class _EncoderDispatch:
         delta = -(
             sum(c * v.lb for v, c in coeff_items) + (loff - roff)
         )
+
+        if unary_sum_too_large(nx, ny, equality=True):
+            return compile_binary_sum(model, coeff_items, delta, "==")
 
         net = batcher_odd_even_unary_add_network(nx, ny)
         width = int(net.n)
@@ -1697,6 +1703,10 @@ class _EncoderDispatch:
         z = minus_vars[0]
         nx = len(x._threshold_lits)
         ny = len(y._threshold_lits)
+        if unary_sum_too_large(nx, ny):
+            bound = c_target - sum(c * v.lb for v, c in coeff_items)
+            return compile_binary_sum(model, coeff_items, bound, "<=")
+
         net = batcher_odd_even_unary_add_network(nx, ny)
         pair_clause_upper = (nx + 1) * (ny + 1)
         merge_clause_upper = 6 * len(net) + (nx + ny)
@@ -1908,28 +1918,27 @@ class _EncoderDispatch:
 
         # Existing small-arity and mixed Boolean fast paths keep precedence.
         difference = lhs - rhs
-        affine = _EncoderDispatch._extract_multi_int_affine(model, difference)
-        if (affine is not None and len(affine[0]) >= 3
-                and any(x.ub - x.lb > 1 for x, _ in affine[0])):
-            scale = abs(affine[0][0][1])
-            uniform = all(abs(c) == scale for _, c in affine[0])
-            if not uniform:
-                cmp_op, sum_bound = _EncoderDispatch._bound_from_zero_compare(op, int(difference.constant))
-                result = compile_weighted_sum(model, affine[0], sum_bound, cmp_op)
-                if result is not None:
-                    return result
-            elif len(affine[0]) >= 4:
-                cmp_op, sum_bound = _EncoderDispatch._bound_from_zero_compare(op, int(difference.constant))
-                if cmp_op == '==':
-                    if sum_bound % scale:
-                        return ClauseGroup._from_dimacs_trusted(model, [[]])
-                    sum_bound //= scale
-                elif cmp_op == '<=':
-                    sum_bound //= scale
-                else:
-                    sum_bound = -((-sum_bound) // scale)
-                items = [(x, c // scale) for x, c in affine[0]]
-                return compile_sum(model, items, -sum_bound, cmp_op)
+        affine = _EncoderDispatch._extract_integer_sum_with_bools(model, difference)
+        if affine is not None:
+            items = affine.items
+            if len(items) >= 2 and any(x.ub - x.lb > 1 for x, _ in items):
+                constant = affine.constant
+                cmp_op, sum_bound = _EncoderDispatch._bound_from_zero_compare(
+                    op, constant
+                )
+                scale = abs(items[0][1])
+                if not affine.overlapping and all(abs(c) == scale for _, c in items):
+                    if cmp_op == "==":
+                        if sum_bound % scale:
+                            return ClauseGroup._from_dimacs_trusted(model, [[]])
+                        sum_bound //= scale
+                    elif cmp_op == "<=":
+                        sum_bound //= scale
+                    else:
+                        sum_bound = -((-sum_bound) // scale)
+                    normalized = [(x, c // scale) for x, c in items]
+                    return compile_sum(model, normalized, -sum_bound, cmp_op)
+                return compile_weighted_sum(model, items, sum_bound, cmp_op)
 
         pairs, const = _EncoderDispatch._normalize_pb(lhs, rhs)
         cmp_op, bound = _EncoderDispatch._bound_from_zero_compare(op, const)
