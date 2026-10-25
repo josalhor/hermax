@@ -1043,12 +1043,22 @@ class IntVar:
             self._cmp_cache[key] = d
         return self._cmp_cache[key]
 
-    def _threshold_cuts_with(self, other: "IntVar") -> range:
-        # Integer cut values k for predicates (x >= k) that distinguish values in
-        # either domain. Cuts are in [min(lb)+1, max(ub)] inclusive.
-        start = min(self.lb, other.lb) + 1
-        stop = max(self.ub, other.ub) + 1  # range stop is exclusive
-        return range(start, stop)
+    def _order_implications(self, other: "IntVar", shift: int = 0) -> list[Clause]:
+        """Encode self <= other + shift, skipping constant threshold regions."""
+        if self.ub <= other.lb + shift:
+            return []
+        if self.lb > other.ub + shift:
+            return [Clause(self._model, [])]
+        clauses = []
+        for k in range(other.lb + shift + 1, self.ub + 1):
+            if k <= self.lb:
+                literals = [other.__ge__(k - shift)]
+            elif k > other.ub + shift:
+                literals = [~self.__ge__(k)]
+            else:
+                literals = [~self.__ge__(k), other.__ge__(k - shift)]
+            clauses.append(Clause(self._model, literals))
+        return clauses
 
     def _exact_value_atoms(self, value: int) -> list[Literal]:
         # Compact exact-value pattern over the ladder bits (at most 2 literals,
@@ -1192,87 +1202,23 @@ class IntVar:
         if max_distance < 0:
             raise ValueError("max_distance must be >= 0")
 
-        m = self._model
-        clauses: list[Clause] = []
-
-        def ge_state(x: "IntVar", k: int) -> tuple[str, Optional[Literal]]:
-            # Returns (\"true\"|\"false\"|\"lit\", lit_or_none)
-            if k <= x.lb:
-                return ("true", None)
-            if k > x.ub:
-                return ("false", None)
-            return ("lit", x.__ge__(k))
-
-        def add_implication(lhs_x: "IntVar", rhs_x: "IntVar", shift: int) -> None:
-            # lhs_x <= rhs_x + shift  <=>  (lhs_x >= k) -> (rhs_x >= k-shift)
-            start = min(lhs_x.lb + 1, rhs_x.lb + shift + 1)
-            stop = max(lhs_x.ub, rhs_x.ub + shift) + 1  # range stop exclusive
-            for k in range(start, stop):
-                lkind, llit = ge_state(lhs_x, k)
-                rkind, rlit = ge_state(rhs_x, k - shift)
-                # Constant-fold implication l -> r.
-                if lkind == "false" or rkind == "true":
-                    continue
-                if lkind == "true" and rkind == "false":
-                    clauses.append(Clause(m, []))
-                    continue
-                if lkind == "true" and rkind == "lit":
-                    clauses.append(Clause(m, [rlit]))  # type: ignore[list-item]
-                    continue
-                if lkind == "lit" and rkind == "false":
-                    clauses.append(Clause(m, [~llit]))  # type: ignore[arg-type]
-                    continue
-                if lkind == "lit" and rkind == "lit":
-                    clauses.append(Clause(m, [~llit, rlit]))  # type: ignore[arg-type,list-item]
-                    continue
-                # Remaining case (l true, r true) already continued; this is defensive.
-
-        add_implication(self, other, max_distance)
-        add_implication(other, self, max_distance)
-        return ClauseGroup(m, clauses)
+        clauses = self._order_implications(other, max_distance)
+        clauses.extend(other._order_implications(self, max_distance))
+        if any(not clause.dimacs for clause in clauses):
+            clauses = [Clause(self._model, [])]
+        return ClauseGroup(self._model, clauses)
 
     def _relop_intvar(self, other: "IntVar", op: str, offset: int = 0) -> ClauseGroup:
         _ensure_same_model_pair_fast(self, other)
-        clauses: list[Clause] = []
         m = self._model
-
-        def ge_state(x: "IntVar", k: int) -> tuple[str, Optional[Literal]]:
-            if k <= x.lb:
-                return ("true", None)
-            if k > x.ub:
-                return ("false", None)
-            return ("lit", x.__ge__(k))
-
-        def add_implication(lhs_x: "IntVar", rhs_x: "IntVar", shift: int) -> None:
-            # Enforce lhs_x <= rhs_x + shift  by threshold implications
-            # (lhs_x >= k) -> (rhs_x >= k-shift)
-            start = min(lhs_x.lb + 1, rhs_x.lb + shift + 1)
-            stop = max(lhs_x.ub, rhs_x.ub + shift) + 1
-            for k in range(start, stop):
-                lkind, llit = ge_state(lhs_x, k)
-                rkind, rlit = ge_state(rhs_x, k - shift)
-                if lkind == "false" or rkind == "true":
-                    continue
-                if lkind == "true" and rkind == "false":
-                    clauses.append(Clause(m, []))
-                    continue
-                if lkind == "true" and rkind == "lit":
-                    clauses.append(Clause(m, [rlit]))  # type: ignore[list-item]
-                    continue
-                if lkind == "lit" and rkind == "false":
-                    clauses.append(Clause(m, [~llit]))  # type: ignore[arg-type]
-                    continue
-                if lkind == "lit" and rkind == "lit":
-                    clauses.append(Clause(m, [~llit, rlit]))  # type: ignore[arg-type,list-item]
-                    continue
 
         if op == "<=":
             # self + offset <= other  <=>  self <= other - offset
-            add_implication(self, other, -offset)
+            clauses = self._order_implications(other, -offset)
             return IntRelation(m, clauses, self, other, "<=", offset)
         if op == ">=":
             # self + offset >= other  <=>  other <= self + offset
-            add_implication(other, self, offset)
+            clauses = other._order_implications(self, offset)
             return IntRelation(m, clauses, self, other, ">=", offset)
         if op == "<":
             # self + offset < other  <=>  self + (offset + 1) <= other
@@ -1390,13 +1336,10 @@ class IntVar:
             return self._eq_lits[value]
         if isinstance(value, IntVar):
             _ensure_same_model_pair_fast(self, value)
-            clauses: list[Clause] = []
-            # Equality in ladder encoding is equivalence of all threshold cuts.
-            for k in self._threshold_cuts_with(value):
-                sk = self.__ge__(k)
-                vk = value.__ge__(k)
-                clauses.append(Clause(self._model, [~sk, vk]))
-                clauses.append(Clause(self._model, [~vk, sk]))
+            clauses = self._order_implications(value)
+            clauses.extend(value._order_implications(self))
+            if any(not clause.dimacs for clause in clauses):
+                clauses = [Clause(self._model, [])]
             return IntRelation(self._model, clauses, self, value, "==", 0)
         result = _compare_pb_operands(self, "==", value)
         if result is NotImplemented:
