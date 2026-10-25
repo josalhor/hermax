@@ -8,6 +8,7 @@ from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
 from pysat.formula import CNF, WCNF
 from ._integer_views import binary_view as _binary_view_for
+from hermax.internal.operation_cache import cached_operation
 from hermax.encoder.card import CardEnc, EncType as CardEncType
 from hermax.encoder.pb_enc import PBEnc
 from hermax.encoder.pbamo import PBAMOEnc
@@ -182,6 +183,7 @@ class IntSetVar:
         """Return cardinality expression ``|self|``."""
         return PBExpr(self._model, [Term(1, lit) for lit in self._member_lits.values()], 0)
 
+    @cached_operation()
     def card(self, name: Optional[str] = None) -> "IntVar":
         """Return an integer variable equal to this set's cardinality.
 
@@ -316,6 +318,7 @@ class IntSetVar:
 
         return _ReifiableClauseGroup(self._model, _build, lambda: self._eq_group_constant(const_vals))
 
+    @cached_operation()
     def _binary_set_op(self, other: "IntSetVar", op: str, name: Optional[str] = None) -> "IntSetVar":
         if not isinstance(other, IntSetVar):
             raise TypeError("set operation expects IntSetVar.")
@@ -1822,6 +1825,7 @@ class IntVector(_BaseVector):
             return self._items[0]
         return MaxExpr(self._model, self._items, "lower_bound", name=name)
 
+    @cached_operation()
     def running_max(self, name: Optional[str] = None) -> "IntVector":
         """Return prefix maxima as an ``IntVector``.
 
@@ -1842,6 +1846,7 @@ class IntVector(_BaseVector):
             out.append(self._model.max([out[-1], self._items[i]], name=step_name))
         return IntVector(self._model, out_name, out)
 
+    @cached_operation()
     def running_min(self, name: Optional[str] = None) -> "IntVector":
         """Return prefix minima as an ``IntVector``.
 
@@ -1862,6 +1867,7 @@ class IntVector(_BaseVector):
             out.append(self._model.min([out[-1], self._items[i]], name=step_name))
         return IntVector(self._model, out_name, out)
 
+    @cached_operation()
     def running_sum(self, name: Optional[str] = None) -> "IntVector":
         """Return prefix sums as an ``IntVector``.
 

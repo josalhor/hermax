@@ -11,6 +11,7 @@ Highlights
 * Reduced encoding overhead for sums of integer variables.
 * Avoided excessive encoding growth in weighted integer constraints.
 * Improved performance when comparing integer variables.
+* Reused variables for repeated exact expressions.
 
 Version 1.2.10
 --------------

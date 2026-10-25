@@ -31,11 +31,16 @@ from .encoders import *
 from .encoders import _DeferredPBEntry, _EncoderDispatch
 from .encoders import _canonical_pb_cache_key
 from ._int_thresholds import ThresholdOwners
+from hermax.internal.operation_cache import OperationCache, cached_operation
 from ._integer_objective import lower_integer_objective
 from hermax.internal.kmerge import DEFAULT_KMERGE_CONFIG, KMergeConfig
 
 
 _TABLE_IMPOSSIBLE = object()
+
+
+def _realize_integer_source(source):
+    return source._realize() if isinstance(source, _LazyIntExpr) else source
 
 
 @dataclass
@@ -1069,6 +1074,7 @@ class Model:
         "_obj_proxy",
         "_tier_obj_proxy",
         "_pb_clause_cache",
+        "_operation_cache",
         "_known_amo_groups",
         "_known_eo_groups",
         "_pending_pb_constraints",
@@ -1125,6 +1131,7 @@ class Model:
         self._obj_proxy = _ObjectiveProxy(self)
         self._tier_obj_proxy = _TierObjectiveProxy(self)
         self._pb_clause_cache: dict[tuple, ClauseGroup] = {}
+        self._operation_cache = OperationCache()
         self._known_amo_groups: dict[tuple[int, ...], tuple[int, ...]] = {}
         self._known_eo_groups: dict[tuple[int, ...], tuple[int, ...]] = {}
         self._pending_pb_constraints: list[_DeferredPBEntry] = []
@@ -1781,6 +1788,7 @@ class Model:
         self._reserve_container_name(name)
         return IntSetVar(self, name, universe)
 
+    @cached_operation(normalize={"x": _realize_integer_source})
     def floor_div(self, x: IntVar | _LazyIntExpr, divisor: int, name: Optional[str] = None) -> IntVar:
         """Materialize a quotient integer ``x // divisor`` using ladder threshold ties."""
         if isinstance(x, _LazyIntExpr):
@@ -1807,6 +1815,7 @@ class Model:
                 self._register_literal_definition(q_lit, group)
         return out
 
+    @cached_operation(normalize={"x": _realize_integer_source})
     def scale(self, x: IntVar | _LazyIntExpr, factor: int, name: Optional[str] = None) -> IntVar:
         """Materialize a scaled integer ``x * factor`` using ladder threshold ties."""
         if isinstance(x, _LazyIntExpr):
@@ -1847,6 +1856,7 @@ class Model:
                 )
         return out
 
+    @cached_operation(normalize={"x": _realize_integer_source})
     def modulo(self, x: IntVar | _LazyIntExpr, divisor: int, name: Optional[str] = None) -> IntVar:
         """Return ``x % divisor`` for a strictly positive integer divisor."""
         if isinstance(divisor, bool):
@@ -1882,6 +1892,7 @@ class Model:
         self &= ClauseGroup(self, clauses)
         return out
 
+    @cached_operation(normalize={"items": tuple}, unordered=("items",))
     def _build_int_aggregate_extreme(self, items: Sequence[IntVar], kind: str, name: Optional[str] = None) -> IntVar:
         if not items:
             raise ValueError(f"Cannot compute {kind} of an empty IntVector.")
@@ -2165,6 +2176,7 @@ class Model:
         self._reserve_container_name(name)
         return IntervalVar(self, name, start=start, duration=duration, end=end)
 
+    @cached_operation(normalize={"items": tuple}, unordered=("items",))
     def sum_var(self, items: Sequence[IntVar | Literal], name: Optional[str] = None) -> IntVar:
         """Return one ``IntVar`` equal to the sum of integers and Boolean literals.
 
