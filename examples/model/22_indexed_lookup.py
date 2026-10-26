@@ -15,7 +15,7 @@ m &= (durations[machine] == chosen_duration)
 
 m &= (machine != 0)
 
-m.obj[1] += chosen_duration
+m.obj += chosen_duration
 
 r = m.solve()
 assert r.ok

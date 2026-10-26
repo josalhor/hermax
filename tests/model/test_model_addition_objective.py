@@ -50,14 +50,14 @@ def test_objective_rejects_invalid_weights():
     m = Model()
     a = m.bool("a")
 
-    m.obj[0] += a
+    m.obj += 0 * a
     assert not m._soft
 
-    with pytest.raises(ValueError, match="positive int"):
-        m.obj[-1] += a
+    with pytest.raises(ValueError, match="non-negative|positive int"):
+        m.obj.add(a, weight=-1)
 
     with pytest.raises(ValueError, match="positive int"):
-        m.obj[1.5] += a
+        m.obj.add(a, weight=1.5)
 
 
 def test_objective_soft_literal_and_clause_choose_min_cost_assignment():
@@ -66,8 +66,8 @@ def test_objective_soft_literal_and_clause_choose_min_cost_assignment():
     b = m.bool("b")
 
     # Pay 5 if a is false. Pay 2 if b is true (soft clause ~b violated when b=true).
-    m.obj[5] += a
-    m.obj[2] += ~b
+    m.obj.add_soft(a, 5)
+    m.obj.add_soft(~b, 2)
 
     r = _solve_ok(m)
     assert r.status == "optimum"
@@ -85,8 +85,8 @@ def test_objective_repeated_weight_bucket_accumulates_multiple_soft_clauses():
     m &= ~a
     m &= b
 
-    m.obj[3] += a     # violated because a=false => +3
-    m.obj[3] += ~b    # violated because b=true  => +3
+    m.obj.add_soft(a, 3)     # violated because a=false => +3
+    m.obj.add_soft(~b, 3)    # violated because b=true  => +3
 
     r = _solve_ok(m)
     assert r.status == "optimum"
@@ -108,7 +108,7 @@ def test_objective_accepts_clausegroup_from_public_producer_end_to_end():
     # Force a=true and b=false so the generated clauses make c mandatory.
     m &= a
     m &= ~b
-    m.obj[7] += group
+    m.obj.add_soft(group, 7)
 
     # To avoid cost, solver should satisfy the whole group and set c=true.
     r = _solve_ok(m)
@@ -125,7 +125,7 @@ def test_objective_soft_pb_clausegroup_penalizes_violation_end_to_end():
     # PB comparator finalizes to ClauseGroup. Force a=b=true so (a+b<=1) is violated.
     m &= a
     m &= b
-    m.obj[10] += (a + b <= 1)
+    m.obj.add_soft(a + b <= 1, 10)
 
     r = _solve_ok(m)
     assert r.status == "optimum"
@@ -139,8 +139,8 @@ def test_objective_true_is_noop_and_false_adds_unavoidable_cost():
     a = m.bool("a")
 
     m &= a
-    m.obj[4] += True   # no-op
-    m.obj[9] += False  # empty soft clause: always violated => unavoidable cost
+    m.obj.add_soft(True, 4)   # no-op
+    m.obj.add_soft(False, 9)  # always violated => unavoidable cost
 
     r = _solve_ok(m)
     assert r.status == "optimum"
@@ -154,7 +154,7 @@ def test_empty_clausegroup_addition_is_noop_for_hard_and_soft():
     empty = ClauseGroup(m, [])
 
     m &= empty
-    m.obj[5] += empty
+    m.obj.add_soft(empty, 5)
     m &= a
 
     r = _solve_ok(m)
@@ -178,9 +178,9 @@ def test_internal_hard_soft_storage_invariants_preserve_clause_shapes_and_weight
     m &= cg
 
     # Soft additions through literal, clause, and ClauseGroup.
-    m.obj[5] += ~c
-    m.obj[7] += (a | ~b)
-    m.obj[11] += (a + b <= 1)  # PB comparator finalizes to ClauseGroup
+    m.obj.add_soft(~c, 5)
+    m.obj.add_soft(a | ~b, 7)
+    m.obj.add_soft(a + b <= 1, 11)
 
     # Hard storage invariants.
     assert isinstance(m._hard, list)
@@ -219,7 +219,7 @@ def test_soft_pbconstraint_requires_targeted_relaxation_single_penalty():
     compiled = pb.clauses()
     assert len(compiled._clauses) >= 1
 
-    m.obj[100] += pb
+    m.obj.add_soft(pb, 100)
 
     soft_100 = [cl for (w, cl) in m._soft if w == 100]
     assert len(soft_100) == 1, (
@@ -232,7 +232,7 @@ def test_objective_accepts_intvar_and_lowers_to_weighted_threshold_softs():
     m = Model()
     x = m.int("x", lb=0, ub=5)  # values 0..4, threshold width = 5
 
-    m.obj[3] += x
+    m.obj += 3 * x
 
     # x = sum(threshold_bits) for lb=0, so we expect one soft (~t) per threshold bit.
     assert len(m._soft) == len(x._threshold_lits)
@@ -250,7 +250,7 @@ def test_objective_accepts_intvar_and_lowers_to_weighted_threshold_softs():
 def test_objective_intvar_cost_includes_lower_bound_constant_offset():
     m = Model()
     x = m.int("x", lb=3, ub=7)  # values 3..6
-    m.obj[2] += x
+    m.obj += 2 * x
 
     # True optimum should be x=3, cost = 2*3 = 6.
     r = _solve_ok(m)
@@ -259,18 +259,19 @@ def test_objective_intvar_cost_includes_lower_bound_constant_offset():
     assert r.cost == 6
 
 
-def test_objective_intvar_negative_lower_bound_is_rejected_for_now():
+def test_objective_intvar_negative_lower_bound_is_minimized():
     m = Model()
     x = m.int("x", lb=-2, ub=3)  # values -2..2
-    with pytest.raises(ValueError, match="lb >= 0|negative objective offsets"):
-        m.obj[5] += x
+    m.obj += 5 * x
+    result = m.solve()
+    assert result.ok and result[x] == -2 and result.cost == -10
 
 
 def test_objective_intvar_and_manual_threshold_soft_encoding_agree_on_argmin_and_cost():
     m1 = Model()
     x1 = m1.int("x", lb=1, ub=6)
     m1 &= (x1 >= 3)
-    m1.obj[4] += x1
+    m1.obj += 4 * x1
     r1 = _solve_ok(m1)
 
     m2 = Model()
@@ -278,7 +279,7 @@ def test_objective_intvar_and_manual_threshold_soft_encoding_agree_on_argmin_and
     m2 &= (x2 >= 3)
     # Manual equivalent: constant offset + weighted threshold penalties.
     for t in x2._threshold_lits:
-        m2.obj[4] += ~t
+        m2.obj.add_soft(~t, 4)
     m2._objective_constant += 4 * x2.lb
     r2 = _solve_ok(m2)
 

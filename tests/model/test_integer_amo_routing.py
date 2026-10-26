@@ -189,7 +189,7 @@ def test_amo_binary_ids_clear_incremental_backend_reserved_range(monkeypatch):
     xs = [m.int(f"x{i}", 0, 3) for i in range(3)]
     bs = m.bool_vector("b", 2)
     m &= bs.at_most_one()
-    m.obj[1] += m.bool("soft")
+    m.obj += m.bool("soft")
     assert m.solve(incremental=True, backend="maxsat", solver=FakeIPSolver()).ok
     try:
         m._inc_state.ip_next_vid = 500

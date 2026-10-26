@@ -22,7 +22,7 @@ for b in range(num_bins - 1):
     m &= used[b + 1].implies(used[b])
 
 for b in range(num_bins):
-    m.obj[1] += ~used[b]
+    m.obj += used[b]
 
 r = m.solve()
 

@@ -102,28 +102,28 @@ def test_negative_scale_exact_relation(factor):
                 assert solver.solve(assumptions=cuts) == (sv == xv * factor)
 
 
-def test_zero_indexed_objective_is_noop_even_for_lazy_target():
+def test_zero_objective_is_noop_even_for_lazy_target():
     m = Model()
     x = m.int("x", 0, 4)
     lazy = x // 2
     before = m._next_id, len(m._hard), len(m._soft)
-    m.obj[0] += lazy
-    m.obj[0] += x != 2
-    m.obj[0] += 3 * x
+    m.obj += 0 * lazy
+    m.obj += 0 * (x != 2)
+    m.obj += 0 * (3 * x)
     assert lazy._realized is None
     # Constructing x != 2 above may register an equality indicator; the zero
     # addition itself must not realize it or add objective entries.
     assert len(m._hard) == before[1]
     assert len(m._soft) == before[2]
     m.set_objective_precision(decimals=2)
-    m.obj[0.0] += lazy
+    m.obj.add(lazy, weight=0.0)
     with pytest.raises(ValueError):
-        m.obj[-1] += x
+        m.obj.add(x, weight=-1)
     other = Model()
     with pytest.raises(ValueError):
-        m.obj[0] += other.bool("foreign")
+        m.obj += 0 * (other.bool("foreign"))
     with pytest.raises(TypeError):
-        m.obj[0] += object()
+        m.obj += 0 * (object())
 
 
 def test_zero_does_not_change_managed_soft_update_contract():

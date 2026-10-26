@@ -6,8 +6,8 @@ m = Model()
 shift = m.enum("shift", choices=["morning", "day", "night", "graveyard"], nullable=False)
 
 m &= shift.is_in(["morning", "day"])
-m.obj[4] += ~(shift == "morning")
-m.obj[1] += ~(shift == "day")
+m.obj += 4 * (shift == "morning")
+m.obj += shift == "day"
 
 r = m.solve()
 

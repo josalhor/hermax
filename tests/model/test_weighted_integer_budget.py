@@ -258,7 +258,7 @@ def test_private_fallback_ids_clear_incremental_backend_reserved_range(monkeypat
 
     model = Model()
     xs = [model.int(f"x{i}", 0, 3) for i in range(3)]
-    model.obj[1] += model.bool("soft")
+    model.obj += model.bool("soft")
     assert model.solve(incremental=True, backend="maxsat", solver=FakeIPSolver()).ok
     model._inc_state.ip_next_vid = 500
     monkeypatch.setattr(weighted, "STATE_LIMIT", 1)

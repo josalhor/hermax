@@ -27,7 +27,7 @@ for i in range(len(vertices)):
             m &= (~pick[u] | ~pick[v])
 
 for v in vertices:
-    m.obj[1] += pick[v]
+    m.obj += ~pick[v]  # number of excluded vertices
 
 r = m.solve()
 

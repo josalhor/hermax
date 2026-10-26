@@ -27,11 +27,11 @@ ship_cost = {
 }
 
 for facility in facilities:
-    m.obj[fixed_cost[facility]] += ~open_facility[facility]
+    m.obj += fixed_cost[facility] * open_facility[facility]
 
 for client in clients:
     for facility in facilities:
-        m.obj[ship_cost[(client, facility)]] += ~(assign[client] == facility)
+        m.obj += ship_cost[(client, facility)] * (assign[client] == facility)
 
 r = m.solve()
 assert r.ok

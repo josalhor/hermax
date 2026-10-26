@@ -31,7 +31,7 @@ def test_obj_add_pbexpr_is_supported_and_minimizes_expression_value():
     a = m.bool("a")
     b = m.bool("b")
     expr = 2 * a + b + 3
-    m.obj[1] += expr
+    m.obj += expr
     r = _solve_ok(m)
     # Minimize 2*a + b + 3 => choose a=false,b=false -> cost 3
     assert r[a] is False
@@ -45,7 +45,7 @@ def test_obj_add_pbexpr_with_negative_coefficients_normalizes_correctly():
     b = m.bool("b")
     # expr = 5 - 2*a + b
     expr = 5 + (-2) * a + b
-    m.obj[1] += expr
+    m.obj += expr
     r = _solve_ok(m)
     # Minimized at a=true, b=false => 3
     assert r[a] is True
@@ -53,12 +53,12 @@ def test_obj_add_pbexpr_with_negative_coefficients_normalizes_correctly():
     assert r.cost == 3
 
 
-def test_obj_add_pbexpr_respects_outer_bucket_weight_scaling():
+def test_obj_add_pbexpr_respects_scalar_weight_scaling():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
     expr = a + 2 * b + 1
-    m.obj[4] += expr
+    m.obj += 4 * expr
     r = _solve_ok(m)
     assert r[a] is False and r[b] is False
     assert r.cost == 4  # 4 * (0 + 0 + 1)
@@ -68,10 +68,10 @@ def test_obj_add_pbexpr_composes_with_other_soft_constraints():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj[5] += ~a
-    m.obj[1] += (2 * a + b + 1)
+    m.obj += 5 * a
+    m.obj += 2 * a + b + 1
     r = _solve_ok(m)
-    # obj[5] += ~a pays when a=True. Combined with 2*a+b+1, optimum is a=False,b=False.
+    # Combined with 2*a+b+1, the extra 5*a minimizes at a=False,b=False.
     assert r[a] is False
     assert r[b] is False
     assert r.cost == 1
@@ -82,7 +82,7 @@ def test_obj_add_pbexpr_with_piecewise_cost_avoids_proxy_and_solves():
     x = m.int("x", 0, 8)
     cost = x.piecewise(base_value=10, steps={2: 25, 4: 10, 6: 40})
     top_before = m._top_id()
-    m.obj[1] += cost
+    m.obj += cost
     # Adding PBExpr objective should not materialize a proxy IntVar.
     assert m._top_id() == top_before
     r = _solve_ok(m)
@@ -97,7 +97,7 @@ def test_obj_add_pbexpr_realizes_lazy_int_terms_inside_expression():
     q = x // 3  # lazy DivExpr inside PBExpr
     expr = q + 2
     top_before = m._top_id()
-    m.obj[1] += expr
+    m.obj += expr
     # Realization may allocate the quotient IntVar and links.
     assert m._top_id() > top_before
     r = _solve_ok(m)
@@ -110,17 +110,15 @@ def test_obj_add_pbexpr_cross_model_rejected():
     a = m1.bool("a")
     m2 = Model()
     with pytest.raises(ValueError, match="different models"):
-        m2.obj[1] += (a + 1)
+        m2.obj += a + 1
 
 
-def test_obj_add_pbexpr_bool_weight_bucket_matches_existing_int_weight_behavior():
+def test_obj_add_pbexpr_rejects_boolean_weight():
     m = Model()
     a = m.bool("a")
-    # The objective bucket currently accepts bool because bool is an int subclass.
-    m.obj[True] += (a + 1)  # type: ignore[index]
-    r = _solve_ok(m)
-    assert r[a] is False
-    assert r.cost == 1
+    with pytest.raises(ValueError, match="bool"):
+        m.obj.add(a + 1, weight=True)
+    assert not m._soft
 
 
 def test_obj_add_pbexpr_exact_cost_matches_bruteforce_small_bools():
@@ -131,7 +129,7 @@ def test_obj_add_pbexpr_exact_cost_matches_bruteforce_small_bools():
         b = m.bool("b")
         c = m.bool("c")
         expr = 7 + 2 * a + (-3) * b + c
-        m.obj[2] += expr
+        m.obj += 2 * expr
         m &= (a if aval else ~a)
         m &= (b if bval else ~b)
         m &= (c if cval else ~c)
@@ -154,7 +152,7 @@ def test_obj_add_pbexpr_stores_only_soft_unit_clauses_for_boolean_terms():
     b = m.bool("b")
     expr = 3 + 2 * a + (-1) * b
     hard_before = len(m._hard)
-    m.obj[5] += expr
+    m.obj += 5 * expr
     # A single hard clause may be introduced to define internal __false when
     # positive constants are lowered natively.
     assert len(m._hard) in (hard_before, hard_before + 1)
@@ -162,7 +160,7 @@ def test_obj_add_pbexpr_stores_only_soft_unit_clauses_for_boolean_terms():
     softs = m._soft
     assert len(softs) == 3
     weights = sorted(w for w, _ in softs)
-    # Scaled by outer bucket 5: 2*a -> 10, (-1)*b -> weight 5 after normalization.
+    # Scaling by 5 gives coefficient 10 for a and -5 for b.
     assert weights == [5, 10, 10]
     # Positive constants are lowered natively to __false soft terms.
     assert m._objective_constant == 0
@@ -172,7 +170,7 @@ def test_obj_add_negated_piecewise_pbexpr_is_supported():
     m = Model()
     x = m.int("x", 0, 8)
     gain = x.piecewise(base_value=0, steps={2: 3, 5: 10})
-    m.obj[1] += -gain
+    m.obj += -gain
     r = _solve_ok(m)
     # Maximizing gain via minimizing -gain should push to highest tier.
     assert r[x] in {5, 6, 7}

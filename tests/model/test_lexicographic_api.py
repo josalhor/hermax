@@ -20,37 +20,37 @@ def test_tier_obj_tuple_indexing_rejects_negative_tier_index():
     m = Model()
     a = m.bool("a")
     with pytest.raises((TypeError, ValueError)):
-        m.tier_obj[-1, 1] += a
+        m.tier_obj.add(a, weight=1, tier=-1)
 
 
 def test_tier_obj_tuple_indexing_rejects_non_integer_tier_index():
     m = Model()
     a = m.bool("a")
     with pytest.raises((TypeError, ValueError)):
-        m.tier_obj[0.5, 1] += a  # type: ignore[index]
+        m.tier_obj.add(a, weight=1, tier=0.5)  # type: ignore[index]
 
 
-def test_tier_obj_tuple_indexing_rejects_non_positive_weight():
+def test_tier_obj_zero_weight_is_ignored_and_negative_weight_is_rejected():
     m = Model()
     a = m.bool("a")
+    m.tier_obj.add(a, weight=0, tier=0)
+    assert not m.tier_obj.is_active()
     with pytest.raises((TypeError, ValueError)):
-        m.tier_obj[0, 0] += a
-    with pytest.raises((TypeError, ValueError)):
-        m.tier_obj[0, -1] += a
+        m.tier_obj.add(a, weight=-1, tier=0)
 
 
 def test_tier_obj_tuple_indexing_rejects_non_integer_weight_without_precision():
     m = Model()
     a = m.bool("a")
     with pytest.raises((TypeError, ValueError)):
-        m.tier_obj[0, 1.5] += a  # type: ignore[index]
+        m.tier_obj.add(a, weight=1.5, tier=0)  # type: ignore[index]
 
 
 def test_tier_obj_accepts_dynamic_building_from_loop():
     m = Model()
     xs = m.bool_vector("x", length=4)
     for i, x in enumerate(xs):
-        m.tier_obj[0, i + 1] += x
+        m.tier_obj.add(x, weight=i + 1, tier=0)
     r = m.solve(lex_strategy="incremental")
     assert r.status in {"optimum", "sat"}
     assert r.tier_costs is not None
@@ -71,7 +71,7 @@ def test_tier_obj_set_lexicographic_replaces_previous_tier_content():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.tier_obj[0, 1] += a
+    m.tier_obj.add(a, weight=1, tier=0)
     m.tier_obj.set_lexicographic(b)
     r = m.solve(lex_strategy="incremental")
     assert r.tier_costs is not None
@@ -82,8 +82,8 @@ def test_tier_obj_clear_removes_all_tiers():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.tier_obj[0, 1] += a
-    m.tier_obj[1, 1] += b
+    m.tier_obj.add(a, weight=1, tier=0)
+    m.tier_obj.add(b, weight=1, tier=1)
     m.tier_obj.clear()
     r = m.solve()
     assert r.tier_costs is None
@@ -103,7 +103,7 @@ def test_tier_obj_rejects_cross_model_expression():
     a1 = m1.bool("a1")
     _ = m2.bool("a2")
     with pytest.raises((TypeError, ValueError)):
-        m2.tier_obj[0, 1] += a1
+        m2.tier_obj.add(a1, weight=1, tier=0)
 
 
 def test_tier_obj_rejects_pbconstraint_direct_addition():
@@ -111,34 +111,34 @@ def test_tier_obj_rejects_pbconstraint_direct_addition():
     a = m.bool("a")
     b = m.bool("b")
     with pytest.raises((TypeError, ValueError)):
-        m.tier_obj[0, 1] += (a + b <= 1)
+        m.tier_obj.add(a + b <= 1, weight=1, tier=0)
 
 
 def test_tier_obj_and_obj_are_mutually_exclusive_obj_then_tier():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj[1] += a
+    m.obj += a
     with pytest.raises((TypeError, ValueError)):
-        m.tier_obj[0, 1] += b
+        m.tier_obj.add(b, weight=1, tier=0)
 
 
 def test_tier_obj_and_obj_are_mutually_exclusive_tier_then_obj():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.tier_obj[0, 1] += a
+    m.tier_obj.add(a, weight=1, tier=0)
     with pytest.raises((TypeError, ValueError)):
-        m.obj[1] += b
+        m.obj += b
 
 
 def test_after_obj_clear_tier_obj_is_allowed():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj[1] += a
+    m.obj += a
     m.obj.clear()
-    m.tier_obj[0, 1] += b
+    m.tier_obj.add(b, weight=1, tier=0)
     r = m.solve(lex_strategy="incremental")
     assert r.tier_costs is not None
 
@@ -147,9 +147,9 @@ def test_after_tier_obj_clear_flat_obj_is_allowed():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.tier_obj[0, 1] += a
+    m.tier_obj.add(a, weight=1, tier=0)
     m.tier_obj.clear()
-    m.obj[1] += b
+    m.obj += b
     r = m.solve()
     assert r.cost is not None
     assert r.tier_costs is None
@@ -173,7 +173,7 @@ def test_solve_with_lex_strategy_but_no_tiers_behaves_as_normal_solve():
 def test_solve_result_has_tier_fields_in_lex_mode():
     m = Model()
     a = m.bool("a")
-    m.tier_obj[0, 1] += a
+    m.tier_obj.add(a, weight=1, tier=0)
     r = m.solve(lex_strategy="incremental")
     assert hasattr(r, "tier_costs")
     assert hasattr(r, "tier_models")
@@ -183,7 +183,7 @@ def test_solve_result_has_tier_fields_in_lex_mode():
 def test_solve_result_tier_fields_are_none_in_non_lex_mode():
     m = Model()
     a = m.bool("a")
-    m.obj[1] += a
+    m.obj += a
     r = m.solve()
     assert r.tier_costs is None
     assert r.tier_models is None
@@ -193,7 +193,7 @@ def test_tier_obj_supports_objective_precision_floats_when_enabled():
     m = Model()
     m.set_objective_precision(decimals=2)
     a = m.bool("a")
-    m.tier_obj[0, 1.25] += a
+    m.tier_obj.add(a, weight=1.25, tier=0)
     r = m.solve(lex_strategy="incremental")
     assert r.tier_costs is not None
     assert len(r.tier_costs) == 1
@@ -203,5 +203,5 @@ def test_tier_obj_rejects_float_weight_without_precision():
     m = Model()
     a = m.bool("a")
     with pytest.raises((TypeError, ValueError)):
-        m.tier_obj[0, 1.25] += a  # type: ignore[index]
+        m.tier_obj.add(a, weight=1.25, tier=0)  # type: ignore[index]
 

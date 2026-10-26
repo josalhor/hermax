@@ -10,10 +10,10 @@ x3 = m.bool("x3")
 m &= (x1 | x2)   # x1 OR x2: at least one of x1, x2 must be true
 m &= (~x1 | x3)  # (NOT x1) OR x3: if x1 is true, x3 must also be true
 
-# Soft literals
-ref_x1 = m.obj.add_soft(~x1, weight=6)  # pay 6 if x1=True
-m.obj.add_soft(~x2, weight=2)           # pay 2 if x2=True
-m.obj.update_soft(ref_x1, 3)     # update previous penalty on x1
+# Numeric costs
+ref_x1 = m.obj.add(x1, weight=6)  # pay 6 if x1=True
+m.obj += 2 * x2
+m.obj.update(ref_x1, weight=3)
 
 print("Solve with assumption [~x1] (force x1=False):")
 r = m.solve(assumptions=[~x1], backend="maxsat")

@@ -12,7 +12,7 @@ capacity = 8
 m &= sum(w * take[i] for i, (w, _) in enumerate(items)) <= capacity
 
 for i, (_, profit) in enumerate(items):
-    m.obj[profit] += take[i]
+    m.obj += profit * ~take[i]  # missed profit
 
 r = m.solve()
 

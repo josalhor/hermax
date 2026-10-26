@@ -23,7 +23,7 @@ def test_float_weight_rejected_without_precision_obj_bucket():
     m = Model()
     a = m.bool("a")
     with pytest.raises(ValueError):
-        m.obj[1.25] += a  # type: ignore[index]
+        m.obj += 1.25 * a  # type: ignore[index]
 
 
 def test_integral_float_weight_also_rejected_without_precision():

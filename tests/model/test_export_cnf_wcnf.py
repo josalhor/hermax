@@ -63,7 +63,7 @@ def test_to_cnf_rejects_soft_model_even_if_soft_is_boolean_constant():
     m = Model()
     a = m.bool("a")
     m &= a
-    m.obj[7] += False
+    m.obj.add_soft(False, 7)
 
     with pytest.raises(ValueError, match="soft clauses"):
         m.to_cnf()
@@ -75,8 +75,8 @@ def test_to_wcnf_roundtrip_rc2_matches_model_solve_cost_and_assignment_on_simple
     b = m.bool("b")
 
     # Prefer a=true, b=false.
-    m.obj[5] += a
-    m.obj[2] += ~b
+    m.obj.add_soft(a, 5)
+    m.obj.add_soft(~b, 2)
 
     wcnf = m.to_wcnf()
     raw_w, cost_w = _solve_wcnf(wcnf)
@@ -102,7 +102,7 @@ def test_to_wcnf_soft_pb_clausegroup_roundtrip_cost_is_preserved():
     # Force violation of (a+b<=1) and penalize it.
     m &= a
     m &= b
-    m.obj[10] += (a + b <= 1)
+    m.obj.add_soft(a + b <= 1, 10)
 
     wcnf = m.to_wcnf()
     raw_w, cost_w = _solve_wcnf(wcnf)
@@ -120,8 +120,8 @@ def test_to_wcnf_boolean_constants_export_as_regular_soft_and_hard_clauses():
 
     m &= True
     m &= x
-    m.obj[4] += True
-    m.obj[9] += False
+    m.obj.add_soft(True, 4)
+    m.obj.add_soft(False, 9)
 
     wcnf = m.to_wcnf()
     # Hard should include x plus definitions/uses for __true/__false.
@@ -142,8 +142,8 @@ def test_boolean_constants_materialize_internal_reserved_vars_and_expected_claus
     x = m.bool("x")
     m &= x
     m &= True
-    m.obj[4] += True
-    m.obj[9] += False
+    m.obj.add_soft(True, 4)
+    m.obj.add_soft(False, 9)
 
     # Internal constants should exist and be reserved-style names.
     assert "__true" in m._registry
@@ -263,7 +263,7 @@ def test_export_is_stable_across_repeated_calls_without_mutation():
     a = m.bool("a")
     b = m.bool("b")
     m &= (a | b)
-    m.obj[3] += ~a
+    m.obj += 3 * ~a
 
     w1 = m.to_wcnf()
     w2 = m.to_wcnf()

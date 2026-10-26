@@ -57,7 +57,7 @@ def test_invalid_lexicographic_objective_preserves_existing_tiers():
     current = model.bool("current")
     other = Model()
     replacement = other.bool("replacement")
-    model.tier_obj[0, 2] += current
+    model.tier_obj.add(current, weight=2, tier=0)
     before = {tier: dict(data) for tier, data in model.tier_obj._tiers.items()}
 
     with pytest.raises(ValueError, match="different models"):
@@ -74,6 +74,6 @@ def test_invalid_foreign_tier_clause_does_not_create_empty_tier():
     before = {tier: dict(data) for tier, data in model.tier_obj._tiers.items()}
 
     with pytest.raises(ValueError, match="different models"):
-        model.tier_obj[4, 1] += group
+        model.tier_obj.add_soft(group, 1, tier=4)
 
     assert model.tier_obj._tiers == before

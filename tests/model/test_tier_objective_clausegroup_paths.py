@@ -9,7 +9,7 @@ def test_tier_objective_accepts_multiclause_group_via_reification_path():
     b = m.bool("b")
 
     group = ClauseGroup(m, [Clause(m, [a]), Clause(m, [b])])
-    m.tier_obj[0, 3] += group
+    m.tier_obj.add_soft(group, 3, tier=0)
 
     r = m.solve(backend="maxsat")
     assert r.ok
@@ -22,9 +22,9 @@ def test_tier_objective_multiliteral_clause_violation_penalty_soundness():
     m &= ~b
 
     # Higher weight soft clause (a | b): should be satisfied over ~a if relaxation polarity is sound.
-    m.tier_obj[0, 10] += (a | b)
+    m.tier_obj.add_soft(a | b, 10, tier=0)
     # Lower weight soft clause ~a: penalizes setting a=True with cost 4.
-    m.tier_obj[0, 4] += ~a
+    m.tier_obj.add_soft(~a, 4, tier=0)
 
     r = m.solve(backend="maxsat")
     assert r.ok

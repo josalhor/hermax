@@ -15,7 +15,7 @@ def test_to_cnf_hard_only_and_rejects_soft():
     assert isinstance(cnf, CNF)
     assert len(cnf.clauses) >= 1
 
-    m.obj[1] += ~a
+    m.obj += ~a
     with pytest.raises(ValueError, match="soft clauses"):
         m.to_cnf()
 
@@ -25,7 +25,7 @@ def test_to_wcnf_contains_hard_and_soft():
     a = m.bool("a")
     b = m.bool("b")
     m &= (a | b)
-    m.obj[3] += ~a
+    m.obj += 3 * ~a
 
     w = m.to_wcnf()
     assert isinstance(w, WCNF)
@@ -74,8 +74,8 @@ def test_model_solve_defaults_sat_and_maxsat():
     # Soft present -> RC2 MaxSAT backend
     m2 = Model()
     x = m2.bool("x")
-    m2.obj[5] += x      # pay if x is false
-    m2.obj[1] += ~x     # pay if x is true
+    m2.obj += 5 * x      # pay if x is false
+    m2.obj += ~x     # pay if x is true
     r2 = m2.solve()
     assert r2.status == "optimum"
     assert r2.cost == 1

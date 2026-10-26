@@ -10,8 +10,8 @@ tariff = load.piecewise(base_value=10, steps={4: 25, 8: 60})
 
 m &= (tariff <= 25)
 
-m.obj[1] += load
-m.obj[1] += tariff
+m.obj += load
+m.obj += tariff
 
 r = m.solve()
 assert r.ok

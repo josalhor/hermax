@@ -39,8 +39,8 @@ def test_model_solve_soft_present_uses_rc2_and_returns_optimum():
     b = m.bool("b")
 
     # Prefer a=true, b=false.
-    m.obj[5] += a
-    m.obj[2] += ~b
+    m.obj += 5 * ~a
+    m.obj += 2 * b
 
     r = m.solve()
     assert r.status == "optimum"
@@ -55,7 +55,7 @@ def test_model_solve_soft_unsat_due_to_hard_contradiction():
     a = m.bool("a")
     m &= a
     m &= ~a
-    m.obj[3] += a
+    m.obj += 3 * a
 
     r = m.solve()
     assert r.status == "unsat"
@@ -78,7 +78,7 @@ def test_model_solve_respects_custom_sat_solver_name():
 def test_model_solve_rejects_unknown_maxsat_backend_value():
     m = Model()
     a = m.bool("a")
-    m.obj[1] += a
+    m.obj += a
 
     with pytest.raises(ValueError, match="Unsupported maxsat backend"):
         m.solve(maxsat_backend="not-rc2")
@@ -109,8 +109,8 @@ def test_model_solve_with_boolean_constant_softs_uses_rc2_and_costs_match():
     m = Model()
     x = m.bool("x")
     m &= x
-    m.obj[4] += True
-    m.obj[9] += False
+    m.obj += 4 * (0)
+    m.obj += 9 * (1)
 
     r = m.solve()
     assert r.status == "optimum"
@@ -139,12 +139,12 @@ def test_model_solve_pure_soft_model_is_valid_maxsat_case():
     b = m.bool("b")
 
     # Under soft-unit-clause semantics:
-    #   obj[w] += lit   => pay w when lit is false
+    #   add_soft(lit, w)     => pay w when lit is false
     # So the optimum is a=true, b=true with total cost 2.
-    m.obj[5] += a
-    m.obj[1] += ~a
-    m.obj[2] += b
-    m.obj[1] += ~b
+    m.obj += 5 * ~a
+    m.obj += a
+    m.obj += 2 * ~b
+    m.obj += b
 
     r = m.solve()
     assert r.status == "optimum"
@@ -158,8 +158,8 @@ def test_model_solve_accepts_hermax_solver_class_rc2fork():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj[5] += a
-    m.obj[2] += ~b
+    m.obj += 5 * ~a
+    m.obj += 2 * b
 
     r = m.solve(solver=RC2Reentrant)
     assert r.status == "optimum"
@@ -188,8 +188,8 @@ def test_model_solve_accepts_portfolio_solver_class_with_kwargs():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj[3] += a
-    m.obj[1] += ~b
+    m.obj += 3 * ~a
+    m.obj += b
 
     r = m.solve(
         solver=PortfolioSolver,

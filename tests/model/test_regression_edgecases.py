@@ -103,10 +103,12 @@ def test_objective_iadd_python_protocol_regressions_accumulate_exactly_once():
     a = m.bool("a")
     b = m.bool("b")
 
-    # Exercise Python's obj[key] += protocol repeatedly on the same bucket.
-    m.obj[3] += a
-    m.obj[3] += b
-    m.obj[3] += (a | b)
+    # Attribute augmented assignment must accumulate each contribution once.
+    m.obj += 3 * ~a
+    m.obj += 3 * ~b
+    satisfied = m.bool()
+    m &= (a | b).iff(satisfied)
+    m.obj += 3 * ~satisfied
 
     # Exactly three soft entries should be present, each with the same weight.
     assert len(m._soft) == 3
@@ -139,7 +141,7 @@ def test_empty_and_tautological_clauses_in_clausegroup_if_exposed_behave_transpa
 
     # Empty soft clause is an unavoidable penalty and should be representable at export level.
     m3 = Model()
-    m3.obj[5] += ClauseGroup(m3, [Clause(m3, [])])
+    m3.obj.add_soft(ClauseGroup(m3, [Clause(m3, [])]), 5)
     wcnf = m3.to_wcnf()
     assert [] in [list(cl) for cl in wcnf.soft]
     # Do not solve here: RC2 may reject direct empty soft clauses. This regression check

@@ -217,7 +217,7 @@ Example:
 
    xs = model.int_vector("x", 4, lb=0, ub=10)
    ubv = model.upper_bound(xs, name="ubv")
-   model.obj[1] += ubv
+   model.obj += ubv
 
 EnumVector helpers
 ------------------

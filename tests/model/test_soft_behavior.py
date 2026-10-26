@@ -72,11 +72,11 @@ def test_add_soft_returns_softref_single_clause():
     assert len(ref.soft_ids) == 1
 
 
-def test_add_soft_returns_grouped_ids_for_int_objective_lowering():
+def test_soft_integer_predicate_returns_one_updateable_preference():
     m = Model()
     x = m.int("x", 0, 5)
-    ref = m.obj.add_soft(x, 2)
-    assert len(ref.soft_ids) == len(x._threshold_lits)
+    ref = m.obj.add_soft((x >= 1) & (x >= 2), 2)
+    assert len(ref.soft_ids) == 1
     # grouped handle should be usable as one update target
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
@@ -85,23 +85,25 @@ def test_add_soft_returns_grouped_ids_for_int_objective_lowering():
     assert len(s.soft_updates) >= before + len(ref.soft_ids)
 
 
-def test_obj_bucket_adds_soft_entries():
+def test_numeric_obj_iadd_creates_soft_costs():
     m = Model()
     a = m.bool("a")
-    m.obj[4] += a
+    m.obj += 4 * a
     r = m.solve()
     assert r.status in {"optimum", "interrupted_sat"}
 
 
-def test_obj_bucket_repeated_add_is_additive_at_model_level():
+def test_numeric_obj_repeated_iadd_is_additive_at_model_level():
     m = Model()
     a = m.bool("a")
-    m.obj[2] += a
-    m.obj[2] += a
+    m.obj += 2 * a
+    m.obj += 2 * a
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
-    # each objective addition creates its own soft registration
-    assert len(s.soft_updates) == 2
+    assert sum(weight for _, weight in s.soft_updates) == 4
+    m.close_incremental()
+    m &= a
+    assert m.solve().cost == 4
 
 
 def test_targeted_relaxation_for_multiclause_group_uses_single_soft_penalty():
@@ -130,7 +132,7 @@ def test_targeted_relaxation_for_pbconstraint_uses_single_soft_penalty():
 def test_update_soft_weight_by_softref_updates_all_group_members():
     m = Model()
     x = m.int("x", 0, 5)
-    ref = m.obj.add_soft(x, 3)
+    ref = m.obj.add_soft(x >= 3, 3)
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
     m.obj.update_soft(ref, 9)
@@ -141,7 +143,7 @@ def test_update_soft_weight_by_softref_updates_all_group_members():
 def test_update_soft_weight_softref_reaches_every_lowered_member():
     m = Model()
     x = m.int("x", 0, 5)
-    ref = m.obj.add_soft(x, 3)
+    ref = m.obj.add_soft((x >= 2) & (x <= 4), 3)
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
     before = len(s.soft_updates)
@@ -242,23 +244,23 @@ def test_add_soft_group_keeps_group_mapping_integrity():
     assert len(r2.soft_ids) == 1
 
 
-def test_intvar_soft_weight_update_cost_soundness():
+def test_integer_cost_weight_replacement_is_sound():
     m = Model()
     x = m.int("x", 5, 10)
-    ref = m.obj.add_soft(x, 2)
+    m.obj.set(x, weight=2)
     res1 = m.solve()
     assert res1.ok
     assert res1[x] == 5
     assert res1.cost == 10
 
-    m.obj.update_soft(ref, 3)
+    m.obj.set(x, weight=3)
     res2 = m.solve()
     assert res2.ok
     assert res2[x] == 5
     assert res2.cost == 15
 
 
-def test_pbexpr_soft_weight_update_preserves_term_coefficients_soundness():
+def test_numeric_addition_preserves_term_coefficients_alongside_preferences():
     m = Model()
     x1 = m.bool("x1")
     x2 = m.bool("x2")
@@ -266,19 +268,19 @@ def test_pbexpr_soft_weight_update_preserves_term_coefficients_soundness():
     # Force selecting at least one variable.
     m &= (x1 | x2)
 
-    # Add a linear soft combination: 2 * x1 + 5 * x2 with base weight 1.
+    # Add the numeric cost 2*x1 + 5*x2 with base weight 1.
     # Relative cost ratio is 2:5 (x2 is 2.5x more expensive than x1).
-    ref = m.obj.add_soft(2 * x1 + 5 * x2, weight=1)
+    m.obj.add(2 * x1 + 5 * x2, weight=1)
 
     # Competing soft objective favoring x2=True (incurs penalty of 15 if x2 is False).
     m.obj.add_soft(x2, weight=15)
 
-    # Scale the first soft objective by updating its weight to 10.
+    # Add nine more copies of the numeric cost, retaining the preference.
     # The updated objective must represent 10 * (2*x1 + 5*x2) = 20*x1 + 50*x2.
     # - If x1=True, x2=False: obj1 penalty is 20, obj2 penalty is 15 -> total cost = 35.
     # - If x1=False, x2=True: obj1 penalty is 50, obj2 penalty is 0  -> total cost = 50.
     # Soundness requires the solver to choose x1=True, x2=False with optimal cost 35.
-    m.obj.update_soft(ref, 10)
+    m.obj.add(2 * x1 + 5 * x2, weight=9)
 
     res = m.solve()
     assert res.ok

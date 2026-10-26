@@ -23,8 +23,8 @@ The modelling API has three main layers:
 3. **Model accumulation and solving**
 
    * ``model &= ...`` for hard constraints
-   * ``model.obj[w] += ...`` for weighted soft constraints
-   * ``model.tier_obj[...] += ...`` for lexicographic (tiered) objectives
+   * ``model.obj += expression`` for weighted numeric costs
+   * ``model.tier_obj.set_lexicographic(...)`` for lexicographic (tiered) objectives
    * ``model.to_cnf()``, ``model.to_wcnf()``, ``model.solve()``
 
 Eager vs. lazy evaluation
@@ -46,10 +46,11 @@ Operator syntax is **immutable by contract** for modelling objects:
 * ``ClauseGroup &= ...`` returns a new ``ClauseGroup`` (it does not mutate).
 * ``PBExpr += ...`` returns a new ``PBExpr`` (it does not mutate).
 
-The only intended mutable sinks are:
+Model mutations are explicit, for example:
 
 * ``model &= constraint``
-* ``model.obj[w] += constraint``
+* ``model.obj += expression``
+* ``model.obj.update(term, weight=w)``
 
 Inplace Mutation APIs
 ----------------------

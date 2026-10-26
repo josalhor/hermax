@@ -21,7 +21,7 @@ def test_integer_objective_cutoffs(width, cached, binary, style):
     elif style == "set":
         m.obj = x
     else:
-        m.tier_obj[0, 1] += x
+        m.tier_obj.add(x, weight=1, tier=0)
     assert (x._binary_view is not None) == (cached or binary)
     if style == "tier":
         count = len(m.tier_obj._tiers[0]["lit_weights"])
@@ -36,7 +36,7 @@ def test_binary_objective_exact_cost_for_every_value(lb, coefficient):
     m = Model()
     x = m.int("x", lb, lb + 32)
     b = m.bool("b")
-    m.obj[2] += coefficient * x + 5 * b + 9
+    m.obj += 2 * (coefficient * x + 5 * b + 9)
     cnf = m.to_wcnf()
     assert x._binary_view is not None
     with Solver(bootstrap_with=cnf.hard) as solver:
@@ -104,6 +104,6 @@ def test_tier_binary_objective_solves_with_shifted_bound():
     m = Model()
     x = m.int("x", -7, 25)
     m &= x >= 13
-    m.tier_obj[0, 2] += x
+    m.tier_obj.add(x, weight=2, tier=0)
     result = m.solve()
     assert result.ok and result[x] == 13

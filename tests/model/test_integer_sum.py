@@ -185,7 +185,7 @@ def test_native_auxiliary_ids_avoid_bound_backend_owned_range(strategy):
     kind, calls = strategy
     m = Model()
     xs = [m.int(f"x{i}", 0, 3) for i in range(4)]
-    m.obj[1] += m.bool("soft")
+    m.obj += m.bool("soft")
     assert m.solve(incremental=True, backend="maxsat", solver=FakeIPSolver()).ok
     old_top = m._top_id()
     m._inc_state.ip_next_vid = 500

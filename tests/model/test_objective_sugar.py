@@ -55,7 +55,7 @@ def test_obj_iadd_and_bucket_semantics_are_additive():
     m = Model()
     a = m.bool("a")
     m.obj += (2 * a)
-    m.obj[3] += a
+    m.obj += 3 * ~a
     r = _solve_ok(m)
     assert r[a] is True
     assert r.cost == 2

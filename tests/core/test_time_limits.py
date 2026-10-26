@@ -266,7 +266,7 @@ def test_model_rebuild_setting_requires_boolean():
 def test_model_forwards_rebuild_setting_to_a_supplied_live_solver_instance():
     model = Model()
     x = model.bool("x")
-    model.obj[1] += x
+    model.obj += x
     solver = _FakeNativeSolver(interruptible=True, reusable=False)
 
     model.set_rebuild_on_interrupt(True)

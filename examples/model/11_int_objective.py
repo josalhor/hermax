@@ -11,9 +11,9 @@ m &= (x + y >= 8)
 m &= (x + 2 * y <= 14)
 m &= (x + use_bonus <= 6)
 
-m.obj[3] += x
-m.obj[1] += y
-m.obj[2] += ~use_bonus
+m.obj += 3 * x
+m.obj += y
+m.obj += 2 * use_bonus
 
 r = m.solve()
 

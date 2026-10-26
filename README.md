@@ -79,9 +79,9 @@ m &= x.all_different()
 m &= (x[0] + x[1] <= x[2] + 2)
 m &= (x[3] >= 2).only_if(use_bonus)
 
-# Soft objective terms
-m.obj[5] += (x[0] == 1)
-m.obj[3] += ~use_bonus
+# Prefer x[0] == 1, and charge 3 for using the bonus.
+m.obj += 5 * (x[0] != 1)
+m.obj += 3 * use_bonus
 
 r = m.solve()  # auto-routes SAT/MaxSAT based on model content
 print(r.status, r.cost)

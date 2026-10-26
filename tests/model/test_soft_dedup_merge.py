@@ -92,7 +92,7 @@ def test_add_soft_and_obj_paths_are_independent_for_duplicate_literals():
     m = Model()
     a = m.bool("a")
     m.obj.add_soft(a, 3)
-    m.obj[2] += a  # additive objective path intentionally not deduped here
+    m.obj += 2 * a  # additive objective path intentionally not deduped here
     # one from add_soft, one from obj bucket path
     assert len(m._soft) == 2
     assert sorted(w for w, _ in m._soft) == [2, 3]

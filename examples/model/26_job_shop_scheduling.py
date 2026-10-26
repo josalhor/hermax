@@ -33,7 +33,7 @@ makespan = m.upper_bound(
     name="makespan",
 )
 
-m.obj[1] += makespan
+m.obj += makespan
 
 r = m.solve()
 

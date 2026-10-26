@@ -41,6 +41,7 @@ Solving And Export
 
    modeling_export_solve
    modeling_tricks
+   modeling_objective_migration
 
 API Reference
 -------------

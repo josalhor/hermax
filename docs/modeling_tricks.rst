@@ -70,18 +70,12 @@ Pseudo Boolean (PB) Tricks
 PB Objective Tricks
 -------------------
 
-Objective lowering avoids unnecessary proxy variables.
+Add numeric costs directly with ``model.obj += w * expression``. Integer
+variables, linear expressions, and ``IntVar.piecewise(...)`` costs can be used
+without introducing another variable.
 
-* Direct ``PBExpr`` objective lowering:
-  ``model.obj[w] += pbexpr`` lowers to weighted soft unit clauses plus an
-  objective offset.
-
-* ``IntVar`` objective lowering:
-  ``model.obj[w] += x`` lowers to threshold soft units (ladder bits), linear in
-  domain width, plus an offset.
-
-* ``IntVar.piecewise(...)`` objective use:
-  minimize step costs directly without proxy integers.
+For Boolean penalties, see :ref:`boolean-objective-penalties`.
+For weight updates, see :doc:`modeling_export_solve`.
 
 Piecewise and Step Function
 ----------------------------------

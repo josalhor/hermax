@@ -379,7 +379,7 @@ def test_intvector_upper_bound_with_objective_minimization_hits_max():
     m &= (xs[0] == 2)
     m &= (xs[1] == 5)
     m &= (xs[2] == 4)
-    m.obj[1] += ubv
+    m.obj += ubv
     r = _solve_ok(m)
     assert r[ubv] == 5
 

@@ -2,7 +2,7 @@ Solve, Export, and Decode
 =========================
 
 The model layer can export PySAT formulas, decode solver models, and call
-``solve()``.
+``solve()``. For API changes in 1.3, see :doc:`modeling_objective_migration`.
 
 Export to CNF / WCNF
 --------------------
@@ -19,46 +19,23 @@ Rules:
 
 ``to_cnf()`` raises ``ValueError`` if soft clauses are present.
 
-Soft clauses
---------------------------------
+Numeric objectives
+------------------
 
-``model.obj[w] += constraint`` adds weighted soft clauses.
-
-For a unit literal ``a``:
-
-* ``model.obj[5] += a`` means pay ``5`` if ``a`` is false
-* ``model.obj[5] += ~a`` means pay ``5`` if ``a`` is true
-
-Objective replacement
--------------------------
-
-The objective has two modes:
-
-* additive mode via ``model.obj += ...`` and ``model.obj[w] += ...``
-* replacement mode via ``model.obj = expr`` (or ``model.obj.set(expr)``)
-
-Replacement mode clears the objective and installs the new objective.
-Additive mode keeps previous objective terms.
-
-Use:
+``model.obj = expression`` replaces the objective.
+``model.obj += expression`` adds to it. Both minimize numeric values;
+Boolean literals count as 0 when false and 1 when true.
 
 .. code-block:: python
 
-   m = Model()
-   a = m.bool("a")
-   b = m.bool("b")
+   x = model.int("x", 0, 5)
+   chosen = model.bool("chosen")
+   model.obj = 3 * x
+   model.obj += 5 * ~chosen   # pay 5 when chosen is false
 
-   m.obj[3] += a        # additive
-   m.obj[2] += ~b       # additive
-   m.obj = (a + 5)      # replace objective
-   m.obj.clear()        # clear the current flat objective
-
-Notes:
-
-* ``model.obj = expr`` expects a linear expression
-  (``Literal``, ``Term``, ``PBExpr``, ``IntVar``, lazy int expr)
-* for literal/clause soft constraints, use additive APIs
-  (``obj +=``, ``obj[w] +=``, or ``obj.add_soft(...)``)
+``obj.clear()`` removes the objective. ``obj.set(expression, weight=w)``
+replaces it with ``w * expression``. Negative costs are supported.
+For compound Boolean conditions, see :ref:`boolean-objective-penalties`.
 
 Lexicographic objective API
 ---------------------------
@@ -66,24 +43,26 @@ Lexicographic objective API
 For strict priority optimization (tier 0 first, then tier 1, ...), use
 ``model.tier_obj``.
 
-Two declaration styles are supported:
+Set all priorities at once, or add costs to individual tiers:
 
-* declarative:
+* all priorities:
 
   .. code-block:: python
 
      model.tier_obj.set_lexicographic(primary_cost, secondary_cost)
 
-* dynamic:
+* individual additions:
 
   .. code-block:: python
 
-     model.tier_obj[0, 5] += primary_term
-     model.tier_obj[1, 1] += secondary_term
+     model.tier_obj.add(primary_term, weight=5, tier=0)
+     model.tier_obj.add(secondary_term, tier=1)
+
+Lower tier indices have higher priority. To change an existing term, use
+``model.tier_obj.update(term, weight=w)``.
 
 Rules:
 
-* lower tier index means higher priority
 * tiers are solved in lexicographic order
 * ``model.obj`` and ``model.tier_obj`` are mutually exclusive in one model state
 * use ``model.tier_obj.clear()`` to drop tier objectives
@@ -115,30 +94,10 @@ Example:
    a = m.bool("a")
    b = m.bool("b")
 
-   m.tier_obj[0, 1] += a      # tier 0
-   m.tier_obj[1, 10] += ~b    # tier 1
+   m.tier_obj.set_lexicographic(a, 10 * ~b)
 
    r = m.solve(lex_strategy="incremental")
    print(r.tier_costs, r.cost)
-
-Soft groups and PB constraints
-------------------------------
-
-If the soft object compiles to multiple clauses (for example a PB constraint),
-the model uses **targeted relaxation**:
-
-* one weighted soft penalty literal
-* plus the compiled clause network conditional as hard constraints
-
-This preserves penalty per logical constraint.
-
-Integer objective terms
-------------------------------
-
-``obj[w] += int_var`` is supported and lowered to weighted soft unit clauses on
-the ladder bits (plus a constant objective offset for the lower bound).
-
-This is restricted to ``int_var.lb >= 0``.
 
 Decode solver models
 --------------------
@@ -232,54 +191,34 @@ Examples:
    b = m.bool("b")
    r = m.solve(assumptions=[a.id, ~b, 1 * a, -1 * b])
 
-Weight Updates
--------------------------------
+Weight updates
+--------------
 
-``Model.obj.add_soft(...)`` returns a :class:`hermax.model.SoftRef`:
-
-* ``group_id``: logical soft group
-* ``soft_ids``: concrete lowered soft clause
-
-Use ``m.obj.update_soft(ref, w)`` with the returned ``SoftRef``.
-
-Example:
+``obj.add()`` returns a handle for an objective term. Use ``obj.update()`` to
+change its weight:
 
 .. code-block:: python
 
-   x = m.int("x", 0, 5)
-   ref = m.obj.add_soft(x, 3)   # may lower into many soft clauses
-   m.obj.update_soft(ref, 7)
+   x = model.int("x", 0, 5)
+   term = model.obj.add(x, weight=3)
+   model.obj.update(term, weight=7)
 
-Weight updates use positive weights in the public API.
+Only that term changes. Weights are non-negative; zero disables the term.
+Clearing or replacing the objective invalidates its handles.
 
 Floating objective weights
 --------------------------
 
-Floating weights are supported for objective APIs when objective precision is
-enabled:
+Set decimal precision before adding numeric costs:
 
 .. code-block:: python
 
-   m = Model()
-   x = m.bool("x")
-   m.set_objective_precision(decimals=2)
+   model.set_objective_precision(decimals=2)
+   model.obj = 1.25 * x
 
-   m.obj = 3.5 * x
-   m.obj[1.25] += ~x
-   ref = m.obj.add_soft(x, 2.75)
-   m.obj.update_soft(ref, 4.10)
-
-Rules:
-
-* precision is disabled by default
-* with precision disabled, objective weights must be integer
-  (floats such as ``1.0`` are rejected)
-* with precision enabled, soft/objective float weights are rounded to the
-  configured decimal precision
-* changing precision re-rounds existing objective soft weights from their
-  original raw values
-
-Float coefficients are not allowed in PB/Card constraints.
+Weights are rounded to the configured precision. Without this setting, weights
+must be integers. Clear the objective before changing precision.
+PB/Card constraints still require integer coefficients and constants.
 
 Hermax solver integration
 -------------------------
@@ -358,8 +297,8 @@ Example
    a = m.bool("a")
    b = m.bool("b")
    m &= (a | b)
-   m.obj[2] += ~a
-   m.obj[1] += ~b
+   m.obj += 2 * a
+   m.obj += b
 
    r = m.solve()
    print(r.status, r.cost)

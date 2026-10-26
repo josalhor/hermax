@@ -12,7 +12,7 @@ m &= x.distance_at_most(y, 2)
 
 score_x = sum((20 - abs(k - 16)) * (x == k) for k in range(31))
 score_y = sum((20 - abs(k - 11)) * (y == k) for k in range(31))
-m.obj[1] += -(score_x + score_y)
+m.obj += -(score_x + score_y)
 
 r = m.solve()
 assert r.ok

@@ -314,12 +314,9 @@ You can add an integer variable to the weighted objective:
 .. code-block:: python
 
    x = model.int("x", lb=0, ub=10)
-   model.obj[3] += x
+   model.obj += 3 * x
 
-This lowers to ``O(n)`` soft clauses using ladder bits (one weighted soft unit
-per threshold bit) and is equivalent to minimizing the integer value.
-
-``obj[w] += int_var`` requires ``int_var.lb >= 0``.
+This minimizes three times the integer value. Negative domains are supported.
 
 ``IntVar`` scaling (multiplication)
 ------------------------------------

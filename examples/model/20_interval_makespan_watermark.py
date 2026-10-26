@@ -14,7 +14,7 @@ m &= a.ends_before(b)
 
 makespan = m.max([a.end, b.end, c.end], name="makespan")
 
-m.obj[1] += makespan
+m.obj += makespan
 
 r = m.solve()
 assert r.ok

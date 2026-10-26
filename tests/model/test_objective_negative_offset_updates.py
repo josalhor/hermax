@@ -156,11 +156,11 @@ def test_disallow_negative_offset_policy_allows_non_negative_objective():
     assert r.cost == 2
 
 
-def test_obj_clear_after_intvar_bucket_soft_clears_constant_soundness():
+def test_obj_clear_after_weighted_intvar_clears_constant_soundness():
     m = Model()
     x = m.int("x", lb=10, ub=20)
-    # Add x with weight 2 via objective bucket syntax: m.obj[weight] += x
-    m.obj[2] += x
+    # Minimize twice the integer's value, including its lower-bound offset.
+    m.obj += 2 * x
     r1 = _solve_ok(m)
     assert r1[x] == 10
     assert r1.cost == 20

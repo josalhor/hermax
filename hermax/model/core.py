@@ -2,9 +2,9 @@ from __future__ import annotations
 import math
 import sys
 import time
+import warnings
 from numbers import Integral
 from contextlib import contextmanager
-from dataclasses import dataclass
 from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
 from pysat.formula import CNF, WCNF
@@ -32,7 +32,7 @@ from .encoders import _DeferredPBEntry, _EncoderDispatch
 from .encoders import _canonical_pb_cache_key
 from ._int_thresholds import ThresholdOwners
 from hermax.internal.operation_cache import OperationCache, cached_operation
-from ._integer_objective import lower_integer_objective
+from ._objective import ObjectiveTerm, prepare_objective, normalize_objective, normalize_prepared_objective, validate_numeric_objective, validate_soft_constraint
 from hermax.internal.kmerge import DEFAULT_KMERGE_CONFIG, KMergeConfig
 
 
@@ -43,33 +43,25 @@ def _realize_integer_source(source):
     return source._realize() if isinstance(source, _LazyIntExpr) else source
 
 
-@dataclass
-class _SoftGroupUpdateMeta:
-    """Model-owned lowering data needed to rescale one logical soft group."""
-
-    base_weight: int
-    contributions: dict[int, int]
-    offset_contribution: int
-
-
 class _ObjectiveProxy:
-    __slots__ = ("_model", "_lit_to_sid", "_lit_weights", "_offset")
+    __slots__ = ("_model", "_lit_to_sid", "_lit_weights", "_offset", "_generation")
 
     def __init__(self, model: "Model"):
         self._model = model
         self._lit_to_sid: dict[int, int] = {}
         self._lit_weights: dict[int, int] = {}
         self._offset: int = 0
+        self._generation = 0
 
-    def __getitem__(self, weight: int) -> "_WeightBucket":
-        self._model._ensure_no_tier_objective_active()
-        scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=(weight == 0))
-        return _WeightBucket(self._model, scaled, raw)
+    def __getitem__(self, weight):
+        raise TypeError(
+            "obj[w] is no longer supported because its old Boolean and numeric meanings differed. "
+            "Use obj += w * expression or obj.add(expression, weight=w) to minimize a cost. "
+            "To preserve an old literal preference, minimize w * ~literal."
+        )
 
-    def __setitem__(self, weight: int, value) -> None:
-        # Required for Python's `obj[key] += x` protocol. The mutation is already
-        # performed by WeightBucket.__iadd__; this assignment is a no-op.
-        return None
+    def __setitem__(self, weight, value):
+        self[weight]
 
     def _disable_all_active_softs(self) -> None:
         m = self._model
@@ -96,66 +88,8 @@ class _ObjectiveProxy:
         self._lit_to_sid[int(dim)] = int(sid)
         return int(sid)
 
-    def _normalize_expr(self, constraint, *, weight: int) -> tuple[dict[int, int], int]:
-        if isinstance(constraint, PBConstraint):
-            raise TypeError("Objective replacement expects a linear expression (Literal/Term/PBExpr/IntVar).")
-        if isinstance(constraint, _LazyIntExpr):
-            constraint = constraint._realize()
-        try:
-            expr = PBExpr.from_item(constraint)
-        except TypeError as exc:
-            raise TypeError("Objective replacement expects a linear expression.") from exc
-        if expr._model is not None and expr._model is not self._model:
-            raise ValueError("Variables belong to different models.")
-        expr = lower_integer_objective(expr, self._model)
-        lit_weights: dict[int, int] = {}
-        offset_raw: int | float = weight * int(expr.constant)
-        for t in expr.terms:
-            coeff_raw = t.coefficient
-            coeff_abs: int | float
-            if isinstance(coeff_raw, float):
-                if abs(coeff_raw) <= FLOAT_ZERO_TOL:
-                    continue
-                coeff_abs = abs(coeff_raw)
-            else:
-                if coeff_raw == 0:
-                    continue
-                coeff_abs = abs(int(coeff_raw))
-
-            if coeff_raw > 0:
-                lit = ~t.literal
-                term_raw: int | float = float(weight) * float(coeff_abs) if isinstance(coeff_abs, float) else weight * int(coeff_abs)
-            else:
-                lit = t.literal
-                term_raw = float(weight) * float(coeff_abs) if isinstance(coeff_abs, float) else weight * int(coeff_abs)
-                offset_raw -= term_raw
-            w, _rw = self._model._coerce_soft_weight(term_raw, allow_zero=False)
-            dim = self._model._lit_to_dimacs(lit)
-            lit_weights[dim] = lit_weights.get(dim, 0) + int(w)
-        # Policy: by default negative objective offsets are allowed and tracked
-        # internally. Teams can flip this behavior on a model instance via
-        # ``model.set_objective_offset_policy(allow_negative=False)``.
-        if float(offset_raw) < 0 and not bool(self._model._allow_negative_objective_offsets):
-            raise ValueError("Negative objective offsets are not supported by current model policy.")
-
-        # Route positive constants to a native always-violated soft unit on
-        # __false so solver-reported cost includes the offset directly.
-        offset = 0
-        if float(offset_raw) > FLOAT_ZERO_TOL:
-            pos_w = int(offset_raw) if isinstance(offset_raw, int) else float(offset_raw)
-            pos_off, _ = self._model._coerce_soft_weight(pos_w, allow_zero=False)
-            false_lit = self._model._get_bool_constant_literal(False)
-            dim_false = self._model._lit_to_dimacs(false_lit)
-            lit_weights[dim_false] = lit_weights.get(dim_false, 0) + int(pos_off)
-        elif float(offset_raw) < -FLOAT_ZERO_TOL:
-            neg_abs = -offset_raw
-            neg_w = int(neg_abs) if isinstance(neg_abs, int) else float(neg_abs)
-            neg_off, _ = self._model._coerce_soft_weight(neg_w, allow_zero=False)
-            offset = -int(neg_off)
-
-        # Drop any canceled entries.
-        lit_weights = {l: w for l, w in lit_weights.items() if int(w) != 0}
-        return lit_weights, int(offset)
+    def _normalize_expr(self, constraint, *, weight):
+        return normalize_objective(self._model, constraint, weight=weight)
 
     def _current_lit_weights(self) -> dict[int, int]:
         out: dict[int, int] = {}
@@ -248,307 +182,269 @@ class _ObjectiveProxy:
         return self
 
     def set(self, constraint, *, weight: int = 1):
-        """Replace expression-managed objective terms with one expression."""
+        """Replace the entire objective with a numeric cost expression."""
         self._model._ensure_no_tier_objective_active()
-        _scaled_w, raw_w = self._model._coerce_soft_weight(weight, allow_zero=False)
-        norm_weight = raw_w if self._model._objective_precision_decimals is not None else int(raw_w)
-        new_lit_weights, new_offset = self._normalize_expr(constraint, weight=norm_weight)
-        return self._apply_lit_weights(new_lit_weights, new_offset)
+        validate_numeric_objective(self._model, constraint)
+        _scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=True)
+        norm_weight = raw if self._model._objective_precision_decimals is not None else _scaled
+        weights, offset = self._normalize_expr(constraint, weight=norm_weight) if norm_weight else ({}, 0)
+        self.clear()
+        return self._apply_lit_weights(weights, offset)
 
-    def add(self, constraint, *, weight: int = 1):
-        """Add one linear expression to expression-managed objective terms."""
+    def add(self, expression, *, weight=1) -> ObjectiveTerm:
+        """Add a numeric cost and return its handle for later weight updates."""
         self._model._ensure_no_tier_objective_active()
-        _scaled_w, raw_w = self._model._coerce_soft_weight(weight, allow_zero=False)
-        norm_weight = raw_w if self._model._objective_precision_decimals is not None else int(raw_w)
-        add_map, add_offset = self._normalize_expr(constraint, weight=norm_weight)
-        return self._add_lit_weights(add_map, int(add_offset))
+        validate_numeric_objective(self._model, expression)
+        scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=True)
+        value = raw if self._model._objective_precision_decimals is not None else scaled
+        snapshot = prepare_objective(self._model, expression, lower=bool(value))
+        weights, offset = normalize_prepared_objective(self._model, snapshot, weight=value) if value else ({}, 0)
+        self._add_lit_weights(weights, offset)
+        return ObjectiveTerm(self, snapshot, value, weights, offset)
+
+    def update(self, term, *, weight) -> None:
+        """Change the weight of one contribution returned by add()."""
+        if isinstance(term, SoftRef):
+            self._model._ensure_no_tier_objective_active()
+            self._reweight_soft(term, weight)
+            return
+        if not isinstance(term, ObjectiveTerm):
+            raise TypeError("term must be a handle returned by obj.add() or add_soft().")
+        if term._objective is not self:
+            raise ValueError("The handle belongs to a different objective.")
+        term._check_active()
+        self._model._ensure_no_tier_objective_active()
+        self._reweight_term(term, weight)
+
+    def _reweight_term(self, term, weight):
+        m = self._model
+        scaled, raw = m._coerce_soft_weight(weight, allow_zero=True)
+        value = raw if m._objective_precision_decimals is not None else scaled
+        snapshot = prepare_objective(self._model, term._expression, lower=bool(value))
+        weights, offset = normalize_prepared_objective(self._model, snapshot, weight=value) if value else ({}, 0)
+        self._replace_contribution(term._weights, weights)
+        delta = offset - term._offset
+        m._objective_constant += delta
+        self._offset += delta
+        term._expression = snapshot
+        term._weight, term._weights, term._offset = value, weights, offset
+
+    def _replace_contribution(self, old_weights, new_weights):
+        m = self._model
+        hard0, soft0 = len(m._hard), len(m._soft)
+        previous = {}
+        for dim in old_weights.keys() | new_weights.keys():
+            sid = self._lit_to_sid.get(dim)
+            weight = m._soft[m._soft_id_to_index[sid]][0] if sid is not None else 0
+            previous[dim] = sid, self._lit_weights.get(dim), weight
+        try:
+            for dim, (sid, _cached, current) in previous.items():
+                delta = new_weights.get(dim, 0) - old_weights.get(dim, 0)
+                if not delta:
+                    continue
+                if sid is None:
+                    self._ensure_expr_soft_sid(dim, delta)
+                else:
+                    m._set_soft_weight_internal(sid, current + delta, allow_zero=True, allow_when_sat=True)
+                self._lit_weights[dim] = current + delta
+            m._inc_state.route_deltas(hard0, soft0)
+        except Exception:
+            # A backend can reject a later update after accepting earlier ones.
+            # Detach it and restore this contribution before allowing another solve.
+            m.close_incremental()
+            for sid in m._soft_ids[soft0:]:
+                m._set_soft_weight_internal(sid, 0, allow_zero=True)
+            for dim, (sid, cached, weight) in previous.items():
+                if sid is None:
+                    self._lit_to_sid.pop(dim, None)
+                else:
+                    self._lit_to_sid[dim] = sid
+                    m._set_soft_weight_internal(sid, weight, allow_zero=True)
+                if cached is None:
+                    self._lit_weights.pop(dim, None)
+                else:
+                    self._lit_weights[dim] = cached
+            raise
 
     def add_soft(self, constraint, weight: int):
-        """Add one managed soft objective term and return a grouped handle."""
-        self._model._ensure_no_tier_objective_active()
-        scaled_w, raw_w = self._model._coerce_soft_weight(weight, allow_zero=False)
-        m = self._model
-        before_weights = {int(sid): int(m._soft[m._soft_id_to_index[int(sid)]][0]) for sid in m._soft_ids}
-        before_offset = int(m._objective_constant)
-        gid, sids = m._add_soft(int(scaled_w), constraint, dedup=bool(m._soft_dedup_enabled), raw_weight=float(raw_w))
-        contributions = {
-            int(sid): int(m._soft[m._soft_id_to_index[int(sid)]][0]) - before_weights.get(int(sid), 0)
-            for sid in sids
-        }
-        m._soft_group_update_meta[int(gid)] = _SoftGroupUpdateMeta(
-            base_weight=int(scaled_w),
-            contributions=contributions,
-            offset_contribution=int(m._objective_constant) - before_offset,
+        """Deprecated: prefer a condition to hold with its original polarity."""
+        warnings.warn(
+            "add_soft() is deprecated. For a literal preference use obj.add(~literal, weight=w); "
+            "for a compound condition, reify it with iff() and minimize the negated indicator.",
+            FutureWarning, stacklevel=2,
         )
-        return SoftRef(gid, sids)
+        return self._add_preference(constraint, weight)
 
-    def update_soft(self, target, new_weight: int) -> None:
-        """Update the weight of one logical soft object referenced by ``SoftRef``."""
+    def _add_preference(self, constraint, weight):
         self._model._ensure_no_tier_objective_active()
-        scaled_w, raw_w = self._model._coerce_soft_weight(new_weight, allow_zero=False)
-        if isinstance(target, SoftRef):
-            ids = list(target.soft_ids)
-        else:
-            raise TypeError("target must be a SoftRef returned by obj.add_soft().")
-        if not ids:
-            return
-        meta = self._model._soft_group_update_meta.get(int(target.group_id))
-        if meta is None:
-            raise ValueError("SoftRef does not belong to an updateable soft group.")
-        base_weight = int(meta.base_weight)
-        contributions = meta.contributions
-        if base_weight <= 0:
-            raise ValueError("SoftRef has no updateable base weight.")
-        for sid in ids:
-            old_contribution = int(contributions.get(int(sid), 0))
-            multiplier = old_contribution // base_weight
-            new_contribution = multiplier * int(scaled_w)
-            idx = self._model._soft_id_to_index[int(sid)]
-            current_weight, _ = self._model._soft[idx]
-            self._model._set_soft_weight_internal(
-                int(sid), int(current_weight) - old_contribution + new_contribution,
-                allow_zero=False, allow_when_sat=False,
-            )
-            contributions[int(sid)] = new_contribution
-            self._model._soft_raw_weight_by_id[int(sid)] = float(raw_w) * float(multiplier)
-        old_offset = int(meta.offset_contribution)
-        offset_multiplier = old_offset // base_weight
-        new_offset = offset_multiplier * int(scaled_w)
-        self._model._objective_constant += new_offset - old_offset
-        meta.offset_contribution = new_offset
-        meta.base_weight = int(scaled_w)
+        validate_soft_constraint(self._model, constraint)
+        scaled_w, raw_w = self._model._coerce_soft_weight(weight, allow_zero=True)
+        m = self._model
+        if not scaled_w:
+            gid = m._next_soft_group_id
+            m._next_soft_group_id += 1
+            m._soft_group_to_ids[gid] = []
+            return SoftRef(gid, [], objective=self, weight=raw_w, constraint=constraint)
+        gid, sids = m._add_soft(int(scaled_w), constraint, dedup=bool(m._soft_dedup_enabled), raw_weight=float(raw_w))
+        return SoftRef(gid, sids, objective=self,
+                       weight=raw_w if m._objective_precision_decimals is not None else scaled_w,
+                       scaled_weight=scaled_w, constraint=constraint)
+
+    def update_soft(self, target, new_weight):
+        """Deprecated: use obj.update(ref, weight=new_weight)."""
+        warnings.warn("update_soft() is deprecated; use obj.update(ref, weight=new_weight).",
+                      FutureWarning, stacklevel=2)
+        self._model._coerce_soft_weight(new_weight, allow_zero=False)
+        self._reweight_soft(target, new_weight)
+
+    def _reweight_soft(self, target, new_weight):
+        if not isinstance(target, SoftRef):
+            raise TypeError("target must be a SoftRef returned by add_soft().")
+        if target._objective is not self:
+            raise ValueError("SoftRef belongs to a different objective.")
+        target._check_active()
+        scaled, raw = self._model._coerce_soft_weight(new_weight, allow_zero=True)
+        m = self._model
+        if not target.soft_ids and scaled and not target._weight:
+            fresh = self._add_preference(target._constraint, new_weight)
+            target.group_id, target.soft_ids = fresh.group_id, fresh.soft_ids
+            target._weight, target._scaled_weight = fresh._weight, fresh._scaled_weight
+        for sid in target.soft_ids:
+            current = m._soft[m._soft_id_to_index[sid]][0]
+            m._set_soft_weight_internal(sid, current - target._scaled_weight + scaled,
+                                       allow_zero=True, allow_when_sat=False)
+            m._soft_raw_weight_by_id[sid] += raw - target._weight
+        target._weight = raw if m._objective_precision_decimals is not None else scaled
+        target._scaled_weight = scaled
 
     def clear(self):
-        """Disable all expression-managed objective terms."""
+        """Clear all numeric costs and soft preferences."""
         self._disable_all_active_softs()
         self._reset_expression_state()
         self._model._objective_constant = 0
+        self._generation += 1
         return self
 
     def replace_with(self, constraint):
-        """Replace the currently active objective with ``constraint``."""
-        self._model._ensure_no_tier_objective_active()
-        new_lit_weights, new_offset = self._normalize_expr(constraint, weight=1)
-        # Full objective replacement:
-        # disable all currently active soft clauses first, then install the new
-        # expression-managed objective.
-        self._disable_all_active_softs()
-        self._reset_expression_state()
-        return self._apply_lit_weights(new_lit_weights, new_offset)
+        """Replace the entire objective with a numeric cost expression."""
+        return self.set(constraint)
 
     def __iadd__(self, constraint):
-        """Add a weighted objective term directly with implicit weight 1.
-
-        Examples:
-            ``model.obj += (3 * a + 2 * b)``
-            ``model.obj += sum(weights[i] * lits[i] for i in range(n))``
-        """
-        self._model._ensure_no_tier_objective_active()
-        if isinstance(
-            constraint,
-            (
-                Literal,
-                IntVar,
-                PBExpr,
-                Term,
-                _LazyIntExpr,
-                int,  # includes sum(...) seed = 0 and pure offsets
-            ),
-        ) and not isinstance(constraint, bool):
-            return self.add(constraint, weight=1)
-        self._model._add_soft(1, constraint, raw_weight=1.0)
-        return self
-
-
-class _WeightBucket:
-    __slots__ = ("_model", "_weight", "_raw_weight")
-
-    def __init__(self, model: "Model", weight: int, raw_weight: float):
-        self._model = model
-        self._weight = weight
-        self._raw_weight = raw_weight
-
-    def __iadd__(self, constraint):
-        self._model._ensure_no_tier_objective_active()
-        if self._weight == 0:
-            if not isinstance(constraint, (Literal, IntVar, PBExpr, PBConstraint,
-                                           Term, Clause, ClauseGroup, _LazyIntExpr, int)):
-                raise TypeError("Unsupported zero-weight objective target.")
-            owner = constraint.literal._model if isinstance(constraint, Term) else getattr(constraint, "_model", None)
-            if owner is not None and owner is not self._model:
-                raise ValueError("Variables belong to different models.")
-            return self
-        if isinstance(
-            constraint,
-            (
-                PBExpr,
-                Term,
-                _LazyIntExpr,
-                int,
-            ),
-        ) and not isinstance(constraint, bool):
-            weight = self._raw_weight if self._model._objective_precision_decimals is not None else self._weight
-            self._model.obj.add(constraint, weight=weight)
-        else:
-            self._model._add_soft(self._weight, constraint, raw_weight=self._raw_weight)
-        return self
-
-
-class _TierWeightBucket:
-    __slots__ = ("_proxy", "_tier", "_weight", "_raw_weight")
-
-    def __init__(self, proxy: "_TierObjectiveProxy", tier: int, weight: int, raw_weight: float):
-        self._proxy = proxy
-        self._tier = int(tier)
-        self._weight = int(weight)
-        self._raw_weight = float(raw_weight)
-
-    def __iadd__(self, constraint):
-        self._proxy._add_to_tier(self._tier, self._weight, self._raw_weight, constraint)
+        """Add a numeric cost expression with weight one."""
+        self.add(constraint)
         return self
 
 
 class _TierObjectiveProxy:
-    __slots__ = ("_model", "_tiers")
+    __slots__ = ("_model", "_tiers", "_generation")
 
     def __init__(self, model: "Model"):
         self._model = model
         # tier -> {"lit_weights": dict[dimacs, int], "offset": int}
         self._tiers: dict[int, dict[str, object]] = {}
+        self._generation = 0
 
-    def _normalize_expr(self, constraint, *, weight: int) -> tuple[dict[int, int], int]:
-        if isinstance(constraint, PBConstraint):
-            raise TypeError("Tier objective expects a linear expression (Literal/Term/PBExpr/IntVar) or Clause/ClauseGroup.")
-        if isinstance(constraint, _LazyIntExpr):
-            constraint = constraint._realize()
-        try:
-            expr = PBExpr.from_item(constraint)
-        except TypeError as exc:
-            raise TypeError("Tier objective expects a linear expression.") from exc
-        if expr._model is not None and expr._model is not self._model:
-            raise ValueError("Variables belong to different models.")
-        expr = lower_integer_objective(expr, self._model)
-        lit_weights: dict[int, int] = {}
-        offset_raw: int | float = int(weight) * int(expr.constant)
-        for t in expr.terms:
-            coeff_raw = t.coefficient
-            if isinstance(coeff_raw, float):
-                if abs(coeff_raw) <= FLOAT_ZERO_TOL:
-                    continue
-                coeff_abs = abs(coeff_raw)
-            else:
-                if coeff_raw == 0:
-                    continue
-                coeff_abs = abs(int(coeff_raw))
-            if coeff_raw > 0:
-                lit = ~t.literal
-                term_raw: int | float = float(weight) * float(coeff_abs) if isinstance(coeff_abs, float) else int(weight) * int(coeff_abs)
-            else:
-                lit = t.literal
-                term_raw = float(weight) * float(coeff_abs) if isinstance(coeff_abs, float) else int(weight) * int(coeff_abs)
-                offset_raw -= term_raw
-            w, _ = self._model._coerce_soft_weight(term_raw, allow_zero=False)
-            dim = self._model._lit_to_dimacs(lit)
-            lit_weights[dim] = lit_weights.get(dim, 0) + int(w)
-
-        if float(offset_raw) < 0 and not bool(self._model._allow_negative_objective_offsets):
-            raise ValueError("Negative objective offsets are not supported by current model policy.")
-
-        offset = 0
-        if float(offset_raw) > FLOAT_ZERO_TOL:
-            pos_w = int(offset_raw) if isinstance(offset_raw, int) else float(offset_raw)
-            pos_off, _ = self._model._coerce_soft_weight(pos_w, allow_zero=False)
-            false_lit = self._model._get_bool_constant_literal(False)
-            dim_false = self._model._lit_to_dimacs(false_lit)
-            lit_weights[dim_false] = lit_weights.get(dim_false, 0) + int(pos_off)
-        elif float(offset_raw) < -FLOAT_ZERO_TOL:
-            neg_abs = -offset_raw
-            neg_w = int(neg_abs) if isinstance(neg_abs, int) else float(neg_abs)
-            neg_off, _ = self._model._coerce_soft_weight(neg_w, allow_zero=False)
-            offset = -int(neg_off)
-
-        lit_weights = {l: int(w) for l, w in lit_weights.items() if int(w) != 0}
-        return lit_weights, int(offset)
+    def _normalize_expr(self, constraint, *, weight):
+        return normalize_objective(self._model, constraint, weight=weight)
 
     def _ensure_tier(self, tier: int) -> dict[str, object]:
-        if int(tier) < 0:
+        if isinstance(tier, bool) or not isinstance(tier, int):
+            raise TypeError("tier index must be an integer.")
+        if tier < 0:
             raise ValueError("tier index must be a non-negative integer.")
         return self._tiers.setdefault(int(tier), {"lit_weights": {}, "offset": 0})
 
     def _check_exclusive(self) -> None:
         self._model._ensure_no_flat_objective_active()
 
-    def _add_to_tier(self, tier: int, weight: int, raw_weight: float, constraint) -> None:
-        del raw_weight  # kept for API symmetry with objective bucket.
+    def add(self, expression, *, weight=1, tier=0) -> ObjectiveTerm:
+        """Add a numeric cost to one tier and return its weight handle."""
         self._check_exclusive()
-        if isinstance(constraint, Literal) and constraint._model is not self._model:
-            raise ValueError("Variables belong to different models.")
-        if isinstance(constraint, (Clause, ClauseGroup)) and constraint._model is not self._model:
-            raise ValueError("Variables belong to different models.")
-        if isinstance(constraint, PBConstraint):
-            raise TypeError("Tier objective does not accept PBConstraint directly; use .clauses() or a linear expression.")
-        entry = self._ensure_tier(int(tier))
-        lit_weights = entry["lit_weights"]  # type: ignore[assignment]
-        assert isinstance(lit_weights, dict)
-
-        if isinstance(constraint, (Literal, Clause, ClauseGroup, bool)):
-            group = self._model._as_clausegroup(constraint)
-            if group.is_empty():
-                return
-            c = group.single_clause_or_none()
-            if c is not None:
-                if len(c) == 0:
-                    raise TypeError("Tier objective does not support empty soft clauses.")
-                if len(c) == 1:
-                    dim = int(c[0])
-                else:
-                    r = self._model.bool()
-                    self._model &= ClauseGroup(self._model, [c]).only_if(~r)
-                    dim = self._model._lit_to_dimacs(~r)
-                lit_weights[int(dim)] = int(lit_weights.get(int(dim), 0)) + int(weight)
-                return
-            r = self._model.bool()
-            self._model &= group.only_if(~r)
-            dim = self._model._lit_to_dimacs(~r)
-            lit_weights[int(dim)] = int(lit_weights.get(int(dim), 0)) + int(weight)
-            return
-
-        add_map, add_off = self._normalize_expr(constraint, weight=int(weight))
-        for dim, w in add_map.items():
-            lit_weights[int(dim)] = int(lit_weights.get(int(dim), 0)) + int(w)
-        entry["offset"] = int(entry.get("offset", 0)) + int(add_off)
-
-    def __getitem__(self, key) -> "_TierWeightBucket":
-        self._check_exclusive()
-        if not isinstance(key, tuple) or len(key) != 2:
-            raise TypeError("tier_obj expects indexing as tier_obj[tier_index, weight].")
-        tier, weight = key
         if isinstance(tier, bool) or not isinstance(tier, int):
             raise TypeError("tier index must be an integer.")
-        if int(tier) < 0:
+        if tier < 0:
             raise ValueError("tier index must be a non-negative integer.")
-        scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=False)
-        return _TierWeightBucket(self, int(tier), int(scaled), float(raw))
+        validate_numeric_objective(self._model, expression)
+        scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=True)
+        value = raw if self._model._objective_precision_decimals is not None else scaled
+        snapshot = prepare_objective(self._model, expression, lower=bool(value))
+        weights, offset = normalize_prepared_objective(self._model, snapshot, weight=value) if value else ({}, 0)
+        if not value:
+            return ObjectiveTerm(self, snapshot, value, weights, offset, tier=tier)
+        entry = self._ensure_tier(tier)
+        for dim, amount in weights.items():
+            entry["lit_weights"][dim] = entry["lit_weights"].get(dim, 0) + amount
+        entry["offset"] += offset
+        return ObjectiveTerm(self, snapshot, value, weights, offset, tier=tier)
 
-    def __setitem__(self, key, value) -> None:
-        # No-op for Python's obj[key] += protocol.
-        del key, value
-        return None
+    def update(self, term, *, weight) -> None:
+        """Change the weight of one contribution returned by add()."""
+        if not isinstance(term, ObjectiveTerm):
+            raise TypeError("term must be a handle returned by tier_obj.add().")
+        if term._objective is not self:
+            raise ValueError("The handle belongs to a different objective.")
+        term._check_active()
+        self._check_exclusive()
+        self._reweight_term(term, weight)
+
+    def _reweight_term(self, term, weight):
+        scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=True)
+        value = raw if self._model._objective_precision_decimals is not None else scaled
+        snapshot = prepare_objective(self._model, term._expression, lower=bool(value))
+        weights, offset = normalize_prepared_objective(self._model, snapshot, weight=value) if value else ({}, 0)
+        entry = self._ensure_tier(term._tier)
+        for dim in term._weights.keys() | weights.keys():
+            entry["lit_weights"][dim] = (entry["lit_weights"].get(dim, 0)
+                                        + weights.get(dim, 0) - term._weights.get(dim, 0))
+        entry["offset"] += offset - term._offset
+        term._expression = snapshot
+        term._weight, term._weights, term._offset = value, weights, offset
+
+    def add_soft(self, constraint, weight=1, *, tier=0):
+        """Deprecated: reify the condition and add its negated indicator as a cost."""
+        warnings.warn("add_soft() is deprecated; use tier_obj.add(~indicator, weight=w, tier=t).",
+                      FutureWarning, stacklevel=2)
+        self._check_exclusive()
+        validate_soft_constraint(self._model, constraint)
+        # Validate all arguments before compiling the condition.
+        self._model._coerce_soft_weight(weight, allow_zero=True)
+        if isinstance(tier, bool) or not isinstance(tier, int):
+            raise TypeError("tier index must be an integer.")
+        if tier < 0:
+            raise ValueError("tier index must be a non-negative integer.")
+        group = self._model._as_clausegroup(constraint)
+        if group.is_empty():
+            return self.add(0, weight=weight, tier=tier)
+        self._model._ensure_deferred_defs_in_group(group)
+        clause = group.single_clause_or_none()
+        if clause is not None and not clause:
+            return self.add(1, weight=weight, tier=tier)
+        if clause is not None and len(clause) == 1:
+            penalty = ~self._model._dimacs_to_lit(clause[0])
+        else:
+            penalty = self._model.bool()
+            self._model &= group.only_if(~penalty)
+        return self.add(penalty, weight=weight, tier=tier)
+
+    def __getitem__(self, key):
+        raise TypeError("Weighted tier_obj indexing is no longer supported. "
+                        "Use tier_obj.add(expression, weight=w, tier=t) or set_lexicographic().")
+
+    def __setitem__(self, key, value):
+        self[key]
 
     def set_lexicographic(self, *expressions):
+        """Replace all tiers with numeric costs, highest priority first."""
         self._check_exclusive()
-        for expr in expressions:
-            if isinstance(expr, (Literal, Clause, ClauseGroup)) and expr._model is not self._model:
-                raise ValueError("Variables belong to different models.")
-            elif not isinstance(expr, bool):
-                self._normalize_expr(expr, weight=1)
+        normalized = [self._normalize_expr(expr, weight=1) for expr in expressions]
         self.clear()
-        for i, expr in enumerate(expressions):
-            self._add_to_tier(int(i), 1, 1.0, expr)
+        for tier, (weights, offset) in enumerate(normalized):
+            self._tiers[tier] = {"lit_weights": weights, "offset": offset}
         return self
 
     def clear(self):
         self._tiers.clear()
+        self._generation += 1
         return self
 
     def is_active(self) -> bool:
@@ -570,8 +466,7 @@ class _TierObjectiveProxy:
             if not isinstance(lw_raw, dict):
                 continue
             lw = {int(k): int(v) for k, v in lw_raw.items() if int(v) > 0}
-            if lw or off != 0:
-                out.append((int(tier), lw, off))
+            out.append((int(tier), lw, off))
         return out
 
 
@@ -615,11 +510,29 @@ class SolveResult:
 class SoftRef:
     """Reference handle returned by :meth:`Model.obj.add_soft`."""
 
-    __slots__ = ("group_id", "soft_ids")
+    __slots__ = ("group_id", "soft_ids", "_objective", "_generation", "_weight", "_constraint", "_precision", "_scaled_weight")
 
-    def __init__(self, group_id: int, soft_ids: Sequence[int]):
+    def __init__(self, group_id: int, soft_ids: Sequence[int], *, objective=None, weight=0, scaled_weight=0, constraint=None):
         self.group_id = int(group_id)
         self.soft_ids = tuple(int(s) for s in soft_ids)
+        self._objective = objective
+        self._generation = objective._generation if objective is not None else None
+        self._weight = weight
+        self._constraint = constraint
+        self._scaled_weight = scaled_weight
+        self._precision = objective._model._objective_precision_decimals if objective is not None else None
+
+    def _check_active(self):
+        if self._objective is None or self._generation != self._objective._generation:
+            raise ValueError("This soft preference was cleared or replaced, or has no active objective.")
+        if self._precision != self._objective._model._objective_precision_decimals:
+            raise ValueError("Objective precision changed; recreate this legacy preference handle.")
+
+    @property
+    def weight(self):
+        self._check_active()
+        return self._weight
+
 
     def __iter__(self):
         return iter(self.soft_ids)
@@ -1065,7 +978,6 @@ class Model:
         "_soft_id_to_index",
         "_next_soft_id",
         "_soft_group_to_ids",
-        "_soft_group_update_meta",
         "_soft_id_to_group",
         "_next_soft_group_id",
         "_soft_raw_weight_by_id",
@@ -1122,7 +1034,6 @@ class Model:
         self._soft_id_to_index: dict[int, int] = {}
         self._next_soft_id = 1
         self._soft_group_to_ids: dict[int, list[int]] = {}
-        self._soft_group_update_meta: dict[int, _SoftGroupUpdateMeta] = {}
         self._soft_id_to_group: dict[int, int] = {}
         self._next_soft_group_id = 1
         self._soft_raw_weight_by_id: dict[int, float] = {}
@@ -1284,19 +1195,33 @@ class Model:
         """
         if isinstance(decimals, bool) or not isinstance(decimals, int) or int(decimals) < 0:
             raise ValueError("decimals must be a non-negative integer.")
-        self._objective_precision_decimals = int(decimals)
-        self._objective_precision_scale = 10 ** int(decimals)
-        # Re-round existing soft weights from stored raw values.
-        for sid in list(self._soft_ids):
-            raw = float(self._soft_raw_weight_by_id.get(int(sid), 0.0))
+        if decimals == self._objective_precision_decimals:
+            return
+        if self._obj_proxy._lit_to_sid or self._obj_proxy._offset or self._tier_obj_proxy._tiers:
+            raise ValueError(
+                "Configure objective precision before adding numeric costs; "
+                "clear the objective before changing precision."
+            )
+        scale = 10 ** int(decimals)
+        updates = []
+        for sid in self._soft_ids:
+            if self._soft[self._soft_id_to_index[sid]][0] <= 0:
+                continue
+            raw = self._soft_raw_weight_by_id.get(sid, 0.0)
             if raw <= 0:
                 continue
-            scaled = int(round(raw * self._objective_precision_scale))
+            scaled = int(round(raw * scale))
             if scaled <= 0:
                 raise ValueError("Configured precision rounds an existing positive soft weight to zero.")
-            self._set_soft_weight_internal(int(sid), int(scaled), allow_zero=False, allow_when_sat=True)
+            updates.append((sid, scaled))
+        self._objective_precision_decimals = int(decimals)
+        self._objective_precision_scale = scale
+        for sid, scaled in updates:
+            self._set_soft_weight_internal(sid, scaled, allow_zero=False, allow_when_sat=True)
 
     def _coerce_soft_weight(self, weight, *, allow_zero: bool = False) -> tuple[int, float]:
+        if isinstance(weight, bool):
+            raise ValueError("Objective weight must be a number, not bool.")
         if self._objective_precision_decimals is None:
             if isinstance(weight, int):
                 w = int(weight)
@@ -2723,10 +2648,7 @@ class Model:
             return self
 
     def _add_soft(self, weight: int, constraint, *, dedup: bool = False, raw_weight: Optional[float] = None):
-        if isinstance(constraint, Literal) and constraint._model is not self:
-            raise ValueError("Variables belong to different models.")
-        if not isinstance(constraint, (Literal, IntVar, PBExpr, PBConstraint, Clause, ClauseGroup, _LazyIntExpr, bool)):
-            raise TypeError("Soft constraint must be a model expression or clause.")
+        validate_soft_constraint(self, constraint)
         hard0 = len(self._hard)
         soft0 = len(self._soft)
         group_id = self._next_soft_group_id
@@ -2790,46 +2712,6 @@ class Model:
                     ids.append(sid_existing)
             return sid_existing
 
-        if isinstance(constraint, _LazyIntExpr):
-            constraint = constraint._realize()
-
-        if isinstance(constraint, IntVar):
-            _ensure_same_model(self, constraint)
-            if constraint.lb < 0:
-                raise ValueError(
-                    "obj[weight] += IntVar currently requires IntVar.lb >= 0 "
-                    "(negative objective offsets are temporarily disallowed)."
-                )
-            constraint = constraint._as_pbexpr()
-
-        if isinstance(constraint, PBExpr):
-            if constraint._model is not None and constraint._model is not self:
-                raise ValueError("Variables belong to different models.")
-            expr = lower_integer_objective(constraint, self)
-            # Direct objective lowering for linear PB expressions:
-            #   c * lit  -> soft unit on (~lit) with weight c        (c > 0)
-            #  -c * lit  -> soft unit on ( lit) with weight -c and
-            #               objective constant offset -= c
-            # This avoids proxy IntVars / equality bindings for piecewise and
-            # other PB-valued costs.
-            self._objective_constant += weight * int(expr.constant)
-            for t in expr.terms:
-                coeff = int(t.coefficient)
-                if coeff == 0:
-                    continue
-                if coeff > 0:
-                    lit = ~t.literal
-                    soft_w = weight * coeff
-                else:
-                    lit = t.literal
-                    soft_w = weight * (-coeff)
-                    self._objective_constant -= weight * (-coeff)
-                self._ensure_literal_def_realized(lit)
-                rw = None if raw_weight is None else float(raw_weight) * (float(soft_w) / float(weight))
-                sid = _append_or_merge_soft(soft_w, (self._lit_to_dimacs(lit),), group_id, rw)
-                sids.append(sid)
-            return group_id, _done()
-
         def _add_soft_group_targeted(group: ClauseGroup) -> None:
             if group.is_empty():
                 return
@@ -2875,12 +2757,17 @@ class Model:
         return group_id, _done()
 
     def add_soft(self, constraint, weight: int):
-        """Compatibility alias for :meth:`Model.obj.add_soft`."""
-        return self.obj.add_soft(constraint, weight)
+        """Deprecated: use a numeric penalty in ``model.obj`` instead."""
+        warnings.warn("add_soft() is deprecated; use obj.add(~literal, weight=w), "
+                      "or reify a compound condition first.", FutureWarning, stacklevel=2)
+        return self.obj._add_preference(constraint, weight)
 
     def update_soft_weight(self, target, new_weight: int) -> None:
-        """Compatibility alias for :meth:`Model.obj.update_soft`."""
-        self.obj.update_soft(target, new_weight)
+        """Deprecated: use obj.update(ref, weight=new_weight)."""
+        warnings.warn("update_soft_weight() is deprecated; use obj.update(ref, weight=new_weight).",
+                      FutureWarning, stacklevel=2)
+        self._coerce_soft_weight(new_weight, allow_zero=False)
+        self.obj._reweight_soft(target, new_weight)
 
     def _compile_pb_compare(self, lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup:
         with self.profile_scope("compile_pb_compare", metadata={"op": op}):

@@ -5,9 +5,10 @@ Conventions
 -----------
 
 * Hermax solves **minimization** problems.
-* ``model.obj[w] += lit`` adds a soft unit clause ``[lit]`` of weight ``w``.
-* A soft unit clause ``[lit]`` pays cost ``w`` when ``lit`` is **false**.
-* To penalize a Boolean decision ``x`` when it is true, use ``model.obj[w] += ~x``.
+* ``model.obj += w * expression`` minimizes ``w * expression``.
+* Boolean numeric costs are 1 when true and 0 when false.
+* ``model.obj += w * ~literal`` pays ``w`` when the literal is false.
+* To charge for selecting ``x``, use ``model.obj += w * x``.
 
 Example 01: Toy Soft Clauses
 ----------------------------
@@ -23,7 +24,7 @@ New primitives
 * :class:`hermax.model.Model`
 * :meth:`hermax.model.Model.bool`
 * Hard constraints with ``model &=``
-* Soft constraints with ``model.obj[w] +=``
+* Boolean penalties with ``model.obj += weight * ~literal``
 * :meth:`hermax.model.Model.solve`
 
 Model
@@ -675,13 +676,13 @@ Example 11: Int Variables in the Objective
 
 
 
-Show ``obj[w] += int_var`` (ladder-bit objective lowering) combined with
+Show ``obj += w * int_var`` combined with
 hard PB constraints.
 
 New primitives
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* ``model.obj[w] += int_var`` with :class:`hermax.model.IntVar`
+* ``model.obj += w * int_var`` with :class:`hermax.model.IntVar`
 
 Model
 ^^^^^
@@ -699,9 +700,7 @@ without introducing a separate arithmetic backend API.
       \min (3x + y + 2b)
    \end{aligned}
 
-``model.obj[w] += x`` is lowered to soft clauses over the ladder threshold bits
-of ``x`` (linear in the ladder width), plus a constant offset contribution from
-the lower bound.
+``model.obj += w * x`` adds ``w * x`` to the numeric cost.
 
 Code
 ^^^^

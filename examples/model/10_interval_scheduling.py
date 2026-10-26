@@ -12,7 +12,7 @@ m &= task_b.no_overlap(task_c)
 m &= task_a.no_overlap(task_c)
 m &= task_a.ends_before(task_c)
 
-m.obj[1] += task_c.start
+m.obj += task_c.start
 
 r = m.solve()
 

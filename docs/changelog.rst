@@ -1,10 +1,26 @@
 Changelog
 =========
 
-Version 1.2.11
---------------
+Version 1.3.0
+-------------
 
-Highlights
+Breaking changes
+~~~~~~~~~~~~~~~~
+* ``obj[w]`` is no longer accepted. Use ``obj += w * expression`` for numeric
+  costs or ``obj += w * ~literal`` for literal preferences.
+* ``tier_obj[t, w]`` is no longer accepted. Use
+  ``tier_obj.add(expression, weight=w, tier=t)`` for numeric costs or
+  ``tier_obj.add(~literal, weight=w, tier=t)`` for literal preferences.
+* ``obj.add()`` now returns a handle. Use ``obj.update(term, weight=w)`` to
+  change its weight.
+* ``add_soft`` and soft-weight update methods are deprecated. Use numeric
+  objective terms and ``obj.update()``. Numeric ``add_soft`` inputs are no
+  longer accepted; use ``obj.add(expression, weight=w)``.
+* ``obj.set()`` now replaces the whole objective. Use ``obj +=`` to append.
+
+See :doc:`modeling_objective_migration` for replacements.
+
+Other Highlights
 ~~~~~~~~~~
 * Improved native encoding performance and automatic PBAMO encoder selection.
 * Added a grouped weighted sum equality encoder to PBAMO.

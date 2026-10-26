@@ -167,7 +167,7 @@ def test_model_scale_can_be_added_to_objective_and_realizes():
     m = Model()
     x = m.int("x", 0, 6)
     y = x.scale(2)
-    m.obj[1] += y
+    m.obj += y
     r = _solve_ok(m)
     assert r[x] == 0
 

@@ -25,7 +25,7 @@ for w in workers:
 
 for t in tasks:
     for w in workers:
-        m.obj[cost[(t, w)]] += ~(assign[t] == w)
+        m.obj += cost[(t, w)] * (assign[t] == w)
 
 r = m.solve()
 

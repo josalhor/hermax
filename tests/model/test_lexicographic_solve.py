@@ -23,9 +23,9 @@ def _build_two_tier_conflict_model() -> tuple[Model, object]:
     m = Model()
     a = m.bool("a")
     # Tier 0 prefers a=True (pay if false).
-    m.tier_obj[0, 1] += a
+    m.tier_obj.add(~a, weight=1, tier=0)
     # Tier 1 prefers a=False (pay if true), conflicting with tier 0.
-    m.tier_obj[1, 100] += ~a
+    m.tier_obj.add(a, weight=100, tier=1)
     return m, a
 
 
@@ -92,8 +92,8 @@ def test_lex_incremental_honors_tier_priority_over_later_tier_weight():
 def test_lex_incremental_does_not_advance_after_interrupted_tier():
     m = Model()
     a = m.bool("a")
-    m.tier_obj[0, 1] += a
-    m.tier_obj[1, 1] += ~a
+    m.tier_obj.add(~a, weight=1, tier=0)
+    m.tier_obj.add(a, weight=1, tier=1)
     solver = _InterruptedFirstTierSolver()
 
     result = m.solve(solver=solver, lex_strategy="incremental")
@@ -131,9 +131,9 @@ def test_lex_three_tiers_returns_three_cost_entries():
     a = m.bool("a")
     b = m.bool("b")
     c = m.bool("c")
-    m.tier_obj[0, 2] += a
-    m.tier_obj[1, 3] += b
-    m.tier_obj[2, 4] += c
+    m.tier_obj.add(~a, weight=2, tier=0)
+    m.tier_obj.add(~b, weight=3, tier=1)
+    m.tier_obj.add(~c, weight=4, tier=2)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r.tier_costs is not None
     assert len(r.tier_costs) == 3
@@ -162,10 +162,10 @@ def test_lex_incremental_hardening_preserves_earlier_tier_optimum():
     a = m.bool("a")
     b = m.bool("b")
     # Tier 0: force a=True in optimum.
-    m.tier_obj[0, 1] += a
+    m.tier_obj.add(~a, weight=1, tier=0)
     # Tier 1: try to prefer a=False and b=False.
-    m.tier_obj[1, 50] += ~a
-    m.tier_obj[1, 1] += ~b
+    m.tier_obj.add(a, weight=50, tier=1)
+    m.tier_obj.add(b, weight=1, tier=1)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r[a] is True
     assert r[b] is False
@@ -179,8 +179,8 @@ def test_lex_stratified_decodes_human_tier_costs():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.tier_obj[0, 1] += a
-    m.tier_obj[1, 7] += ~b
+    m.tier_obj.add(~a, weight=1, tier=0)
+    m.tier_obj.add(b, weight=7, tier=1)
     r = _solve_ok(m, lex_strategy="stratified")
     assert isinstance(r.tier_costs, list)
     assert len(r.tier_costs) == 2
@@ -192,8 +192,8 @@ def test_lex_incremental_collects_tier_models():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.tier_obj[0, 1] += a
-    m.tier_obj[1, 1] += b
+    m.tier_obj.add(~a, weight=1, tier=0)
+    m.tier_obj.add(~b, weight=1, tier=1)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r.tier_models is not None
     assert len(r.tier_models) == 2
@@ -204,7 +204,7 @@ def test_lex_incremental_collects_tier_models():
 def test_lex_stratified_tier_models_optional_none():
     m = Model()
     a = m.bool("a")
-    m.tier_obj[0, 1] += a
+    m.tier_obj.add(~a, weight=1, tier=0)
     r = _solve_ok(m, lex_strategy="stratified")
     assert r.tier_models is None
 
@@ -214,9 +214,11 @@ def test_lex_incremental_with_pb_bucket_has_same_semantics_as_manual_tiers():
     a = m.bool("a")
     b = m.bool("b")
     # Tier 0: minimize violation of (a+b<=1)
-    m.tier_obj[0, 3] += (a + b <= 1).clauses()
+    penalty_satisfied = m.bool()
+    m &= (a + b <= 1).iff(penalty_satisfied)
+    m.tier_obj.add(~penalty_satisfied, weight=3, tier=0)
     # Tier 1: prefer a=true
-    m.tier_obj[1, 1] += a
+    m.tier_obj.add(~a, weight=1, tier=1)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r.tier_costs is not None
     assert len(r.tier_costs) == 2
@@ -226,7 +228,7 @@ def test_lex_incremental_with_pb_bucket_has_same_semantics_as_manual_tiers():
 def test_lex_incremental_with_intvar_bucket_is_supported():
     m = Model()
     x = m.int("x", 0, 4)
-    m.tier_obj[0, 2] += x
+    m.tier_obj.add(x, weight=2, tier=0)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r.tier_costs == [0]
     assert r[x] == 0
@@ -236,7 +238,7 @@ def test_lex_incremental_with_intvar_bucket_is_supported():
 def test_lex_incremental_handles_constant_offset_in_tier_objective():
     m = Model()
     a = m.bool("a")
-    m.tier_obj[0, 1] += (a + 5)
+    m.tier_obj.add(a + 5, weight=1, tier=0)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r.tier_costs is not None
     # constant offset reflected at tier level
@@ -247,7 +249,7 @@ def test_lex_incremental_handles_constant_offset_in_tier_objective():
 def test_lex_stratified_handles_constant_offset_in_tier_objective():
     m = Model()
     a = m.bool("a")
-    m.tier_obj[0, 1] += (a + 5)
+    m.tier_obj.add(a + 5, weight=1, tier=0)
     r = _solve_ok(m, lex_strategy="stratified")
     assert r.tier_costs is not None
     assert r.tier_costs[0] == 5
@@ -259,7 +261,7 @@ def test_lex_incremental_precision_returns_float_tier_costs_when_enabled():
     m.set_objective_precision(decimals=2)
     a = m.bool("a")
     m &= ~a
-    m.tier_obj[0, 1.25] += a
+    m.tier_obj.add(~a, weight=1.25, tier=0)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r.tier_costs is not None
     assert r.tier_costs[0] == pytest.approx(1.25)
@@ -271,7 +273,7 @@ def test_lex_stratified_precision_returns_float_tier_costs_when_enabled():
     m.set_objective_precision(decimals=2)
     a = m.bool("a")
     m &= ~a
-    m.tier_obj[0, 1.25] += a
+    m.tier_obj.add(~a, weight=1.25, tier=0)
     r = _solve_ok(m, lex_strategy="stratified")
     assert r.tier_costs is not None
     assert r.tier_costs[0] == pytest.approx(1.25)
@@ -281,7 +283,7 @@ def test_lex_stratified_precision_returns_float_tier_costs_when_enabled():
 def test_lex_incremental_empty_tier_is_ignored_or_zero_cost():
     m = Model()
     a = m.bool("a")
-    m.tier_obj[1, 2] += a
+    m.tier_obj.add(~a, weight=2, tier=1)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r.tier_costs is not None
     # Either compacts empty tier or keeps it as zero.
@@ -293,7 +295,7 @@ def test_lex_incremental_empty_tier_is_ignored_or_zero_cost():
 def test_lex_strategy_requires_tier_obj_usage_for_tier_fields():
     m = Model()
     a = m.bool("a")
-    m.obj[1] += a
+    m.obj += a
     r = _solve_ok(m, lex_strategy="incremental")
     assert r.tier_costs is None
     assert r.tier_models is None
@@ -304,8 +306,8 @@ def test_lex_stratified_raises_on_overflow_risk():
     a = m.bool("a")
     b = m.bool("b")
     huge = 2**62
-    m.tier_obj[0, huge] += a
-    m.tier_obj[1, huge] += b
+    m.tier_obj.add(~a, weight=huge, tier=0)
+    m.tier_obj.add(~b, weight=huge, tier=1)
     with pytest.raises((OverflowError, ValueError)):
         m.solve(lex_strategy="stratified")
 
@@ -315,8 +317,8 @@ def test_lex_incremental_does_not_require_stratification_scaling():
     a = m.bool("a")
     b = m.bool("b")
     huge = 2**62
-    m.tier_obj[0, huge] += a
-    m.tier_obj[1, huge] += b
+    m.tier_obj.add(~a, weight=huge, tier=0)
+    m.tier_obj.add(~b, weight=huge, tier=1)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r.tier_costs is not None
     assert len(r.tier_costs) == 2
@@ -327,7 +329,7 @@ def test_lex_incremental_unsat_hard_constraints_short_circuit():
     a = m.bool("a")
     m &= a
     m &= ~a
-    m.tier_obj[0, 1] += a
+    m.tier_obj.add(a, weight=1, tier=0)
     r = m.solve(lex_strategy="incremental")
     assert r.status == "unsat"
     assert r.tier_costs is None or all(c is None for c in r.tier_costs)
@@ -360,8 +362,8 @@ def test_lex_randomized_two_tier_pb_objectives_match_bruteforce():
             xs = m.bool_vector(f"x_{case}_{strategy}", length=3)
             expr0 = const0 + sum(c * x for c, x in zip(coeffs0, xs))
             expr1 = const1 + sum(c * x for c, x in zip(coeffs1, xs))
-            m.tier_obj[0, 1] += expr0
-            m.tier_obj[1, 1] += expr1
+            m.tier_obj.add(expr0, weight=1, tier=0)
+            m.tier_obj.add(expr1, weight=1, tier=1)
             r = _solve_ok(m, lex_strategy=strategy)
 
             got_bits = tuple(bool(r[x]) for x in xs)
@@ -377,7 +379,7 @@ def test_lex_stratified_unsat_hard_constraints_short_circuit():
     a = m.bool("a")
     m &= a
     m &= ~a
-    m.tier_obj[0, 1] += a
+    m.tier_obj.add(a, weight=1, tier=0)
     r = m.solve(lex_strategy="stratified")
     assert r.status == "unsat"
     assert r.tier_costs is None or all(c is None for c in r.tier_costs)
@@ -391,12 +393,12 @@ def test_lex_incremental_matches_reference_manual_hardening_small_case():
     # Manual 2-step reference.
     m2 = Model()
     a2 = m2.bool("a")
-    m2.obj[1] += a2
+    m2.obj += ~a2
     r2_0 = _solve_ok(m2)
     assert r2_0.cost == 0
     m2 &= a2  # harden tier0 optimum (a must remain true)
     m2.obj.clear()
-    m2.obj[100] += ~a2
+    m2.obj += 100 * a2
     r2_1 = _solve_ok(m2)
 
     assert r1[a1] == r2_1[a2]
@@ -409,9 +411,9 @@ def test_lex_incremental_respects_assumptions_across_multiple_tiers_complex():
     a = m.bool("a")
     b = m.bool("b")
     c = m.bool("c")
-    m.tier_obj[0, 5] += a
-    m.tier_obj[1, 4] += b
-    m.tier_obj[2, 3] += c
+    m.tier_obj.add(~a, weight=5, tier=0)
+    m.tier_obj.add(~b, weight=4, tier=1)
+    m.tier_obj.add(~c, weight=3, tier=2)
     r = _solve_ok(m, lex_strategy="incremental", assumptions=[-a.id, b.id])
     assert r[a] is False
     assert r[b] is True
@@ -425,9 +427,9 @@ def test_lex_stratified_respects_assumptions_across_multiple_tiers_complex():
     a = m.bool("a")
     b = m.bool("b")
     c = m.bool("c")
-    m.tier_obj[0, 5] += a
-    m.tier_obj[1, 4] += b
-    m.tier_obj[2, 3] += c
+    m.tier_obj.add(~a, weight=5, tier=0)
+    m.tier_obj.add(~b, weight=4, tier=1)
+    m.tier_obj.add(~c, weight=3, tier=2)
     r = _solve_ok(m, lex_strategy="stratified", assumptions=[-a.id, b.id])
     assert r[a] is False
     assert r[b] is True
@@ -448,9 +450,9 @@ def test_lex_counterexample_tier_order_changes_solution_incremental():
     b = m.bool("b")
     m &= a.implies(~b)
     m &= b.implies(~a)
-    m.tier_obj[0, 1] += ~a
-    m.tier_obj[1, 50] += a
-    m.tier_obj[1, 1] += b
+    m.tier_obj.add(a, weight=1, tier=0)
+    m.tier_obj.add(~a, weight=50, tier=1)
+    m.tier_obj.add(~b, weight=1, tier=1)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r[a] is False
     assert r[b] is True
@@ -464,9 +466,9 @@ def test_lex_counterexample_tier_order_changes_solution_stratified():
     b = m.bool("b")
     m &= a.implies(~b)
     m &= b.implies(~a)
-    m.tier_obj[0, 1] += ~a
-    m.tier_obj[1, 50] += a
-    m.tier_obj[1, 1] += b
+    m.tier_obj.add(a, weight=1, tier=0)
+    m.tier_obj.add(~a, weight=50, tier=1)
+    m.tier_obj.add(~b, weight=1, tier=1)
     r = _solve_ok(m, lex_strategy="stratified")
     assert r[a] is False
     assert r[b] is True
@@ -480,8 +482,8 @@ def test_flat_objective_prefers_tier1_only_solution_for_counterexample():
     b = m.bool("b")
     m &= a.implies(~b)
     m &= b.implies(~a)
-    m.obj[50] += a
-    m.obj[1] += b
+    m.obj += 50 * ~a
+    m.obj += ~b
     r = _solve_ok(m)
     assert r[a] is True
     assert r[b] is False
@@ -493,8 +495,8 @@ def test_lex_two_tiers_with_unique_optimum_has_exact_assignment_incremental():
     a = m.bool("a")
     b = m.bool("b")
     m &= (a | b)
-    m.tier_obj[0, 10] += ~a
-    m.tier_obj[1, 3] += ~b
+    m.tier_obj.add(a, weight=10, tier=0)
+    m.tier_obj.add(b, weight=3, tier=1)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r[a] is False
     assert r[b] is True
@@ -506,8 +508,8 @@ def test_lex_two_tiers_with_unique_optimum_has_exact_assignment_stratified():
     a = m.bool("a")
     b = m.bool("b")
     m &= (a | b)
-    m.tier_obj[0, 10] += ~a
-    m.tier_obj[1, 3] += ~b
+    m.tier_obj.add(a, weight=10, tier=0)
+    m.tier_obj.add(b, weight=3, tier=1)
     r = _solve_ok(m, lex_strategy="stratified")
     assert r[a] is False
     assert r[b] is True
@@ -519,10 +521,10 @@ def test_lex_incremental_tie_in_tier0_is_broken_by_tier1():
     a = m.bool("a")
     b = m.bool("b")
     # Tier0 always 0 regardless of assignment.
-    m.tier_obj[0, 1] += True
+    m.tier_obj.add(0, weight=1, tier=0)
     # Tier1 forces preference.
-    m.tier_obj[1, 5] += a
-    m.tier_obj[1, 1] += ~b
+    m.tier_obj.add(~a, weight=5, tier=1)
+    m.tier_obj.add(b, weight=1, tier=1)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r[a] is True
     assert r[b] is False
@@ -533,9 +535,9 @@ def test_lex_stratified_tie_in_tier0_is_broken_by_tier1():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.tier_obj[0, 1] += True
-    m.tier_obj[1, 5] += a
-    m.tier_obj[1, 1] += ~b
+    m.tier_obj.add(0, weight=1, tier=0)
+    m.tier_obj.add(~a, weight=5, tier=1)
+    m.tier_obj.add(b, weight=1, tier=1)
     r = _solve_ok(m, lex_strategy="stratified")
     assert r[a] is True
     assert r[b] is False
@@ -548,8 +550,8 @@ def test_lex_incremental_with_hard_forced_assignment_reports_exact_tier_costs():
     b = m.bool("b")
     m &= ~a
     m &= b
-    m.tier_obj[0, 7] += a
-    m.tier_obj[1, 4] += ~b
+    m.tier_obj.add(~a, weight=7, tier=0)
+    m.tier_obj.add(b, weight=4, tier=1)
     r = _solve_ok(m, lex_strategy="incremental")
     assert r[a] is False
     assert r[b] is True
@@ -563,8 +565,8 @@ def test_lex_stratified_with_hard_forced_assignment_reports_exact_tier_costs():
     b = m.bool("b")
     m &= ~a
     m &= b
-    m.tier_obj[0, 7] += a
-    m.tier_obj[1, 4] += ~b
+    m.tier_obj.add(~a, weight=7, tier=0)
+    m.tier_obj.add(b, weight=4, tier=1)
     r = _solve_ok(m, lex_strategy="stratified")
     assert r[a] is False
     assert r[b] is True
@@ -585,9 +587,9 @@ def test_lex_strategies_use_different_number_of_solver_calls(monkeypatch):
     a_inc = m_inc.bool("a")
     b_inc = m_inc.bool("b")
     c_inc = m_inc.bool("c")
-    m_inc.tier_obj[0, 1] += a_inc
-    m_inc.tier_obj[1, 1] += b_inc
-    m_inc.tier_obj[2, 1] += c_inc
+    m_inc.tier_obj.add(~a_inc, weight=1, tier=0)
+    m_inc.tier_obj.add(~b_inc, weight=1, tier=1)
+    m_inc.tier_obj.add(~c_inc, weight=1, tier=2)
     _ = _solve_ok(m_inc, lex_strategy="incremental")
     assert calls["n"] == 3
 
@@ -596,9 +598,9 @@ def test_lex_strategies_use_different_number_of_solver_calls(monkeypatch):
     a_str = m_str.bool("a")
     b_str = m_str.bool("b")
     c_str = m_str.bool("c")
-    m_str.tier_obj[0, 1] += a_str
-    m_str.tier_obj[1, 1] += b_str
-    m_str.tier_obj[2, 1] += c_str
+    m_str.tier_obj.add(~a_str, weight=1, tier=0)
+    m_str.tier_obj.add(~b_str, weight=1, tier=1)
+    m_str.tier_obj.add(~c_str, weight=1, tier=2)
     _ = _solve_ok(m_str, lex_strategy="stratified")
     assert calls["n"] == 1
 
@@ -612,8 +614,8 @@ def test_lex_strategies_have_different_cost_field_semantics():
     b1 = m1.bool("b")
     m1 &= ~a1
     m1 &= ~b1
-    m1.tier_obj[0, 5] += a1
-    m1.tier_obj[1, 2] += b1
+    m1.tier_obj.add(~a1, weight=5, tier=0)
+    m1.tier_obj.add(~b1, weight=2, tier=1)
     r_inc = _solve_ok(m1, lex_strategy="incremental")
     assert r_inc.tier_costs == [5, 2]
     assert r_inc.cost == 2
@@ -623,8 +625,8 @@ def test_lex_strategies_have_different_cost_field_semantics():
     b2 = m2.bool("b")
     m2 &= ~a2
     m2 &= ~b2
-    m2.tier_obj[0, 5] += a2
-    m2.tier_obj[1, 2] += b2
+    m2.tier_obj.add(~a2, weight=5, tier=0)
+    m2.tier_obj.add(~b2, weight=2, tier=1)
     r_str = _solve_ok(m2, lex_strategy="stratified")
     assert r_str.tier_costs == [5, 2]
     # base for tier0 is max_tier1 + 1 = 3 => flattened = 5*3 + 2

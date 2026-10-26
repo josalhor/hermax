@@ -1,9 +1,6 @@
 import math
 from dataclasses import dataclass
-from typing import Dict, Tuple
-
-# Assuming your API is in a module named hermax_api
-from hermax.model import Model, SoftRef, BoolMatrix, IntVector
+from hermax.model import Model, ObjectiveTerm, BoolMatrix, IntVector
 
 @dataclass(frozen=True)
 class CVRPInstance:
@@ -18,7 +15,7 @@ class CVRPInstance:
 
 def encode_cvrp(
     m: Model, inst: CVRPInstance
-) -> Tuple[BoolMatrix, IntVector, Dict[Tuple[int, int], SoftRef]]:
+) -> tuple[BoolMatrix, IntVector, dict[tuple[int, int], ObjectiveTerm]]:
     
     edges = m.bool_matrix("edge", inst.N, inst.N)
     loads = m.int_vector("load", inst.N, lb=0, ub=inst.capacity)
@@ -43,8 +40,8 @@ def encode_cvrp(
                 
         for j in range(inst.N):
             if i != j:
-                # Store SoftRefs to allow dynamic weight updates later
-                edge_refs[(i, j)] = m.obj.add_soft(~edges[i][j], weight=inst.distances[i][j])
+                # Keep handles for later weight updates.
+                edge_refs[(i, j)] = m.obj.add(edges[i][j], weight=inst.distances[i][j])
 
     return edges, loads, edge_refs
 
@@ -88,7 +85,7 @@ def run_paper_example():
 
     # 3. Incrementality via Weight Updates (Permanent)
     # Traffic spikes between 0 and 1, drastically increasing its cost weight.
-    m.obj.update_soft(edge_refs[(0, 1)], new_weight=999)
+    m.obj.update(edge_refs[(0, 1)], weight=999)
     res3 = m.solve()
     print_solution("Weight Update: Edge 0 -> 1 Avoided", res3, edges, loads, inst.N)
 

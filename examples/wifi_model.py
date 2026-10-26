@@ -38,13 +38,14 @@ def build_wifi_model(routers, edges, freqs, weights, w_offline, *, allow_offline
             model &= (~(state[u] == freq_labels[f]) | ~(state[v] == freq_labels[f]))
 
     # Soft costs: pay congestion weight if router uses frequency f.
-    # In unit-soft-literal semantics, `obj += ~x(r,f)` pays when x(r,f) is True.
     for r in routers_list:
         for f in freq_list:
-            model.obj[weights[(r, f)]] += ~(state[r] == freq_labels[f])
+            model.obj += weights[(r, f)] * (state[r] == freq_labels[f])
         if allow_offline:
             # Pay offline penalty when no real frequency is selected (nullable enum == None).
-            model.obj[w_offline] += Clause.from_iterable([(state[r] == freq_labels[f]) for f in freq_list])
+            online = model.bool()
+            model &= Clause.from_iterable([(state[r] == freq_labels[f]) for f in freq_list]).iff(online)
+            model.obj += w_offline * ~online
 
     # Optional event-specific hard assignments (scratch-mode equivalent of assumptions).
     for lit in forced or ():

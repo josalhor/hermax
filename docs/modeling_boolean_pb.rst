@@ -98,14 +98,20 @@ export/solve as needed.
 ``pb.clauses()`` returns a :class:`hermax.model.ClauseGroup` and caches the
 compiled result.
 
+.. _boolean-objective-penalties:
+
 PB as a Soft Constraint
 ---------------------------------
 
-``model.obj[w] += pb_constraint`` is supported and uses targeted relaxation
-internally:
+Reify the comparison and minimize a penalty for its violation:
 
-* one weighted soft penalty literal
-* plus the corresponding hard PB network
+.. code-block:: python
+
+   satisfied = model.bool()
+   model &= pb_constraint.iff(satisfied)
+   model.obj += w * ~satisfied
+
+For a numeric cost, use ``model.obj += expression`` directly.
 
 Encoder Dispatch
 ----------------

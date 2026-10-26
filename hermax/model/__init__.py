@@ -5,6 +5,7 @@ from .expressions import (
 )
 from .encoders import EncodingEvent, EncodingProfile
 from .core import SolveResult, SoftRef, Model
+from ._objective import ObjectiveTerm
 from .variables import (
     IntSetVar, EnumVar, IntVar, IntervalVar, BoolVector, EnumVector,
     IntSetVector, IntVector, BoolDict, EnumDict, IntDict, IntSetDict,
@@ -29,6 +30,7 @@ __all__ = [
     "EncodingProfile",
     "SolveResult",
     "SoftRef",
+    "ObjectiveTerm",
     "Model",
     "IntSetVar",
     "EnumVar",

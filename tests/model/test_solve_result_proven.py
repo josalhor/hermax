@@ -40,7 +40,7 @@ def test_sat_and_unsat_are_proven():
 def test_optimal_solution_is_proven():
     model = Model()
     x = model.bool("x")
-    model.obj[1] += x
+    model.obj += x
     result = model.solve()
     assert result.status == "optimum" and result.ok and result.proven
 
@@ -53,7 +53,7 @@ def test_incomplete_solver_feasible_result_is_not_proven(monkeypatch):
     model = Model()
     x = model.bool("x")
     model &= x
-    model.obj[1] += ~x
+    model.obj += ~x
     solver = NuWLSCIBR(default_time_limit=5)
     try:
         result = model.solve(solver=solver, incremental=False)
@@ -70,7 +70,7 @@ def test_incomplete_solver_actual_result_respects_its_status():
     model = Model()
     x = model.bool("x")
     model &= x
-    model.obj[1] += ~x
+    model.obj += ~x
     solver = NuWLSCIBR(default_time_limit=5)
     try:
         result = model.solve(solver=solver, incremental=False)

@@ -73,8 +73,8 @@ def test_model_returns_reported_incumbent_when_worker_times_out():
     model = Model()
     a, b = model.bool("a"), model.bool("b")
     model &= a | b
-    model.obj[100] += ~a
-    model.obj[1] += ~b
+    model.obj += 100 * a
+    model.obj += b
     result = model.solve(solver=SlowAfterIncumbentRC2, incremental=False, time_limit=1)
     assert result.status == "interrupted_sat"
     assert result.ok and not result.proven
@@ -86,8 +86,8 @@ def test_single_weight_level_can_return_a_feasible_incumbent():
     model = Model()
     a, b = model.bool("a"), model.bool("b")
     model &= a | b
-    model.obj[1] += ~a
-    model.obj[1] += ~b
+    model.obj += a
+    model.obj += b
     result = model.solve(solver=SlowAfterIncumbentRC2, incremental=False,
                          time_limit=1, assumptions=[~a])
     assert result.status == "interrupted_sat"
@@ -113,7 +113,7 @@ def test_direct_rc2_timeout_returns_incumbent_and_supports_reuse():
 def test_model_explicit_rc2_supports_timed_incremental_reuse():
     model = Model()
     x = model.bool("x")
-    model.obj[1] += x
+    model.obj += ~x
     first = model.solve(solver=RC2Reentrant, backend="maxsat", time_limit=2)
     assert first.status == "optimum" and first[x] is True
     model &= ~x
@@ -124,7 +124,9 @@ def test_model_explicit_rc2_supports_timed_incremental_reuse():
 def test_timed_model_keeps_soft_clause_variables_distinct_from_auxiliaries():
     model = Model()
     x, y = model.bool("x"), model.bool("y")
-    model.obj[1] += x | y
+    penalty_satisfied = model.bool()
+    model &= (x | y).iff(penalty_satisfied)
+    model.obj += ~penalty_satisfied
     result = model.solve(incremental=False, time_limit=2, assumptions=[~x, ~y])
     assert result.status == "optimum"
     assert result[x] is False and result[y] is False

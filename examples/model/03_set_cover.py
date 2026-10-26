@@ -19,7 +19,7 @@ for u in universe:
     m &= m.vector(cover_u, name=f"cover_{u}").at_least_one()
 
 for s in sets:
-    m.obj[set_cost[s]] += ~pick[s]
+    m.obj += set_cost[s] * pick[s]
 
 r = m.solve()
 

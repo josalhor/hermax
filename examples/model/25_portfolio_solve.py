@@ -9,8 +9,8 @@ b = m.bool("b")
 
 m &= (a | b)
 
-m.obj[3] += ~a
-m.obj[1] += ~b
+m.obj += 3 * a
+m.obj += b
 
 r = m.solve(
     solver=CompletePortfolioSolver,

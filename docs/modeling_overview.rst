@@ -54,28 +54,25 @@ Hard constraints define feasibility:
 
 * ``model &= constraint``
 
-Soft constraints define optimization penalties:
+Objectives minimize numeric costs:
 
-Hermax model softs follow **WCNF / MaxSAT**:
+* ``model.obj += w * a`` pays ``w`` when ``a`` is true.
+* ``model.obj += w * ~a`` pays ``w`` when ``a`` is false.
+* ``model.obj = cost`` replaces the objective with a numeric expression.
 
-* ``model.obj[w] += clause`` means:
-  pay ``w`` **if the clause is violated**
-
-For unit literals:
-
-* ``model.obj[w] += a`` pays when ``a`` is false
-* ``model.obj[w] += ~a`` pays when ``a`` is true
+See :ref:`boolean-objective-penalties` for compound Boolean penalties.
 
 Single vs Tiered Objective
 --------------------------
 
-Use a single objective when all soft penalties belong to one scale:
+Use a single objective when all costs belong to one scale:
 
-* ``model.obj[w] += ...``
+* ``model.obj += expression``
 
-Use tiered objective when priorities are lexicographic and must not be mixed:
+Use tiered objectives when priorities are lexicographic:
 
-* ``model.tier_obj[tier][w] += ...``
+* ``model.tier_obj.set_lexicographic(primary_cost, secondary_cost)``
+* ``model.tier_obj.add(cost, weight=w, tier=tier)`` for dynamic additions
 
 Use this when, for example, service-level violations must be minimized
 before any secondary cost.

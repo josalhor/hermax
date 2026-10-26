@@ -24,8 +24,16 @@ Core Objects
 .. autoclass:: hermax.model.ClauseGroup
    :members:
 
+.. py:class:: hermax.model.ObjectiveTerm
+
+   A numeric contribution returned by ``model.obj.add(...)`` or
+   ``model.tier_obj.add(...)``.
+
+``SoftRef`` is retained for deprecated soft-preference methods.
+
 .. autoclass:: hermax.model.SoftRef
    :members:
+   :exclude-members: weight
 
 PB Layer
 --------

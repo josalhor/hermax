@@ -204,7 +204,7 @@ def test_hard_vs_soft_assignment_syntax():
     model &= (a + b <= 1)
     
     # Soft constraint bucket check
-    model.obj[100] += (a + b <= 1)
+    model.obj += 100 * (a + b <= 1)
     # The architecture should seamlessly spin up the relaxation variable `r`
     # and assign the penalty to `~r` internally.
 

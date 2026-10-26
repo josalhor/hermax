@@ -214,8 +214,8 @@ def test_cache_applies_for_obj_add_pbconstraint(monkeypatch):
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj[3] += (2 * a + 3 * b <= 3)
-    m.obj[4] += (2 * a + 3 * b <= 3)
+    m.obj.add_soft(2 * a + 3 * b <= 3, 3)
+    m.obj.add_soft(2 * a + 3 * b <= 3, 4)
     m._commit_pb()
     assert calls["pb_leq"] == 1
 

@@ -15,7 +15,9 @@ m &= ~(assign["ops"] == "bob")
 
 unassigned_penalty = {"api": 8, "ui": 6, "ops": 2}
 for task in tasks:
-    m.obj[unassigned_penalty[task]] += assign[task].is_in(workers)
+    assigned = m.bool()
+    m &= assign[task].is_in(workers).iff(assigned)
+    m.obj += unassigned_penalty[task] * ~assigned
 
 for task, worker, cost in [
     ("api", "alice", 1),
@@ -24,7 +26,7 @@ for task, worker, cost in [
     ("ui", "bob", 1),
     ("ops", "alice", 4),
 ]:
-    m.obj[cost] += ~(assign[task] == worker)
+    m.obj += cost * (assign[task] == worker)
 
 r = m.solve()
 assert r.ok

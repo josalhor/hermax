@@ -132,7 +132,7 @@ def test_model_vector_and_matrix_indexing_messages_are_clear():
 def test_export_and_solve_backend_error_messages_are_clear():
     m = Model()
     a = m.bool("a")
-    m.obj[1] += a
+    m.obj += a
 
     with pytest.raises(ValueError, match="contains soft clauses; use to_wcnf"):
         m.to_cnf()

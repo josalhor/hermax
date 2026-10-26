@@ -18,8 +18,8 @@ def test_model_routes_incremental_objective_updates_to_coretrail():
     b = m.bool("b")
     m &= a | b
     m &= ~a | ~b
-    m.obj[10] += a
-    m.obj[5] += ~b
+    m.obj += 10 * ~a
+    m.obj += 5 * b
 
     first = m.solve(incremental=True, backend="maxsat", solver=CoreTrail)
     assert first.status == "optimum"
@@ -42,7 +42,9 @@ def test_model_exports_one_shot_wcnf_to_coretrail():
     b = m.bool("b")
     m &= a
     m &= b
-    m.obj[7] += ~a | ~b
+    penalty_satisfied = m.bool()
+    m &= (~a | ~b).iff(penalty_satisfied)
+    m.obj += 7 * ~penalty_satisfied
 
     result = m.solve(incremental=False, solver=CoreTrail)
     assert result.status == "optimum"
@@ -56,7 +58,7 @@ def test_model_coretrail_deadline_can_resume_the_same_incremental_query():
     m = Model()
     x = m.bool("x")
     m &= x
-    m.obj[1] += x
+    m.obj += ~x
 
     interrupted = m.solve(
         incremental=True,

@@ -138,12 +138,12 @@ def test_obj_iadd_still_additive():
     assert sum(1 for w, _ in m._soft if w > 0) == 2
 
 
-def test_obj_bucket_iadd_still_additive():
+def test_weighted_obj_iadd_is_additive():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj[2] += a
-    m.obj[3] += b
+    m.obj += 2 * a
+    m.obj += 3 * b
     active = [w for w, _ in m._soft if w > 0]
     assert sorted(active) == [2, 3]
 
@@ -262,11 +262,13 @@ def test_obj_iadd_intvar_supports_negative_domain_offsets():
     assert result.cost == -2
 
 
-def test_obj_set_invalid_weight_rejected():
+def test_obj_set_zero_clears_cost_and_negative_weight_is_rejected():
     m = Model()
     a = m.bool("a")
+    m.obj.set(a, weight=0)
+    assert m.solve().cost is None  # No objective remains after the zero-weight replacement.
     with pytest.raises(ValueError):
-        m.obj.set(a, weight=0)
+        m.obj.set(a, weight=-1)
 
 
 def test_obj_clear_idempotent():
@@ -276,12 +278,12 @@ def test_obj_clear_idempotent():
     assert sum(1 for w, _ in m._soft if w > 0) == 0
 
 
-def test_obj_set_then_additive_bucket_accumulates_after_set():
+def test_obj_set_then_weighted_iadd_accumulates_after_set():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
     m.obj = a
-    m.obj[4] += b
+    m.obj += 4 * b
     assert sum(1 for w, _ in m._soft if w > 0) == 2
 
 

@@ -13,7 +13,7 @@ m &= sum(dev_months[p] * fund[p] for p in projects) <= 18
 expected_roi_millions = {"Alpha": 1.25, "Beta": 3.40, "Gamma": 2.10, "Delta": 2.80}
 
 for p in projects:
-    m.obj[expected_roi_millions[p]] += fund[p]
+    m.obj += expected_roi_millions[p] * ~fund[p]
 
 r = m.solve()
 assert r.ok

@@ -13,7 +13,7 @@ for u, v in edges:
     m &= (cover[u] | cover[v])
 
 for v in vertices:
-    m.obj[cost[v]] += ~cover[v]
+    m.obj += cost[v] * cover[v]
 
 r = m.solve()
 

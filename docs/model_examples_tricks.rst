@@ -7,7 +7,7 @@ Conventions
 -----------
 
 * Hermax solves **minimization** problems.
-* ``model.obj[w] += expr`` minimizes the numeric value of ``w * expr``.
+* ``model.obj += w * expr`` minimizes the numeric value of ``w * expr``.
 * ``IntVar`` values are bounded over closed domains ``[lb, ub]``.
 * ``x >= k`` in the implementation corresponds to a ladder threshold literal.
 
@@ -29,7 +29,7 @@ New primitives
 ^^^^^^^^^^^^^^
 
 * :meth:`hermax.model.IntVar.piecewise`
-* direct objective lowering of linear expressions (``model.obj[w] += expr``)
+* direct objective lowering of linear expressions (``model.obj += w * expr``)
 
 Model
 ^^^^^
@@ -729,7 +729,7 @@ New primitives
 ^^^^^^^^^^^^^^
 
 * :meth:`hermax.model.Model.set_objective_precision`
-* floating-point objective weights via ``model.obj[w] += ...``
+* floating-point objective weights via ``model.obj += expression``
 
 Model
 ^^^^^

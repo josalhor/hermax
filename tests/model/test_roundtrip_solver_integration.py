@@ -112,10 +112,14 @@ def test_roundtrip_weighted_pb_maxsat_matches_direct_rc2_cost_and_model_checks()
     m &= (a + b + c <= 2)
 
     # Mixed softs: literals + cardinality ClauseGroup + weighted PB ClauseGroup.
-    m.obj[4] += ~a
-    m.obj[2] += ~b
-    m.obj[3] += (a + b + c <= 1)
-    m.obj[5] += (2 * a + b + c >= 2)
+    m.obj += 4 * a
+    m.obj += 2 * b
+    penalty_satisfied = m.bool()
+    m &= (a + b + c <= 1).iff(penalty_satisfied)
+    m.obj += 3 * ~penalty_satisfied
+    penalty_satisfied = m.bool()
+    m &= (2 * a + b + c >= 2).iff(penalty_satisfied)
+    m.obj += 5 * ~penalty_satisfied
 
     r_model = _solve_ok(m)
     assert r_model.status == "optimum"
@@ -157,10 +161,16 @@ def test_roundtrip_mixed_typed_model_wcnf_export_manual_rc2_and_decode_agree():
     m &= ((color == "red").implies(~boost))
 
     # Soft preferences over typed views and booleans.
-    m.obj[2] += (color == "green")
-    m.obj[1] += (mode == "eco")
-    m.obj[3] += ~boost
-    m.obj[2] += (speed >= 4)
+    penalty_satisfied = m.bool()
+    m &= (color == "green").iff(penalty_satisfied)
+    m.obj += 2 * ~penalty_satisfied
+    penalty_satisfied = m.bool()
+    m &= (mode == "eco").iff(penalty_satisfied)
+    m.obj += ~penalty_satisfied
+    m.obj += 3 * boost
+    penalty_satisfied = m.bool()
+    m &= (speed >= 4).iff(penalty_satisfied)
+    m.obj += 2 * ~penalty_satisfied
 
     r_model = _solve_ok(m)
     assert r_model.status == "optimum"

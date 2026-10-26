@@ -159,28 +159,27 @@ def test_aggregate_helpers_empty_and_singleton_behaviors():
         m.lower_bound([])
 
 
-def test_add_soft_rejects_negative_lb_intvar():
+def test_add_soft_rejects_numeric_intvar():
     m = Model()
     x = m.int("x", -2, 3)
-    with pytest.raises(ValueError, match="IntVar.lb >= 0"):
+    with pytest.raises(TypeError, match="numeric"):
         m.obj.add_soft(x, weight=1)
 
 
-def test_add_soft_rejects_cross_model_pbexpr():
+def test_numeric_objective_rejects_cross_model_pbexpr():
     m1 = Model()
     m2 = Model()
     a = m1.bool("a")
     expr = a + 1
     with pytest.raises(ValueError, match="different models"):
-        m2.obj.add_soft(expr, weight=1)
+        m2.obj.add(expr, weight=1)
 
 
-def test_add_soft_accepts_lazy_expr_by_realization():
+def test_numeric_objective_accepts_lazy_expr():
     m = Model()
     x = m.int("x", 0, 6)
-    # _LazyIntExpr branch in add_soft.
-    ref = m.obj.add_soft(x // 2, weight=2)
-    assert ref.soft_ids
+    m.obj.add(x // 2, weight=2)
+    assert m.solve().cost == 0
 
 
 def test_solve_with_existing_solver_replay_nonunit_soft_without_new_var():
@@ -302,23 +301,16 @@ def test_set_objective_precision_rejects_bad_decimals_and_zero_rounding():
         m.set_objective_precision(decimals=1)
 
 
-def test_add_soft_pbexpr_positive_and_negative_coeff_paths_affect_offset():
+def test_signed_numeric_cost_matches_its_expression_value():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    # Force deterministic model so fake backend cost contribution is only offset.
     m &= a
     m &= ~b
-    # positive coeff path (~lit soft) and negative coeff path (lit soft + offset decrement)
-    m.obj.add_soft((2 * a) + (-3 * b) + 5, weight=1)
-
-    s = _ReplaySolverNoNewVar()
-    s._status = SolveStatus.OPTIMUM
-    s._cost = 0
-    r = m.solve(solver=s, incremental=False)
+    m.obj.add((2 * a) + (-3 * b) + 5, weight=1)
+    r = m.solve()
     assert r.status == "optimum"
-    # offset = +5 -3 = +2
-    assert r.cost == 2
+    assert r.cost == 7
 
 
 def test_solve_one_shot_rejects_non_callable_solver():

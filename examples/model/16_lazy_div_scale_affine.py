@@ -11,7 +11,7 @@ s = x.scale(3)
 m &= (s + 2 <= y)
 m &= (q == 3)
 
-m.obj[1] += y
+m.obj += y
 
 r = m.solve()
 assert r.ok
