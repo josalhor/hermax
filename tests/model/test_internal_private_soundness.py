@@ -322,48 +322,42 @@ def test_private_pbexpr_merge_overlapping_still_uses_collapse_terms():
     assert int(out.terms[0].coefficient) == 2
 
 
-def test_private_objective_proxy_current_weights_ignores_stale_sid_mapping():
+def test_objective_add_observes_weights_shared_with_legacy_preferences():
     m = Model()
     a = m.bool("a")
+    m &= a
     m.obj.set(a, weight=3)
-    # Create stale sid mapping by deleting soft index entry.
-    dim = m._lit_to_dimacs(~a)
-    sid = m.obj._lit_to_sid[dim]
-    del m._soft_id_to_index[sid]
-    # Should ignore stale mapping instead of crashing.
-    cur = m.obj._current_lit_weights()
-    assert dim not in cur
-
-
-def test_private_objective_proxy_apply_lit_weights_routes_deltas():
-    m = Model()
-    a = m.bool("a")
-    b = m.bool("b")
-    # Start with one managed objective literal.
-    m.obj.set(a, weight=2)
-    old_const = m._objective_constant
-
-    # Replace with another literal map and offset.
-    lit_map = {m._lit_to_dimacs(~b): 7}
-    m.obj._apply_lit_weights(lit_map, offset=5)
-    cur = m.obj._current_lit_weights()
-    assert cur == lit_map
-    assert m._objective_constant == old_const + 5
-
-
-def test_private_objective_proxy_add_does_not_rebuild_full_current_map(monkeypatch):
-    m = Model()
-    a = m.bool("a")
-    b = m.bool("b")
-
+    with pytest.warns(FutureWarning):
+        m.obj.add_soft(~a, 5)
     m.obj.add(a, weight=2)
+    assert m.solve().cost == 10
 
-    def _boom(self):
-        raise AssertionError("obj.add() should not rebuild the full current objective map")
 
-    with monkeypatch.context() as mp:
-        mp.setattr(type(m.obj), "_current_lit_weights", _boom)
-        m.obj.add(b, weight=3)
+def test_objective_replacement_routes_weights_and_offset():
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    m &= a
+    m &= b
+    m.obj.set(a, weight=2)
+    assert m.solve(backend="maxsat").cost == 2
 
-    cur = m.obj._current_lit_weights()
-    assert cur == {m._lit_to_dimacs(~a): 2, m._lit_to_dimacs(~b): 3}
+    m.obj = 7 * b + 5
+    assert m.solve().cost == 12
+
+
+def test_objective_add_does_not_scan_existing_soft_entries():
+    class NoIteration(list):
+        def __iter__(self):
+            raise AssertionError("Adding a term must not scan all existing soft entries")
+
+    m = Model()
+    a = m.bool("a")
+    b = m.bool("b")
+    m &= a
+    m &= b
+    m.obj.add(a, weight=2)
+    m._soft = NoIteration(m._soft)
+    m.obj.add(b, weight=3)
+    m._soft = m._soft[:]
+    assert m.solve().cost == 5

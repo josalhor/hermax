@@ -61,7 +61,7 @@ def compile_weighted_sum(
         model._reserve_literal_ids_up_to(int(model._inc_state.ip_next_vid))
     try:
         cnf = weighted.encode_thresholds(
-            chains, coefficients, bound, comparator, model._top_id()
+            chains, coefficients, bound, comparator, model._top_id(), _packed=True
         )
         path = "thresholds"
     except weighted.BudgetExceeded as error:

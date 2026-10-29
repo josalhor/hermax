@@ -255,19 +255,20 @@ def test_clausegroup_extend_requires_inplace_flag_and_then_mutates():
     assert r[a] and r[b] and r[c]
 
 
-def test_clausegroup_extend_inplace_switches_to_mutable_storage_once():
+def test_clausegroup_extend_inplace_preserves_existing_snapshots():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
     c = m.bool("c")
 
     g = a & b
-    assert isinstance(g._clauses, tuple)
+    snapshot = tuple(g)
+    iterator = iter(g)
     g.extend(c, inplace=True)
-    assert isinstance(g._clauses, list)
+    assert snapshot == ((a.id,), (b.id,))
+    assert tuple(iterator) == snapshot
     assert tuple(g) == ((a.id,), (b.id,), (c.id,))
     g.extend(ClauseGroup(m, [Clause(m, [~a])]), inplace=True)
-    assert isinstance(g._clauses, list)
     assert tuple(g)[-1] == (-a.id,)
 
 
@@ -355,18 +356,20 @@ def test_cnfplus_import_rejects_non_cnf_like_objects():
         m._cnfplus_to_clausegroup(_Bad())
 
 
-def test_clausegroup_and_reuses_existing_dimacs_tuples_for_prefix_clauses():
+def test_clausegroup_and_preserves_inputs_and_clause_order():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
     c = m.bool("c")
 
     g = ClauseGroup(m, [a | b, ~a | c])
+    prefix = tuple(g)
     g2 = g & c
 
-    assert g2._clauses[0] is g._clauses[0]
-    assert g2._clauses[1] is g._clauses[1]
-    assert g2._clauses[2] == (c.id,)
+    assert tuple(g) == prefix
+    assert tuple(g2) == (*prefix, (c.id,))
+    g.extend(~b, inplace=True)
+    assert tuple(g2) == (*prefix, (c.id,))
 
 
 def test_clause_append_inplace_switches_to_mutable_storage_once():

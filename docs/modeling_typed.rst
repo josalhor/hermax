@@ -17,6 +17,14 @@ Create an enum:
 
    color = model.enum("color", choices=["red", "green", "blue"])
 
+Choices may be all strings or all integers. Integer labels remain categorical;
+use ``IntVar`` for arithmetic.
+
+.. code-block:: python
+
+   digit = model.enum("digit", choices=range(1, 10))
+   model &= digit == 5
+
 Enum variables expose equality to a choice label:
 
 .. code-block:: python
@@ -336,6 +344,8 @@ This uses direct ladder-threshold ties (no PB/Card encoder).
 compiler may still optimize PB comparisons containing scaled integers (for
 example ``2*x + 3*y <= 17``) using internal ladder fast paths.
 
+Unary ``-x`` is equivalent to ``-1 * x`` and also returns a ``PBExpr``.
+
 Constant division via ``//``
 ------------------------------------------
 
@@ -401,11 +411,17 @@ Lazy array indexing via ``@``
 .. code-block:: python
 
    costs = [10, 100, 1000]
-   w = model.int("w", lb=0, ub=3)
+   w = model.int("w", lb=0, ub=2)
    model &= (costs @ w <= 50)
 
 The expression ``costs @ w`` is compiled by unrolling the index domain into a
 :class:`ClauseGroup` when it is compared.
+
+Positions are relative to the index's lower bound: ``array[k]`` is selected
+when the index equals ``index.lb + k``. For example, ``[7, 50, 90] @ index``
+selects 7 when ``index.lb == 3`` and ``index == 3``. This differs from the
+zero-based indexing of ``IntVector``. The index lower bound must be
+non-negative, and the array must cover the full domain width.
 
 Supported forms:
 
@@ -495,6 +511,18 @@ This uses:
 
 * **O(n)** binary clauses (where ``n`` is the ladder width)
 * **zero auxiliary variables**
+
+Cumulative resources
+--------------------
+
+``model.cumulative()`` returns a resource constraint. Post it with
+``model &=``; it also supports ``only_if()`` and explicit ``iff()``:
+
+.. code-block:: python
+
+   starts = model.int_vector("start", 2, lb=0, ub=10)
+   resource = model.cumulative(starts, durations=[3, 2], demands=[2, 1], capacity=2)
+   model &= resource
 
 References
 ----------

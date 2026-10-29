@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cnf.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <functional>
@@ -73,7 +75,7 @@ inline std::int64_t count_states(std::vector<std::int64_t> weights,
     return count;
 }
 
-class ClauseSink final : public ClauseDatabase {
+class ClauseSink final : public ClauseDatabase, public Cnf {
     std::int64_t limit_;
     void addClauseIntern(const std::vector<std::int32_t>& clause) override {
         if (limit_ && clauses.size() >= static_cast<std::size_t>(limit_))
@@ -81,7 +83,7 @@ class ClauseSink final : public ClauseDatabase {
         clauses.push_back(clause);
     }
 public:
-    std::vector<std::vector<std::int32_t>> clauses;
-    ClauseSink(PBConfig config, std::int64_t limit) : ClauseDatabase(config), limit_(limit) {}
+    ClauseSink(PBConfig config, std::int64_t limit, hermax::clauses::Memory memory = {})
+        : ClauseDatabase(config), Cnf(memory), limit_(limit) {}
 };
 }

@@ -1,5 +1,6 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#include "native/clause_api.hpp"
 
 #include <stdexcept>
 #include <string_view>
@@ -35,7 +36,7 @@ bool divide_common_factor(structuredpb::GroupedLeqConstraint& constraint, bool e
     return true;
 }
 
-PyObject* py_encode_grouped(PyObject* args, PyObject* kwargs, bool equality) {
+PyObject* py_encode_grouped(PyObject* args, PyObject* kwargs, bool equality, bool packed = false) {
     PyObject* wlits_obj = nullptr;
     PyObject* groups_obj = nullptr;
     PyObject* bound_obj = nullptr;
@@ -137,13 +138,16 @@ PyObject* py_encode_grouped(PyObject* args, PyObject* kwargs, bool equality) {
 
         structuredpb::EncodeOptions options;
         options.top_id = top_id;
+        const auto* api = packed ? hermax::clauses::import_api() : nullptr;
+        if (packed && !api) return nullptr;
+        if (packed) options.clause_memory = {PyMem_Malloc, PyMem_Free};
         if (equality) {
             if (std::string_view(encoder_cstr) != "rggt") {
                 throw std::invalid_argument("structuredpb: native equality is supported only by rggt");
             }
             constraint.validate();
         }
-        structuredpb::EncodeResult result;
+        structuredpb::EncodeResult result(options.clause_memory);
         if (!divide_common_factor(constraint, equality)) {
             result.cnf.num_vars = options.top_id;
             result.cnf.add_clause({});
@@ -154,27 +158,34 @@ PyObject* py_encode_grouped(PyObject* args, PyObject* kwargs, bool equality) {
             result = encoder->encode(constraint, options);
         }
 
-        PyObject* py_clauses = PyList_New(static_cast<Py_ssize_t>(result.cnf.clauses.size()));
-        if (py_clauses == nullptr) {
-            return nullptr;
-        }
-        for (Py_ssize_t i = 0; i < static_cast<Py_ssize_t>(result.cnf.clauses.size()); ++i) {
-            const auto& clause = result.cnf.clauses[static_cast<std::size_t>(i)];
-            PyObject* py_clause = PyList_New(static_cast<Py_ssize_t>(clause.size()));
-            if (py_clause == nullptr) {
-                Py_DECREF(py_clauses);
+        PyObject* py_clauses = nullptr;
+        if (packed) {
+            py_clauses = api->adopt(&result.cnf.clauses);
+            if (!py_clauses) return nullptr;
+        } else {
+            py_clauses = PyList_New(static_cast<Py_ssize_t>(result.cnf.clauses.size()));
+            if (py_clauses == nullptr) {
                 return nullptr;
             }
-            for (Py_ssize_t j = 0; j < static_cast<Py_ssize_t>(clause.size()); ++j) {
-                PyObject* lit_obj = PyLong_FromLong(static_cast<long>(clause[static_cast<std::size_t>(j)]));
-                if (lit_obj == nullptr) {
-                    Py_DECREF(py_clause);
+            for (Py_ssize_t i = 0; i < static_cast<Py_ssize_t>(result.cnf.clauses.size()); ++i) {
+                const auto& clause = result.cnf.clauses[static_cast<std::size_t>(i)];
+                PyObject* py_clause = PyList_New(static_cast<Py_ssize_t>(clause.size()));
+                if (py_clause == nullptr) {
                     Py_DECREF(py_clauses);
                     return nullptr;
                 }
-                PyList_SET_ITEM(py_clause, j, lit_obj);
+                for (Py_ssize_t j = 0; j < static_cast<Py_ssize_t>(clause.size()); ++j) {
+                    PyObject* lit_obj = PyLong_FromLong(static_cast<long>(clause[static_cast<std::size_t>(j)]));
+                    if (lit_obj == nullptr) {
+                        Py_DECREF(py_clause);
+                        Py_DECREF(py_clauses);
+                        return nullptr;
+                    }
+                    PyList_SET_ITEM(py_clause, j, lit_obj);
+                }
+                PyList_SET_ITEM(py_clauses, i, py_clause);
             }
-            PyList_SET_ITEM(py_clauses, i, py_clause);
+
         }
 
         PyObject* py_aux = PyLong_FromLong(static_cast<long>(result.cnf.num_vars));
@@ -192,7 +203,7 @@ PyObject* py_encode_grouped(PyObject* args, PyObject* kwargs, bool equality) {
         PyTuple_SET_ITEM(out, 1, py_aux);
         return out;
     } catch (const std::exception& exc) {
-        PyErr_SetString(PyExc_RuntimeError, exc.what());
+        if (!PyErr_Occurred()) PyErr_SetString(PyExc_RuntimeError, exc.what());
         return nullptr;
     } catch (...) {
         PyErr_SetString(PyExc_RuntimeError, "unknown error in structuredpb encoder");
@@ -202,6 +213,13 @@ PyObject* py_encode_grouped(PyObject* args, PyObject* kwargs, bool equality) {
 
 PyObject* py_encode_leq(PyObject*, PyObject* args, PyObject* kwargs) {
     return py_encode_grouped(args, kwargs, false);
+}
+
+PyObject* py_encode_leq_packed(PyObject*, PyObject* args, PyObject* kwargs) {
+    return py_encode_grouped(args, kwargs, false, true);
+}
+PyObject* py_encode_eq_packed(PyObject*, PyObject* args, PyObject* kwargs) {
+    return py_encode_grouped(args, kwargs, true, true);
 }
 
 PyObject* py_encode_eq(PyObject*, PyObject* args, PyObject* kwargs) {
@@ -225,12 +243,14 @@ PyObject* py_available_encoders(PyObject*, PyObject*) {
         }
         return out;
     } catch (const std::exception& exc) {
-        PyErr_SetString(PyExc_RuntimeError, exc.what());
+        if (!PyErr_Occurred()) PyErr_SetString(PyExc_RuntimeError, exc.what());
         return nullptr;
     }
 }
 
 PyMethodDef module_methods[] = {
+    {"_encode_leq_packed", reinterpret_cast<PyCFunction>(py_encode_leq_packed), METH_VARARGS | METH_KEYWORDS, nullptr},
+    {"_encode_eq_packed", reinterpret_cast<PyCFunction>(py_encode_eq_packed), METH_VARARGS | METH_KEYWORDS, nullptr},
     {"encode_leq", reinterpret_cast<PyCFunction>(py_encode_leq), METH_VARARGS | METH_KEYWORDS,
      "Encode one grouped <= pseudo-Boolean constraint."},
     {"encode_eq", reinterpret_cast<PyCFunction>(py_encode_eq), METH_VARARGS | METH_KEYWORDS,

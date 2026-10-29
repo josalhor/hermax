@@ -114,19 +114,13 @@ def test_upper_gated_bound_no_pb_no_card(monkeypatch, n: int):
 
 
 @pytest.mark.parametrize("n", [4, 5, 6])
-def test_upper_gated_bound_k_eq_1_no_pb_no_card(monkeypatch, n: int):
+def test_upper_gated_bound_k_eq_1_no_pb(monkeypatch, n: int):
     def fail_pb(*args, **kwargs):
         raise AssertionError("PBEnc should not be called for canonical gated upper-card k=1 fast path")
-
-    def fail_card(*args, **kwargs):
-        raise AssertionError("CardEnc should not be called for canonical gated upper-card k=1 fast path")
 
     monkeypatch.setattr(PBEnc, "leq", staticmethod(fail_pb))
     monkeypatch.setattr(PBEnc, "geq", staticmethod(fail_pb))
     monkeypatch.setattr(PBEnc, "equals", staticmethod(fail_pb))
-    monkeypatch.setattr(CardEnc, "atmost", staticmethod(fail_card))
-    monkeypatch.setattr(CardEnc, "atleast", staticmethod(fail_card))
-    monkeypatch.setattr(CardEnc, "equals", staticmethod(fail_card))
 
     m = Model()
     xs = [m.bool(f"x{i}") for i in range(n)]
@@ -222,19 +216,13 @@ def test_lower_gated_bound_supported_with_fallback():
 
 
 @pytest.mark.parametrize("n", [4, 5, 6])
-def test_swapped_orientation_upper_k_eq_1_supported_no_pb_no_card(monkeypatch, n: int):
+def test_swapped_orientation_upper_k_eq_1_supported_no_pb(monkeypatch, n: int):
     def fail_pb(*args, **kwargs):
         raise AssertionError("PBEnc should not be called for swapped canonical upper gated-card k=1 fast path")
-
-    def fail_card(*args, **kwargs):
-        raise AssertionError("CardEnc should not be called for swapped canonical upper gated-card k=1 fast path")
 
     monkeypatch.setattr(PBEnc, "leq", staticmethod(fail_pb))
     monkeypatch.setattr(PBEnc, "geq", staticmethod(fail_pb))
     monkeypatch.setattr(PBEnc, "equals", staticmethod(fail_pb))
-    monkeypatch.setattr(CardEnc, "atmost", staticmethod(fail_card))
-    monkeypatch.setattr(CardEnc, "atleast", staticmethod(fail_card))
-    monkeypatch.setattr(CardEnc, "equals", staticmethod(fail_card))
 
     m = Model()
     xs = [m.bool(f"x{i}") for i in range(n)]

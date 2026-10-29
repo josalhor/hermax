@@ -68,7 +68,7 @@ def test_reported_equality_switches_to_cached_binary_views():
 @pytest.mark.parametrize("reason", ["states", "clauses"])
 @pytest.mark.parametrize("op", OPS)
 def test_aborted_attempt_is_atomic_and_fallback_is_sound(reason, op):
-    original = integer_native.encode_pb
+    original = integer_native._encode_pb_packed
     seen = []
 
     def bounded(**kwargs):
@@ -80,7 +80,7 @@ def test_aborted_attempt_is_atomic_and_fallback_is_sound(reason, op):
 
     model = Model()
     xs = [model.int(f"x{i}", lb, lb + 2) for i, lb in enumerate([-2, 1, 0])]
-    with patch.object(integer_native, "encode_pb", side_effect=bounded):
+    with patch.object(integer_native, "_encode_pb_packed", side_effect=bounded):
         model &= OPS[op](2 * xs[0] - 3 * xs[1] + 5 * xs[2] + 7, 5)
         cnf = model.to_cnf()
     assert seen and all(x._binary_view is not None for x in xs)
@@ -203,20 +203,20 @@ def test_other_native_errors_are_not_silently_treated_as_budget_overflow(monkeyp
 
     model = Model()
     xs = [model.int(f"x{i}", 0, 3) for i in range(3)]
-    monkeypatch.setattr(integer_native, "encode_pb", fail)
+    monkeypatch.setattr(integer_native, "_encode_pb_packed", fail)
     with pytest.raises(ValueError, match="deliberate native error"):
         model &= 2 * xs[0] + 3 * xs[1] + 5 * xs[2] <= 12
     assert all(x._binary_view is None for x in xs)
 
 
 def test_boolean_and_bivariate_constraints_keep_existing_routes(monkeypatch):
-    original = integer_native.encode_pb
+    original = integer_native._encode_pb_packed
 
     def unbudgeted(**kwargs):
         assert not kwargs.get("state_limit") and not kwargs.get("clause_limit")
         return original(**kwargs)
 
-    monkeypatch.setattr(integer_native, "encode_pb", unbudgeted)
+    monkeypatch.setattr(integer_native, "_encode_pb_packed", unbudgeted)
     m = Model()
     bs = m.bool_vector("b", 4)
     m &= sum((i + 2) * b for i, b in enumerate(bs)) <= 7

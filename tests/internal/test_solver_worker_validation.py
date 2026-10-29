@@ -23,22 +23,15 @@ class _WorkerProbeSolver:
         self.calls.append(("add_soft_relaxed", list(clause), weight, relax_var))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Worker operation replay coerces malformed literals with int()",
-)
 @pytest.mark.parametrize("raw_literal", [1.5, True, "1"])
 def test_worker_operation_replay_rejects_non_integer_literals(raw_literal):
     solver = _WorkerProbeSolver()
 
     with pytest.raises((TypeError, ValueError)):
         _ops_replay_to_solver(solver, [("add_clause", [raw_literal])])
+    assert solver.calls == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Worker snapshot replay coerces malformed literals with int()",
-)
 @pytest.mark.parametrize("raw_literal", [1.5, True, "1"])
 def test_worker_snapshot_replay_rejects_non_integer_literals(raw_literal):
     solver = _WorkerProbeSolver()
@@ -48,4 +41,5 @@ def test_worker_snapshot_replay_rejects_non_integer_literals(raw_literal):
             solver,
             {"hard_clauses": [[raw_literal]], "soft_units": [], "soft_nonunit": []},
         )
+    assert solver.calls == []
 

@@ -1,15 +1,17 @@
 from __future__ import annotations
 import math
+import operator as _operator
 import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import reduce
-from typing import Iterable, Mapping, Optional, Sequence
+from typing import Callable, Iterable, Mapping, Optional, Sequence
 from pysat.formula import CNF, WCNF
 from ._integer_views import binary_view as _binary_view_for
-from hermax.internal.operation_cache import cached_operation
-from hermax.encoder.card import CardEnc, EncType as CardEncType
+from hermax.internal.operation_cache import _Identity, cached_operation
+from hermax.encoder.card import EncType as CardEncType
+from hermax.encoder._packed import CardEnc
 from hermax.encoder.pb_enc import PBEnc
 from hermax.encoder.pbamo import PBAMOEnc
 from hermax.utils import batcher_odd_even_unary_add_network
@@ -34,9 +36,28 @@ from .expressions import (
     _LazyIntExpr,
     DeferredClauseGroup,
     _ReifiableClauseGroup,
+    _BooleanComposition,
+    _PredicateLiteral,
     _deferred_constant_constraint,
 )
 from ._int_thresholds import ThresholdLiterals
+
+
+_INTEGER_COMPARISONS = {
+    "<=": _operator.le, "<": _operator.lt,
+    ">=": _operator.ge, ">": _operator.gt,
+    "==": _operator.eq, "!=": _operator.ne,
+}
+
+
+def _integer_runs(values: Sequence[int]) -> list[tuple[int, int]]:
+    runs: list[tuple[int, int]] = []
+    for value in values:
+        if runs and value == runs[-1][1] + 1:
+            runs[-1] = runs[-1][0], value
+        else:
+            runs.append((value, value))
+    return runs
 
 
 class IntSetVar:
@@ -62,7 +83,7 @@ class IntSetVar:
         self._member_lits: dict[int, Literal] = {
             v: model.bool(f"{name}::in[{v}]") for v in self.universe
         }
-        self._contains_cache: dict[int, Literal] = {}
+        self._contains_cache: dict[_Identity, Literal] = {}
 
     def _lit_for_value(self, value: int) -> Literal:
         lit = self._member_lits.get(int(value))
@@ -108,22 +129,6 @@ class IntSetVar:
         ]
         return d, clauses
 
-    @staticmethod
-    def _compress_runs(values: Sequence[int]) -> list[tuple[int, int]]:
-        if not values:
-            return []
-        runs: list[tuple[int, int]] = []
-        lo = hi = int(values[0])
-        for v in values[1:]:
-            iv = int(v)
-            if iv == hi + 1:
-                hi = iv
-                continue
-            runs.append((lo, hi))
-            lo = hi = iv
-        runs.append((lo, hi))
-        return runs
-
     def contains(self, value: int | "IntVar") -> Literal:
         """Return an indicator for membership in the selected set value.
 
@@ -133,7 +138,7 @@ class IntSetVar:
         """
         if isinstance(value, IntVar):
             _ensure_same_model_pair_fast(self, value)
-            key = id(value)
+            key = _Identity(value)
             cached = self._contains_cache.get(key)
             if cached is not None:
                 return cached
@@ -157,12 +162,7 @@ class IntSetVar:
                 equalities.append(equal)
                 members.append(member)
 
-            if not equalities:
-                lit = self._model._get_bool_constant_literal(False)
-                self._contains_cache[key] = lit
-                return lit
-
-            b = self._model.bool()
+            b = self._model._predicate_bool(lambda result: result[value] in result[self])
             # Let e_v mean x == v and m_v mean v is selected in this set.
             # Since x takes exactly one value, these clauses encode
             # b <-> OR_v(e_v AND m_v) without an auxiliary AND literal per v:
@@ -232,11 +232,13 @@ class IntSetVar:
         if not isinstance(other, IntSetVar):
             raise TypeError("subset_of() expects IntSetVar.")
         _ensure_same_model_pair_fast(self, other)
-        vals = sorted(set(self.universe) | set(other.universe))
-        clauses = [
-            Clause(self._model, [~self._lit_for_value(v), other._lit_for_value(v)])
-            for v in vals
-        ]
+        if self is other:
+            return ClauseGroup(self._model, [])
+        clauses = []
+        for value, left in self._member_lits.items():
+            right = other._member_lits.get(value)
+            literals = [~left] if right is None else [~left, right]
+            clauses.append(Clause(self._model, literals))
         return ClauseGroup(self._model, clauses)
 
     def superset_of(self, other: "IntSetVar") -> ClauseGroup:
@@ -297,24 +299,9 @@ class IntSetVar:
             return ClauseGroup(self._model, [])
 
         def _build() -> ClauseGroup:
-            true_lit = self._model._get_bool_constant_literal(True)
-            false_lit = self._model._get_bool_constant_literal(False)
-            diff_lits: list[Literal] = []
-            clauses: list[Clause] = []
-            for v in self.universe:
-                target = true_lit if v in const_vals else false_lit
-                d, defs = self._xor_indicator(self._member_lits[v], target)
-                clauses.extend(defs)
-                if d is true_lit:
-                    return ClauseGroup(self._model, clauses)
-                if d is false_lit:
-                    continue
-                diff_lits.append(d)
-            if not diff_lits:
-                clauses.append(Clause(self._model, []))
-            else:
-                clauses.append(Clause(self._model, diff_lits))
-            return ClauseGroup(self._model, clauses)
+            differences = [~lit if value in const_vals else lit
+                           for value, lit in self._member_lits.items()]
+            return ClauseGroup(self._model, [Clause(self._model, differences)])
 
         return _ReifiableClauseGroup(self._model, _build, lambda: self._eq_group_constant(const_vals))
 
@@ -323,15 +310,23 @@ class IntSetVar:
         if not isinstance(other, IntSetVar):
             raise TypeError("set operation expects IntSetVar.")
         _ensure_same_model_pair_fast(self, other)
+        if op not in ("union", "intersection", "difference", "symdiff"):
+            raise ValueError(f"Unknown set op {op!r}")
         vals = sorted(set(self.universe) | set(other.universe))
         out_name = self._model._reserve_name(None) if name is None else name
         self._model._reserve_container_name(out_name)
         out = IntSetVar(self._model, out_name, vals)
         for v in vals:
-            a = self._lit_for_value(v)
-            b = other._lit_for_value(v)
+            a = self._member_lits.get(v)
+            b = other._member_lits.get(v)
             r = out._member_lits[v]
-            if op == "union":
+            if a is None or b is None:
+                if op == "intersection" or (op == "difference" and a is None):
+                    group = ClauseGroup(self._model, [Clause(self._model, [~r])])
+                else:
+                    source = b if a is None else a
+                    group = self._model._equiv_literals_group(r, source)
+            elif op == "union":
                 group = ClauseGroup(
                     self._model,
                     [
@@ -358,7 +353,7 @@ class IntSetVar:
                         Clause(self._model, [~a, b, r]),
                     ],
                 )
-            elif op == "symdiff":
+            else:
                 group = ClauseGroup(
                     self._model,
                     [
@@ -368,8 +363,6 @@ class IntSetVar:
                         Clause(self._model, [a, ~b, r]),
                     ],
                 )
-            else:  # pragma: no cover - defensive
-                raise ValueError(f"Unknown set op {op!r}")
             self._model._register_literal_definition(r, group)
         return out
 
@@ -433,23 +426,52 @@ class _FrozenList(list):
     sort = _immutable
 
 
+def _is_enum_label(value):
+    return isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))
+
+
+def _validate_enum_choices(choices, nullable):
+    if isinstance(choices, (str, bytes)) or not isinstance(choices, Sequence):
+        raise TypeError("Enum choices must be a sequence of strings or integers.")
+    if not isinstance(nullable, bool):
+        raise TypeError("nullable must be a bool.")
+    if not (all(isinstance(c, str) for c in choices)
+            or all(isinstance(c, int) and not isinstance(c, bool) for c in choices)):
+        raise TypeError("Enum choices must be all strings or all integers.")
+    if len(set(choices)) != len(choices):
+        raise ValueError("Enum choices must be unique.")
+    if not choices and not nullable:
+        raise ValueError("Non-nullable EnumVar requires at least one choice.")
+
+
 class EnumVar:
     """Finite-domain categorical variable encoded as choice literals."""
     __slots__ = ("_model", "name", "choices", "nullable", "_choice_lits")
 
-    def __init__(self, model: "Model", name: str, choices: Sequence[str], nullable: bool):
+    def __init__(self, model: "Model", name: str, choices: Sequence[str | int], nullable: bool):
         self._model = model
         self.name = name
-        if any(not isinstance(choice, str) for choice in choices):
-            raise TypeError("Enum choices must be strings.")
-        if len(set(choices)) != len(choices):
-            raise ValueError("Enum choices must be unique.")
+        _validate_enum_choices(choices, nullable)
         self.choices = _FrozenList(choices)
         self.nullable = nullable
         if not self.choices and not self.nullable:
             raise ValueError("Non-nullable EnumVar requires at least one choice.")
         self._choice_lits = {c: model.bool(f"{name}::{c}") for c in self.choices}
         self._add_domain_constraints()
+
+    def _none_indicator(self) -> Literal:
+        if not self.nullable:
+            raise ValueError("Enum is not nullable.")
+
+        def definition(indicator):
+            choices = list(self._choice_lits.values())
+            clauses = [Clause(self._model, [~indicator, ~choice]) for choice in choices]
+            clauses.append(Clause(self._model, [*choices, indicator]))
+            return ClauseGroup(self._model, clauses)
+
+        return self._model.canonical_internal_bool(
+            ("table_enum_none", _Identity(self)), definition=definition
+        )
 
     def _add_domain_constraints(self) -> None:
         lits = [self._choice_lits[c] for c in self.choices]
@@ -477,7 +499,19 @@ class EnumVar:
         for lit in lits:
             self._model._register_literal_definition(lit, group)
 
-    def is_in(self, choices: Sequence[str]) -> Clause:
+    def _choice_literal(self, value):
+        if value is None:
+            raise ValueError("Unknown enum choice None")
+        if not _is_enum_label(value):
+            raise TypeError("Enum labels must be strings or integers, not bools.")
+        if self.choices and isinstance(value, str) != isinstance(self.choices[0], str):
+            raise TypeError("Enum labels must match the type of the declared choices.")
+        try:
+            return self._choice_lits[value]
+        except KeyError:
+            raise ValueError(f"Unknown enum choice {value!r}") from None
+
+    def is_in(self, choices: Sequence[str | int]) -> Clause:
         """Return a clause asserting that the enum is one of ``choices``.
 
         The clause reuses the enum's choice literals and adds no variables.
@@ -494,8 +528,7 @@ class EnumVar:
         seen = set()
         lits: list[Literal] = []
         for c in choices:
-            if c not in self._choice_lits:
-                raise ValueError(f"Unknown enum choice {c!r}")
+            self._choice_literal(c)
             if c in seen:
                 continue
             seen.add(c)
@@ -504,7 +537,7 @@ class EnumVar:
             raise ValueError("EnumVar.is_in() requires at least one valid choice.")
         return Clause.from_iterable(lits)
 
-    def is_in_or_none(self, choices: Sequence[str]) -> ClauseGroup:
+    def is_in_or_none(self, choices: Sequence[str | int]) -> ClauseGroup:
         """Return a nullable constraint allowing ``choices`` or ``None``.
 
         It is valid only for nullable enums. It may return more than one clause
@@ -525,10 +558,9 @@ class EnumVar:
         if not self.nullable:
             raise ValueError("EnumVar.is_in_or_none() requires a nullable enum.")
         seen = set()
-        allowed_labels: list[str] = []
+        allowed_labels: list[str | int] = []
         for c in choices:
-            if c not in self._choice_lits:
-                raise ValueError(f"Unknown enum choice {c!r}")
+            self._choice_literal(c)
             if c in seen:
                 continue
             seen.add(c)
@@ -540,14 +572,14 @@ class EnumVar:
         return ClauseGroup(self._model, clauses)
 
     def __eq__(self, other):  # type: ignore[override]
-        if isinstance(other, str):
-            if other not in self._choice_lits:
-                raise ValueError(f"Unknown enum choice {other!r}")
-            return self._choice_lits[other]
+        if _is_enum_label(other):
+            return self._choice_literal(other)
         if isinstance(other, EnumVar):
             _ensure_same_model_pair_fast(self, other)
             if self.choices != other.choices:
                 raise ValueError("Enum equality requires matching choices.")
+            if self is other:
+                return ClauseGroup(self._model, [])
             clauses: list[Clause] = []
             for choice in self.choices:
                 eq = self._choice_lits[choice] == other._choice_lits[choice]
@@ -560,18 +592,18 @@ class EnumVar:
                     clauses.extend(eq)
                 else:
                     raise TypeError("Enum equality expected literal equivalence ClauseGroup.")
-            return ClauseGroup(self._model, clauses)
+            return _EnumRelation(self._model, clauses, lambda: self != other)
         raise _unsupported_comparison_error(self, other)
 
     def __ne__(self, other):  # type: ignore[override]
-        if isinstance(other, str):
-            if other not in self._choice_lits:
-                raise ValueError(f"Unknown enum choice {other!r}")
-            return ~self._choice_lits[other]
+        if _is_enum_label(other):
+            return ~self._choice_literal(other)
         if isinstance(other, EnumVar):
             _ensure_same_model_pair_fast(self, other)
             if self.choices != other.choices:
                 raise ValueError("Enum inequality requires matching choices.")
+            if self is other:
+                return ClauseGroup(self._model, [Clause(self._model, [])])
             clauses: list[Clause] = []
             # Enforce different chosen value by forbidding pairwise equal choices.
             for choice in self.choices:
@@ -580,18 +612,96 @@ class EnumVar:
             if self.nullable and other.nullable:
                 lits = [self._choice_lits[c] for c in self.choices] + [other._choice_lits[c] for c in self.choices]
                 clauses.append(Clause(self._model, lits))
-            return ClauseGroup(self._model, clauses)
+            return _EnumRelation(self._model, clauses, lambda: self == other)
         raise _unsupported_comparison_error(self, other)
 
 
-class _MultiplexerInt:
-    """Lazy descriptor for ``array @ int_var`` element-style constraints.
+class _EnumRelation(ClauseGroup):
+    """Enum comparison retaining its opposite for explicit iff()."""
 
-    This holds an array of integer constants and an index :class:`IntVar` and
-    compiles comparisons by unrolling across the index domain.
-    """
+    __slots__ = ("_opposite",)
+
+    def __init__(self, model: "Model", clauses: Sequence[Clause], opposite: Callable[[], ClauseGroup]):
+        super().__init__(model, clauses)
+        self._opposite: Callable[[], ClauseGroup] | None = opposite
+
+    def iff(self, indicator: Literal) -> ClauseGroup:
+        if self._opposite is None or not self._clauses:
+            return super().iff(indicator)
+        if not isinstance(indicator, Literal):
+            raise _detection_error()
+        _ensure_same_model_pair_fast(self, indicator)
+
+        def build() -> ClauseGroup:
+            opposite = self._opposite
+            if opposite is None:
+                return ClauseGroup.iff(self, indicator)._realize()
+            return self.only_if(indicator) & opposite().only_if(~indicator)
+
+        return _ReifiableClauseGroup(
+            self._model, build, lambda: self.iff(~indicator)._realize()
+        )
+
+    def extend(self, other, *, inplace: bool = False) -> ClauseGroup:
+        super().extend(other, inplace=inplace)
+        self._opposite = None
+        return self
+
+
+class _IndexedInt:
+    """Shared deferred comparisons for integer-valued array lookups."""
+
+    __slots__ = ()
+
+    def _evaluate_comparator(self, op: str, rhs) -> ClauseGroup:
+        if not (isinstance(rhs, IntVar) or isinstance(rhs, int) and not isinstance(rhs, bool)):
+            raise TypeError(f"{self._comparison_label} comparison does not support RHS {type(rhs)!r}")
+
+        def build() -> ClauseGroup:
+            if isinstance(rhs, IntVar):
+                _ensure_same_model_pair_fast(self, rhs)
+            clauses: list[Clause] = []
+            idx = self._index_var
+            compare = _INTEGER_COMPARISONS[op]
+            for k in range(idx.lb, idx.ub + 1):
+                branch = compare(self._item_at(k), rhs)
+                if isinstance(branch, bool):
+                    if not branch:
+                        clauses.extend(self._model._as_clausegroup(idx != k))
+                    continue
+                condition = idx == k
+                if isinstance(branch, PBConstraint):
+                    clauses.extend(branch.only_if(condition).clauses())
+                else:
+                    clauses.extend(self._model._as_clausegroup(branch).only_if(condition))
+            return ClauseGroup(self._model, clauses)
+
+        return DeferredClauseGroup(self._model, build)
+
+    def __le__(self, rhs):
+        return self._evaluate_comparator("<=", rhs)
+
+    def __lt__(self, rhs):
+        return self._evaluate_comparator("<", rhs)
+
+    def __ge__(self, rhs):
+        return self._evaluate_comparator(">=", rhs)
+
+    def __gt__(self, rhs):
+        return self._evaluate_comparator(">", rhs)
+
+    def __eq__(self, rhs):
+        return self._evaluate_comparator("==", rhs)
+
+    def __ne__(self, rhs):
+        return self._evaluate_comparator("!=", rhs)
+
+
+class _MultiplexerInt(_IndexedInt):
+    """Constant-array lookup whose positions start at the index's lower bound."""
 
     __slots__ = ("_model", "_array", "_index_var")
+    _comparison_label = "Multiplexer"
 
     def __init__(self, model: "Model", array: Sequence[int], index_var: "IntVar"):
         self._model = model
@@ -600,171 +710,72 @@ class _MultiplexerInt:
         self._array = tuple(int(v) for v in array)
         self._index_var = index_var
 
-    @staticmethod
-    def _cmp_int(lhs: int, op: str, rhs: int) -> bool:
-        return {
-            "<=": lhs <= rhs,
-            "<": lhs < rhs,
-            ">=": lhs >= rhs,
-            ">": lhs > rhs,
-            "==": lhs == rhs,
-            "!=": lhs != rhs,
-        }[op]
-
-    def _rhs_constraint(self, op: str, rhs, array_val: int):
-        if isinstance(rhs, int) and not isinstance(rhs, bool):
-            return self._cmp_int(array_val, op, rhs)
-        if isinstance(rhs, IntVar):
-            _ensure_same_model_pair_fast(self, rhs)
-            if op == "<=":
-                return rhs >= array_val
-            if op == "<":
-                return rhs > array_val
-            if op == ">=":
-                return rhs <= array_val
-            if op == ">":
-                return rhs < array_val
-            if op == "==":
-                return rhs == array_val
-            if op == "!=":
-                return rhs != array_val
-            raise ValueError(f"Unsupported comparator {op!r}")
-        raise TypeError(f"Multiplexer comparison does not support RHS {type(rhs)!r}")
-
-    def _validate_rhs(self, rhs) -> None:
-        if isinstance(rhs, IntVar) or (isinstance(rhs, int) and not isinstance(rhs, bool)):
-            return
-        raise TypeError(f"Multiplexer comparison does not support RHS {type(rhs)!r}")
-
     def _evaluate_comparator(self, op: str, rhs) -> ClauseGroup:
-        self._validate_rhs(rhs)
-        def _build() -> ClauseGroup:
-            clauses: list[Clause] = []
-            idx = self._index_var
-            for k in range(idx.lb, idx.ub + 1):
-                array_pos = k - idx.lb
-                array_val = self._array[array_pos]
-                branch = self._rhs_constraint(op, rhs, array_val)
-                if isinstance(branch, bool):
-                    if branch:
-                        continue
-                    neq = (idx != k)
-                    if isinstance(neq, Literal):
-                        clauses.append(Clause(self._model, [neq]))
-                    else:
-                        assert isinstance(neq, ClauseGroup), "IntVar.__ne__(int) must return Literal or ClauseGroup"
-                        clauses.extend(neq)
-                    continue
+        if isinstance(rhs, int) and not isinstance(rhs, bool):
+            compare = _INTEGER_COMPARISONS[op]
+            index = self._index_var
+            return DeferredClauseGroup(self._model, lambda: index._allowed_values(
+                k for k in range(index.lb, index.ub + 1) if compare(self._item_at(k), rhs)
+            )._realize())
+        return super()._evaluate_comparator(op, rhs)
 
-                idx_eq_k = (idx == k)
-                assert isinstance(idx_eq_k, Literal), "IntVar.__eq__(int) must return Literal in-domain"
-
-                if isinstance(branch, PBConstraint):
-                    clauses.extend(branch.only_if(idx_eq_k).clauses())
-                else:
-                    clauses.extend(self._model._as_clausegroup(branch).only_if(idx_eq_k))
-            return ClauseGroup(self._model, clauses)
-
-        return DeferredClauseGroup(self._model, _build)
-
-    def __le__(self, rhs):
-        return self._evaluate_comparator("<=", rhs)
-
-    def __lt__(self, rhs):
-        return self._evaluate_comparator("<", rhs)
-
-    def __ge__(self, rhs):
-        return self._evaluate_comparator(">=", rhs)
-
-    def __gt__(self, rhs):
-        return self._evaluate_comparator(">", rhs)
-
-    def __eq__(self, rhs):  # type: ignore[override]
-        return self._evaluate_comparator("==", rhs)
-
-    def __ne__(self, rhs):  # type: ignore[override]
-        return self._evaluate_comparator("!=", rhs)
+    def _item_at(self, index: int) -> int:
+        return self._array[index - self._index_var.lb]
 
 
-class _VectorElementInt:
-    """Lazy descriptor for variable-array indexing: ``IntVector[IntVar]``.
-
-    Represents ``V[B]`` where ``V`` is a vector of :class:`IntVar` and ``B`` is
-    an index :class:`IntVar`. Comparators are compiled by unrolling index values
-    and gating branch constraints:
-
-    ``(B == i) -> (V[i] OP rhs)``.
-    """
+class _VectorElementInt(_IndexedInt):
+    """Integer-vector lookup using zero-based positions."""
 
     __slots__ = ("_model", "_items", "_index_var")
+    _comparison_label = "Vector element"
 
     def __init__(self, model: "Model", items: Sequence["IntVar"], index_var: "IntVar"):
         self._model = model
         self._items = tuple(items)
         self._index_var = index_var
 
-    def _rhs_constraint(self, op: str, rhs, item: "IntVar"):
-        if isinstance(rhs, int) and not isinstance(rhs, bool):
-            return {
-                "<=": item <= rhs,
-                "<": item < rhs,
-                ">=": item >= rhs,
-                ">": item > rhs,
-                "==": item == rhs,
-                "!=": item != rhs,
-            }[op]
-        if isinstance(rhs, IntVar):
-            _ensure_same_model_pair_fast(self, rhs)
-            return {
-                "<=": item <= rhs,
-                "<": item < rhs,
-                ">=": item >= rhs,
-                ">": item > rhs,
-                "==": item == rhs,
-                "!=": item != rhs,
-            }[op]
-        raise TypeError(f"Vector element comparison does not support RHS {type(rhs)!r}")
+    def _item_at(self, index: int) -> "IntVar":
+        return self._items[index]
 
-    def _validate_rhs(self, rhs) -> None:
-        if isinstance(rhs, IntVar) or (isinstance(rhs, int) and not isinstance(rhs, bool)):
-            return
-        raise TypeError(f"Vector element comparison does not support RHS {type(rhs)!r}")
 
-    def _evaluate_comparator(self, op: str, rhs) -> ClauseGroup:
-        self._validate_rhs(rhs)
-        def _build() -> ClauseGroup:
-            clauses: list[Clause] = []
-            idx = self._index_var
-            for k in range(idx.lb, idx.ub + 1):
-                item_pos = k
-                item = self._items[item_pos]
-                branch = self._rhs_constraint(op, rhs, item)
+class _VectorElementBool(_BooleanComposition):
+    """A Boolean lookup over the index's existing threshold bits."""
 
-                idx_eq_k = (idx == k)
-                assert isinstance(idx_eq_k, Literal), "IntVar.__eq__(int) must return Literal in-domain"
+    __slots__ = ("_items", "_index_var", "_expected")
 
-                clauses.extend(self._model._as_clausegroup(branch).only_if(idx_eq_k))
-            return ClauseGroup(self._model, clauses)
+    def __init__(self, model, items, index, expected=True):
+        self._items = tuple(items)
+        self._index_var = index
+        self._expected = expected
+        super().__init__(model, lambda: self._branch_group(expected),
+                         lambda: self._branch_group(not expected))
 
-        return DeferredClauseGroup(self._model, _build)
+    def _branch_group(self, expected):
+        clauses = []
+        for value in range(self._index_var.lb, self._index_var.ub + 1):
+            guard = [~atom for atom in self._index_var._exact_value_atoms(value)]
+            selected = self._items[value]
+            clauses.append(Clause(self._model, [*guard, selected if expected else ~selected]))
+        return ClauseGroup(self._model, clauses)
 
-    def __le__(self, rhs):
-        return self._evaluate_comparator("<=", rhs)
+    def _compare_constant(self, other, equal):
+        if isinstance(other, bool) or not isinstance(other, int):
+            raise TypeError("Use .iff(literal) to relate a Boolean lookup to a literal.")
+        if other not in (0, 1):
+            return _deferred_constant_constraint(self._model, not equal)
+        expected = self._expected if bool(other) == equal else not self._expected
+        return _VectorElementBool(self._model, self._items, self._index_var, expected)
 
-    def __lt__(self, rhs):
-        return self._evaluate_comparator("<", rhs)
+    def __eq__(self, other):
+        return self._compare_constant(other, True)
 
-    def __ge__(self, rhs):
-        return self._evaluate_comparator(">=", rhs)
+    def __ne__(self, other):
+        return self._compare_constant(other, False)
 
-    def __gt__(self, rhs):
-        return self._evaluate_comparator(">", rhs)
-
-    def __eq__(self, rhs):  # type: ignore[override]
-        return self._evaluate_comparator("==", rhs)
-
-    def __ne__(self, rhs):  # type: ignore[override]
-        return self._evaluate_comparator("!=", rhs)
+    def __invert__(self):
+        return _VectorElementBool(
+            self._model, self._items, self._index_var, not self._expected
+        )
 
 
 class IntVar:
@@ -812,7 +823,24 @@ class IntVar:
         self._cmp_cache: dict[tuple[str, int], Literal] = {}
 
     def _get_binary_view(self) -> tuple[int, ...]:
-        return _binary_view_for(self)
+        self._binary_view = _binary_view_for(self._encoding_owner())
+        return self._binary_view
+
+    def _encoding_owner(self) -> "IntVar":
+        if self._is_view and isinstance(self._threshold_lits, ThresholdLiterals):
+            return self._model._intvar_threshold_owner_by_litid[self._threshold_lits.start][0]
+        return self
+
+    @classmethod
+    def _from_offset(cls, source: "IntVar", offset: int, name: str) -> "IntVar":
+        model = source._model
+        model._reserve_container_name(name)
+        out = cls.__new__(cls)
+        out._initialize(
+            model, name, source.lb + offset, source.ub + offset,
+            source._threshold_lits, is_view=True,
+        )
+        return out
 
     @classmethod
     def _from_bool(cls, literal: Literal) -> "IntVar":
@@ -863,10 +891,15 @@ class IntVar:
         # the hidden lower-bound offset internally as a PBExpr constant.
         return PBExpr(self._model, [Term(1, lit) for lit in self._threshold_lits], self.lb)
 
+    def __neg__(self):
+        return -1 * self
+
     def __mul__(self, other):
         if isinstance(other, (Literal, Term, PBExpr, IntVar, _LazyIntExpr)):
             raise _nonlinear_error(self, other)
         if isinstance(other, int) and not isinstance(other, bool):
+            if other == 0:
+                return PBExpr(self._model, [], 0)
             expr = self._as_pbexpr()
             return PBExpr(self._model, [Term(other * t.coefficient, t.literal) for t in expr.terms], other * expr.constant)
         raise TypeError("Only integer scaling is supported for Int")
@@ -1032,7 +1065,9 @@ class IntVar:
         _ensure_same_model_pair_fast(self, other)
         key = ("!=intvar", id(other))
         if key not in self._cmp_cache:
-            d = self._model.bool(f"{self.name}!={other.name}")
+            d = self._model._predicate_bool(
+                lambda result: result[self] != result[other], f"{self.name}!={other.name}"
+            )
             # Make the indicator exact: d=true enforces !=, d=false enforces ==.
             neq = self != other
             eq = self == other
@@ -1048,19 +1083,22 @@ class IntVar:
 
     def _order_implications(self, other: "IntVar", shift: int = 0) -> list[Clause]:
         """Encode self <= other + shift, skipping constant threshold regions."""
+        if self._threshold_lits is other._threshold_lits:
+            return [] if self.lb <= other.lb + shift else [Clause(self._model, [])]
         if self.ub <= other.lb + shift:
             return []
         if self.lb > other.ub + shift:
             return [Clause(self._model, [])]
         clauses = []
-        for k in range(other.lb + shift + 1, self.ub + 1):
-            if k <= self.lb:
-                literals = [other.__ge__(k - shift)]
-            elif k > other.ub + shift:
-                literals = [~self.__ge__(k)]
-            else:
-                literals = [~self.__ge__(k), other.__ge__(k - shift)]
-            clauses.append(Clause(self._model, literals))
+        # The threshold chains propagate each boundary unit through its region.
+        if self.lb > other.lb + shift:
+            clauses.append(Clause(self._model, [other.__ge__(self.lb - shift)]))
+        lo = max(self.lb, other.lb + shift)
+        hi = min(self.ub, other.ub + shift)
+        for k in range(lo + 1, hi + 1):
+            clauses.append(Clause(self._model, [~self.__ge__(k), other.__ge__(k - shift)]))
+        if self.ub > other.ub + shift:
+            clauses.append(Clause(self._model, [~self.__ge__(other.ub + shift + 1)]))
         return clauses
 
     def _exact_value_atoms(self, value: int) -> list[Literal]:
@@ -1119,21 +1157,32 @@ class IntVar:
         if lo == self.lb and hi == self.ub:
             return Clause(m, [])
 
-        ge_lo = self.__ge__(lo)
-        ge_hi1 = self.__ge__(hi + 1)
+        if lo == self.lb:
+            return Clause(m, [self >= hi + 1])
+        if hi == self.ub:
+            return Clause(m, [self < lo])
+        return Clause(m, [self < lo, self >= hi + 1])
 
-        # Forbid values in [lo, hi] by forcing a jump:
-        #   x >= lo  ->  x >= hi+1
-        # Constant-fold any edge cases so we avoid internal __true/__false bloat.
-        if ge_lo is m._get_bool_constant_literal(False) or ge_hi1 is m._get_bool_constant_literal(True):
-            return Clause(m, [m._get_bool_constant_literal(True)])
-        if ge_lo is m._get_bool_constant_literal(True) and ge_hi1 is m._get_bool_constant_literal(False):
-            return Clause(m, [])
-        if ge_lo is m._get_bool_constant_literal(True):
-            return Clause(m, [ge_hi1])
-        if ge_hi1 is m._get_bool_constant_literal(False):
-            return Clause(m, [~ge_lo])
-        return Clause(m, [~ge_lo, ge_hi1])
+    def _allowed_values(self, values: Iterable[int]) -> ClauseGroup:
+        """Encode membership in validated domain values using forbidden runs."""
+        runs = _integer_runs(sorted(set(values)))
+        gaps = []
+        start = self.lb
+        for lo, hi in runs:
+            if start < lo:
+                gaps.append((start, lo - 1))
+            start = hi + 1
+        if start <= self.ub:
+            gaps.append((start, self.ub))
+
+        def exclude(intervals):
+            return ClauseGroup(self._model, [
+                self.forbid_interval(lo, hi) for lo, hi in intervals
+            ])
+
+        return _ReifiableClauseGroup(
+            self._model, lambda: exclude(gaps), lambda: exclude(runs)
+        )
 
     def in_range(self, start: int, end: int) -> Literal:
         """Return a lazy indicator literal for inclusive membership ``start <= x <= end``.
@@ -1172,7 +1221,9 @@ class IntVar:
         if key in cache:
             return cache[key]
 
-        b = m.bool(f"{self.name}∈[{lo},{hi}]")
+        b = m._predicate_bool(
+            lambda result: lo <= result[self] <= hi, f"{self.name}∈[{lo},{hi}]"
+        )
         ge_lo = self.__ge__(lo)
         ge_hi1 = self.__ge__(hi + 1)
 
@@ -1239,7 +1290,9 @@ class IntVar:
         _ensure_same_model_pair_fast(self, other)
         key = ("==intvar", id(other))
         if key not in self._cmp_cache:
-            e = self._model.bool(f"{self.name}=={other.name}")
+            e = self._model._predicate_bool(
+                lambda result: result[self] == result[other], f"{self.name}=={other.name}"
+            )
             neq = self != other
             eq = self == other
             clauses: list[Clause] = []
@@ -1313,15 +1366,20 @@ class IntVar:
             if value not in self._eq_lits:
                 k = value - self.lb
                 ts = self._threshold_lits
+                owner = self._encoding_owner()
                 # Edge cases can reuse direct threshold/constant literals.
-                if self._span() == 1:
+                if owner is not self:
+                    lit = owner == value - self.lb + owner.lb
+                elif self._span() == 1:
                     lit = self._model._get_bool_constant_literal(True)
                 elif k == 0:
                     lit = ~ts[0]
                 elif k == self._span() - 1:
                     lit = ts[k - 1]
                 else:
-                    lit = self._model.bool(f"{self.name}=={value}")
+                    lit = self._model._predicate_bool(
+                        lambda result: result[self] == value, f"{self.name}=={value}"
+                    )
                     eq_def = ClauseGroup(
                         self._model,
                         [
@@ -1358,6 +1416,9 @@ class IntVar:
             return ~(self == value)
         if isinstance(value, IntVar):
             _ensure_same_model_pair_fast(self, value)
+            if self._threshold_lits is value._threshold_lits:
+                clauses = [] if self.lb != value.lb else [Clause(self._model, [])]
+                return IntRelation(self._model, clauses, self, value, "!=", 0)
             clauses: list[Clause] = []
             lo = max(self.lb, value.lb)
             hi = min(self.ub, value.ub)
@@ -1408,23 +1469,7 @@ class IntervalVar:
         # start domain is [start, end - duration] so that start+duration <= end
         start_ub = end - duration
         self.start = model.int(f"{name}.start", lb=start, ub=start_ub)
-        # end domain is [start + duration, end] because latest end is inclusive.
-        self.end = model.int(f"{name}.end", lb=start + duration, ub=end)
-
-        # Structural identity of the interval.
-        #
-        # IMPORTANT: Do NOT encode `end == start + duration` through the generic
-        # PB/Card encoder pipeline. Both endpoints already use the same ladder
-        # width by construction, and the duration shift is absorbed into the
-        # endpoint domains (`end.lb = start.lb + duration`), so the identity is
-        # exactly a bitwise equivalence of threshold ladders:
-        #   start_t[i] <-> end_t[i]
-        # This is O(n) binary clauses and introduces zero auxiliary variables.
-        if len(self.start._threshold_lits) != len(self.end._threshold_lits):
-            raise AssertionError("Interval endpoint ladders must have equal width")
-        for s_t, e_t in zip(self.start._threshold_lits, self.end._threshold_lits):
-            model._hard.append(Clause(model, [~s_t, e_t]))
-            model._hard.append(Clause(model, [~e_t, s_t]))
+        self.end = IntVar._from_offset(self.start, duration, f"{name}.end")
 
     def ends_before(self, other: "IntervalVar") -> ClauseGroup:
         """Return constraint enforcing ``self.end <= other.start``."""
@@ -1448,7 +1493,7 @@ class IntervalVar:
         if other is self:
             return _deferred_constant_constraint(self._model, False)
         def _build() -> ClauseGroup:
-            key = ("interval_no_overlap_sel", id(self), id(other))
+            key = ("interval_no_overlap_sel", _Identity(self), _Identity(other))
             sel = self._model.canonical_internal_bool(key)
             left = self.ends_before(other).only_if(sel)
             right = other.ends_before(self).only_if(~sel)
@@ -1459,6 +1504,15 @@ class IntervalVar:
         return _ReifiableClauseGroup(self._model, _build, _build_negative)
 
 
+def _validate_element_index(vector, index):
+    _ensure_same_model_pair_fast(vector, index)
+    kind = type(vector).__name__
+    if index.lb < 0:
+        raise ValueError(f"{kind}[IntVar] currently requires index.lb >= 0.")
+    if index.ub >= len(vector._items):
+        raise ValueError(f"{kind} length {len(vector._items)} does not cover index domain [{index.lb}, {index.ub}].")
+
+
 class _BaseVector:
     """Base class for typed immutable vector containers."""
     __slots__ = ("_model", "name", "_items")
@@ -1467,7 +1521,7 @@ class _BaseVector:
     def __init__(self, model: "Model", name: str, items: Sequence):
         self._model = model
         self.name = name
-        self._items = list(items)
+        self._items = tuple(items)
         expected = type(self)._item_type
         for item in self._items:
             if not isinstance(item, expected):
@@ -1479,7 +1533,7 @@ class _BaseVector:
         return len(self._items)
 
     def __getitem__(self, i):
-        return self._items[i]
+        return list(self._items[i]) if isinstance(i, slice) else self._items[i]
 
     def __iter__(self):
         return iter(self._items)
@@ -1569,6 +1623,12 @@ class BoolVector(_BaseVector):
     """Vector of Boolean literals."""
     _item_type = Literal
 
+    def __getitem__(self, index):
+        if isinstance(index, IntVar):
+            _validate_element_index(self, index)
+            return _VectorElementBool(self._model, self._items, index)
+        return super().__getitem__(index)
+
     def at_most_one(self):
         """Return a cardinality constraint enforcing at most one true literal."""
         if not self._items:
@@ -1629,8 +1689,7 @@ class EnumVector(_BaseVector):
             if not item.nullable:
                 raise ValueError("EnumVector.is_in() row uses None for non-nullable enum.")
             return ClauseGroup(item._model, [Clause(item._model, [~lit]) for lit in item._choice_lits.values()])
-        if not isinstance(value, str):
-            raise TypeError("EnumVector.is_in() rows must contain enum labels (or None for nullable enums).")
+        item._choice_literal(value)
         return item == value
 
     def _validate_table_cell(self, item, value) -> None:
@@ -1638,25 +1697,22 @@ class EnumVector(_BaseVector):
             if not item.nullable:
                 raise ValueError("EnumVector.is_in() row uses None for non-nullable enum.")
             return
-        if not isinstance(value, str):
-            raise TypeError("EnumVector.is_in() rows must contain enum labels (or None for nullable enums).")
-        if value not in item._choice_lits:
-            raise ValueError(f"Unknown enum choice {value!r}")
+        item._choice_literal(value)
 
     def _all_different_bipartite(self) -> ClauseGroup:
-        # Column-wise AMO over existing one-hot choice literals. If nullable enums
-        # are present, fallback to pairwise for now because `None` is not tracked
-        # as a single literal yet.
-        if any(ev.nullable for ev in self._items):
-            return self._all_different_pairwise()
         clauses: list[Clause] = []
         amo_groups: list[list[int]] = []
         if not self._items:
             return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
-        choices = tuple(self._items[0].choices)
-        for label in choices:
-            col_lits = [ev._choice_lits[label] for ev in self._items]
-            col = BoolVector(self._model, f"{self.name}.col_amo[{label}]", col_lits)
+        def columns():
+            for label in self._items[0].choices:
+                yield [item._choice_lits[label] for item in self._items]
+            nullable = [item for item in self._items if item.nullable]
+            if len(nullable) > 1:
+                yield [item._none_indicator() for item in nullable]
+
+        for col_lits in columns():
+            col = BoolVector(self._model, f"{self.name}.column", col_lits)
             clauses.extend(self._model._as_clausegroup(col.at_most_one()))
             amo_groups.append([self._model._lit_to_dimacs(lit) for lit in col_lits])
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
@@ -1665,12 +1721,12 @@ class EnumVector(_BaseVector):
         """Return an all-different constraint supporting ``.iff()`` and ``.implies()``.
 
         Backends:
-            ``auto`` (default): column-wise AMO over enum choice literals.
-            ``bipartite``: same as ``auto`` (or pairwise fallback for nullable enums).
+            ``auto`` (default): pairwise for nullable enums, otherwise column-wise AMO.
+            ``bipartite``: column-wise AMO, including the nullable ``None`` value.
             ``pairwise``: pairwise enum inequality constraints.
         """
         if backend == "auto":
-            backend = "bipartite"
+            backend = "pairwise" if any(item.nullable for item in self._items) else "bipartite"
         if backend == "pairwise":
             builder = self._all_different_pairwise
         elif backend == "bipartite":
@@ -1703,12 +1759,7 @@ class IntSetVector(_BaseVector):
         return item == self._normalize_set_value(value)
 
     def is_in(self, rows: Sequence[Sequence]):
-        """Return an allowed-combinations table over integer-set values.
-
-        Set equality is a clause group rather than one exact-value literal, so
-        this intentionally retains the selector formulation instead of routing
-        through :meth:`Model.table`'s literal-based encoders.
-        """
+        """Return an allowed-combinations table over integer-set values."""
         norm_rows: list[tuple] = []
         seen = set()
         for raw_row in rows:
@@ -1716,6 +1767,9 @@ class IntSetVector(_BaseVector):
             if len(row) != len(self._items):
                 raise ValueError("Table rows must match vector length.")
             normalized = self._normalize_table_row(row)
+            if any(value not in item._member_lits
+                   for item, values in zip(self._items, normalized) for value in values):
+                continue
             if normalized in seen:
                 continue
             seen.add(normalized)
@@ -1723,26 +1777,48 @@ class IntSetVector(_BaseVector):
         if not norm_rows:
             return _deferred_constant_constraint(self._model, False)
 
+        def _row_atoms(row):
+            for item, values in zip(self._items, row):
+                for value, literal in item._member_lits.items():
+                    yield literal if value in values else ~literal
+
         def _build() -> ClauseGroup:
             selectors = [self._model.bool() for _ in norm_rows]
-            clauses = list(self._model._as_clausegroup(BoolVector(self._model, "_set_table_sel", selectors).exactly_one()))
+            clauses = [Clause(self._model, selectors)]
             for selector, row in zip(selectors, norm_rows):
-                for item, value in zip(self._items, row):
-                    clauses.extend(self._model._as_clausegroup(item == value).only_if(selector))
+                clauses.extend(Clause(self._model, [~selector, atom]) for atom in _row_atoms(row))
             return ClauseGroup(self._model, clauses)
 
         def _build_negative() -> ClauseGroup:
-            result = ClauseGroup(self._model, [])
-            for row in norm_rows:
-                matches = []
-                for item, value in zip(self._items, row):
-                    match = self._model.bool()
-                    matches.append(match)
-                    result = result & (item == value).iff(match)
-                result = result & Clause(self._model, [~match for match in matches])
-            return result
+            return ClauseGroup(self._model, [
+                Clause(self._model, [~atom for atom in _row_atoms(row)]) for row in norm_rows
+            ])
 
         return _ReifiableClauseGroup(self._model, _build, _build_negative)
+
+
+@cached_operation(normalize={"items": tuple})
+def _running_aggregate(model, items, kind, name=None):
+    if not items:
+        raise ValueError(f"Cannot compute running_{kind} of an empty IntVector.")
+    out_name = model._reserve_name(name)
+    model._assert_names_available(
+        out_name, *(f"{out_name}[{i}]" for i in range(1, len(items)))
+    )
+    model._reserve_container_name(out_name)
+    out = [items[0]]
+    for i, item in enumerate(items[1:], start=1):
+        step_name = f"{out_name}[{i}]"
+        previous = out[-1]
+        if kind == "sum":
+            step = model.int(step_name, previous.lb + item.lb, previous.ub + item.ub)
+            model &= step == previous + item
+        elif kind == "max":
+            step = model.max([previous, item], name=step_name)
+        else:
+            step = model.min([previous, item], name=step_name)
+        out.append(step)
+    return IntVector(model, out_name, out)
 
 
 class IntVector(_BaseVector):
@@ -1767,13 +1843,7 @@ class IntVector(_BaseVector):
             * ``idx.ub < len(vec)``
         """
         if isinstance(i, IntVar):
-            _ensure_same_model_pair_fast(self, i)
-            if i.lb < 0:
-                raise ValueError("IntVector[IntVar] currently requires index.lb >= 0.")
-            if i.ub >= len(self._items):
-                raise ValueError(
-                    f"IntVector length {len(self._items)} does not cover index domain [{i.lb}, {i.ub}]."
-                )
+            _validate_element_index(self, i)
             return _VectorElementInt(self._model, self._items, i)
         return super().__getitem__(i)
 
@@ -1809,8 +1879,6 @@ class IntVector(_BaseVector):
         """
         if not self._items:
             raise ValueError("Cannot compute upper_bound of an empty IntVector.")
-        if len(self._items) == 1:
-            return self._items[0]
         return MaxExpr(self._model, self._items, "upper_bound", name=name)
 
     def lower_bound(self, name: Optional[str] = None):
@@ -1821,81 +1889,29 @@ class IntVector(_BaseVector):
         """
         if not self._items:
             raise ValueError("Cannot compute lower_bound of an empty IntVector.")
-        if len(self._items) == 1:
-            return self._items[0]
         return MaxExpr(self._model, self._items, "lower_bound", name=name)
 
-    @cached_operation()
     def running_max(self, name: Optional[str] = None) -> "IntVector":
         """Return prefix maxima as an ``IntVector``.
 
         ``out[i]`` equals ``max(self[:i+1])``. Values are built cumulatively.
         """
-        if not self._items:
-            raise ValueError("Cannot compute running_max of an empty IntVector.")
-        out_name = f"{self.name}_running_max" if name is None else name
-        self._model._assert_names_available(out_name, *(f"{out_name}[{i}]" for i in range(1, len(self._items))))
-        if name is None:
-            self._model._reserve_container_name(out_name)
-        else:
-            self._model._reserve_container_name(name)
-            out_name = name
-        out: list[IntVar] = [self._items[0]]
-        for i in range(1, len(self._items)):
-            step_name = f"{out_name}[{i}]"
-            out.append(self._model.max([out[-1], self._items[i]], name=step_name))
-        return IntVector(self._model, out_name, out)
+        return _running_aggregate(self._model, self._items, "max", name=name)
 
-    @cached_operation()
     def running_min(self, name: Optional[str] = None) -> "IntVector":
         """Return prefix minima as an ``IntVector``.
 
         ``out[i]`` equals ``min(self[:i+1])`` and is built cumulatively.
         """
-        if not self._items:
-            raise ValueError("Cannot compute running_min of an empty IntVector.")
-        out_name = f"{self.name}_running_min" if name is None else name
-        self._model._assert_names_available(out_name, *(f"{out_name}[{i}]" for i in range(1, len(self._items))))
-        if name is None:
-            self._model._reserve_container_name(out_name)
-        else:
-            self._model._reserve_container_name(name)
-            out_name = name
-        out: list[IntVar] = [self._items[0]]
-        for i in range(1, len(self._items)):
-            step_name = f"{out_name}[{i}]"
-            out.append(self._model.min([out[-1], self._items[i]], name=step_name))
-        return IntVector(self._model, out_name, out)
+        return _running_aggregate(self._model, self._items, "min", name=name)
 
-    @cached_operation()
     def running_sum(self, name: Optional[str] = None) -> "IntVector":
         """Return prefix sums as an ``IntVector``.
 
         ``out[i]`` equals ``sum(self[:i+1])``. Each step uses one fresh integer
         variable.
         """
-        if not self._items:
-            raise ValueError("Cannot compute running_sum of an empty IntVector.")
-        out_name = f"{self.name}_running_sum" if name is None else name
-        self._model._assert_names_available(out_name, *(f"{out_name}[{i}]" for i in range(1, len(self._items))))
-        if name is None:
-            self._model._reserve_container_name(out_name)
-        else:
-            self._model._reserve_container_name(name)
-            out_name = name
-
-        out: list[IntVar] = [self._items[0]]
-        prefix_lb = self._items[0].lb
-        prefix_ub = self._items[0].ub
-        for i in range(1, len(self._items)):
-            xi = self._items[i]
-            prefix_lb += xi.lb
-            prefix_ub += xi.ub
-            step_name = f"{out_name}[{i}]"
-            step = self._model.int(step_name, lb=prefix_lb, ub=prefix_ub)
-            self._model &= (step == (out[-1] + xi))
-            out.append(step)
-        return IntVector(self._model, out_name, out)
+        return _running_aggregate(self._model, self._items, "sum", name=name)
 
     def _all_different_bipartite_domain(self) -> tuple[int, int]:
         if not self._items:
@@ -1960,56 +1976,33 @@ class IntVector(_BaseVector):
         if len(self) == 0:
             return _deferred_constant_constraint(self._model, False)
 
-        def _build() -> ClauseGroup:
-            prefix_eq: list[Literal] = [self._model._get_bool_constant_literal(True)]
-            lt_inds: list[Literal] = []
-            clauses: list[Clause] = []
-
-            for i in range(len(self)):
-                xi = self._items[i]
-                yi = other._items[i]
-                eq_i = xi._eq_indicator(yi)
-                lt_i = self._model.canonical_internal_bool(
-                    ("lex_lt", id(self), id(other), i)
-                )
-                lt_inds.append(lt_i)
-
-                lt_cond = xi._relop_intvar(yi, "<")
-                clauses.extend(lt_cond.only_if(lt_i))
-                clauses.append(Clause(self._model, [~lt_i, prefix_eq[i]]))
-
-                ge_cond = xi._relop_intvar(yi, ">=")
-                if i == 0:
-                    clauses.extend(ge_cond.only_if(~lt_i))
+        def definition(root: Literal) -> ClauseGroup:
+            # Each signal describes the strict comparison of its remaining suffix.
+            flags = [root] + [self._model.fresh_internal_bool() for _ in self._items[1:]]
+            clauses = []
+            for i, (left, right) in enumerate(zip(self._items, other._items)):
+                signal = flags[i]
+                if i + 1 == len(flags):
+                    clauses.extend((left < right).only_if(signal))
+                    clauses.extend((left >= right).only_if(~signal))
                 else:
-                    gate = self._model.canonical_internal_bool(
-                        ("lex_gate", id(self), id(other), i)
-                    )
-                    clauses.append(Clause(self._model, [~gate, prefix_eq[i]]))
-                    clauses.append(Clause(self._model, [~gate, ~lt_i]))
-                    clauses.append(Clause(self._model, [~prefix_eq[i], lt_i, gate]))
-                    clauses.extend(ge_cond.only_if(gate))
-
-                if i < len(self) - 1:
-                    pnext = self._model.canonical_internal_bool(
-                        ("lex_prefix", id(self), id(other), i + 1)
-                    )
-                    clauses.append(Clause(self._model, [~pnext, prefix_eq[i]]))
-                    clauses.append(Clause(self._model, [~pnext, eq_i]))
-                    clauses.append(Clause(self._model, [~prefix_eq[i], ~eq_i, pnext]))
-                    prefix_eq.append(pnext)
-
-            clauses.append(Clause(self._model, lt_inds))
+                    following = flags[i + 1]
+                    clauses.extend((left <= right).only_if(signal))
+                    clauses.extend((left >= right).only_if(~signal))
+                    clauses.extend((left < right).only_if(signal).only_if(~following))
+                    clauses.extend((left > right).only_if(~signal).only_if(following))
             return ClauseGroup(self._model, clauses)
 
+        def indicator() -> Literal:
+            return self._model.canonical_internal_bool(
+                ("lex_suffix", _Identity(self), _Identity(other)), definition=definition
+            )
+
+        def _build() -> ClauseGroup:
+            return ClauseGroup(self._model, [Clause(self._model, [indicator()])])
+
         def _build_negative() -> ClauseGroup:
-            # self >=lex other means other <lex self or both vectors equal.
-            selector = self._model.bool()
-            less = other.lexicographic_less_than(self)._realize().only_if(selector)
-            equal = ClauseGroup(self._model, [])
-            for left, right in zip(self._items, other._items):
-                equal = equal & (left == right)
-            return less & equal.only_if(~selector)
+            return ClauseGroup(self._model, [Clause(self._model, [~indicator()])])
 
         return _ReifiableClauseGroup(self._model, _build, _build_negative)
 
@@ -2099,6 +2092,8 @@ class _BaseMatrixView:
             rk, ck = key
             if isinstance(rk, int) and isinstance(ck, int):
                 return self._grid[rk][ck]
+            if isinstance(rk, int) and isinstance(ck, IntVar) and self._vector_type is IntVector:
+                return self.row(rk)[ck]
             if isinstance(rk, int) and isinstance(ck, slice):
                 cols = self._slice_range(ck, self._cols)
                 return self._vector_type(self._model, f"{self.name}[{rk},:]", [self._grid[rk][c] for c in cols])
@@ -2129,9 +2124,11 @@ class EnumMatrixView(_BaseMatrixView):
     _matrix_view_type = None
 
 
-class IntMatrix:
+class IntMatrix(_BaseMatrixView):
     """Dense matrix of :class:`IntVar` cells."""
-    __slots__ = ("_model", "name", "_rows", "_cols", "_grid")
+    __slots__ = ()
+    _vector_type = IntVector
+    _matrix_view_type = IntMatrixView
 
     def __init__(self, model: "Model", name: str, rows: int, cols: int, lb: int, ub: int):
         self._model = model
@@ -2143,25 +2140,12 @@ class IntMatrix:
             for r in range(rows)
         ]
 
-    def row(self, r: int) -> IntVector:
-        """Return row ``r`` as an :class:`IntVector`."""
-        return IntVector(self._model, f"{self.name}.row({r})", self._grid[r])
 
-    def col(self, c: int) -> IntVector:
-        """Return column ``c`` as an :class:`IntVector`."""
-        return IntVector(self._model, f"{self.name}.col({c})", [self._grid[r][c] for r in range(self._rows)])
-
-    def flatten(self) -> IntVector:
-        """Return all cells in row-major order as an :class:`IntVector`."""
-        return IntVector(self._model, f"{self.name}.flatten()", [x for row in self._grid for x in row])
-
-    def __getitem__(self, key):
-        return IntMatrixView(self._model, self.name, self._grid)[key]
-
-
-class BoolMatrix:
+class BoolMatrix(_BaseMatrixView):
     """Dense matrix of Boolean literals."""
-    __slots__ = ("_model", "name", "_rows", "_cols", "_grid")
+    __slots__ = ()
+    _vector_type = BoolVector
+    _matrix_view_type = BoolMatrixView
 
     def __init__(self, model: "Model", name: str, rows: int, cols: int):
         self._model = model
@@ -2173,27 +2157,14 @@ class BoolMatrix:
             for r in range(rows)
         ]
 
-    def row(self, r: int) -> BoolVector:
-        """Return row ``r`` as a :class:`BoolVector`."""
-        return BoolVector(self._model, f"{self.name}.row({r})", self._grid[r])
 
-    def col(self, c: int) -> BoolVector:
-        """Return column ``c`` as a :class:`BoolVector`."""
-        return BoolVector(self._model, f"{self.name}.col({c})", [self._grid[r][c] for r in range(self._rows)])
-
-    def flatten(self) -> BoolVector:
-        """Return all cells in row-major order as a :class:`BoolVector`."""
-        return BoolVector(self._model, f"{self.name}.flatten()", [x for row in self._grid for x in row])
-
-    def __getitem__(self, key):
-        return BoolMatrixView(self._model, self.name, self._grid)[key]
-
-
-class EnumMatrix:
+class EnumMatrix(_BaseMatrixView):
     """Dense matrix of :class:`EnumVar` cells."""
-    __slots__ = ("_model", "name", "_rows", "_cols", "_grid")
+    __slots__ = ()
+    _vector_type = EnumVector
+    _matrix_view_type = EnumMatrixView
 
-    def __init__(self, model: "Model", name: str, rows: int, cols: int, choices: Sequence[str], nullable: bool = False):
+    def __init__(self, model: "Model", name: str, rows: int, cols: int, choices: Sequence[str | int], nullable: bool = False):
         self._model = model
         self.name = name
         self._rows = rows
@@ -2203,42 +2174,29 @@ class EnumMatrix:
             for r in range(rows)
         ]
 
-    def row(self, r: int) -> EnumVector:
-        """Return row ``r`` as an :class:`EnumVector`."""
-        return EnumVector(self._model, f"{self.name}.row({r})", self._grid[r])
-
-    def col(self, c: int) -> EnumVector:
-        """Return column ``c`` as an :class:`EnumVector`."""
-        return EnumVector(self._model, f"{self.name}.col({c})", [self._grid[r][c] for r in range(self._rows)])
-
-    def flatten(self) -> EnumVector:
-        """Return all cells in row-major order as an :class:`EnumVector`."""
-        return EnumVector(self._model, f"{self.name}.flatten()", [x for row in self._grid for x in row])
-
-    def __getitem__(self, key):
-        return EnumMatrixView(self._model, self.name, self._grid)[key]
-
 
 class AssignmentView:
     """Decoded view over a raw SAT/MaxSAT model for a specific :class:`Model`."""
-    __slots__ = ("_model", "_raw_model", "_true_vars")
+    __slots__ = ("_model", "_raw_model", "_true_vars", "_top_id")
 
     def __init__(self, model: "Model", raw_model: Sequence[int]):
         self._model = model
+        self._top_id = model._top_id()
         normalized: list[int] = []
-        seen: set[int] = set()
+        truth: dict[int, bool] = {}
         for raw_lit in raw_model:
             if isinstance(raw_lit, bool) or not isinstance(raw_lit, int):
                 raise TypeError("Raw model literals must be integers.")
             lit = int(raw_lit)
             if lit == 0:
                 raise ValueError("Raw model contains literal 0.")
-            if abs(lit) in seen:
+            var_id = abs(lit)
+            if var_id in truth:
                 raise ValueError("Raw model contains duplicate or contradictory literals.")
-            seen.add(abs(lit))
+            truth[var_id] = lit > 0
             normalized.append(lit)
         self._raw_model = normalized
-        self._true_vars = {abs(v): (v > 0) for v in self._raw_model if v != 0}
+        self._true_vars = truth
 
     @property
     def raw(self) -> list[int]:
@@ -2246,136 +2204,116 @@ class AssignmentView:
         return list(self._raw_model)
 
     def val(self, obj: Any) -> Any:
-        """Decode the value of a model-bound object from the current assignment.
-
-        Args:
-            obj: The object to decode. Supported types include:
-                - :class:`Literal`: returns a ``bool``.
-                - :class:`IntVar`: returns an ``int``.
-                - :class:`Term`, :class:`PBExpr`: returns their numeric value.
-                - :class:`EnumVar`: returns the chosen ``str`` (or ``None`` if nullable).
-                - :class:`IntSetVar`: returns a ``set[int]``.
-                - :class:`IntervalVar`: returns a ``dict`` with ``start``, ``end``, and ``duration``.
-                - :class:`IntVector`, :class:`BoolVector`, etc.: returns a ``list`` of decoded values.
-                - :class:`IntMatrix`, :class:`BoolMatrix`, etc.: returns a nested ``list`` (rows/cols).
-                - :class:`IntDict`, :class:`BoolDict`, etc.: returns a ``dict`` with decoded values.
-                - Nested ``list`` or ``tuple`` of supported objects.
-
-        Returns:
-            The Python-native value representing the variable's state in this model.
-
-        Raises:
-            TypeError: if ``obj`` is not a supported target for decoding.
-        """
-        obj_model = getattr(obj, "_model", None)
-        if obj_model is not None and obj_model is not self._model:
+        """Decode a variable, expression, or nested container from this assignment."""
+        owner = getattr(obj, "_model", None)
+        if owner is not None and owner is not self._model:
             raise ValueError("Decoded objects must belong to the same model.")
         if isinstance(obj, Literal):
-            truth = self._true_vars.get(obj.id, False)
-            return truth if obj.polarity else (not truth)
-        if isinstance(obj, Term):
-            return obj.coefficient * self.val(obj.literal)
-        if isinstance(obj, PBExpr):
-            return (obj.constant + sum(self.val(term) for term in obj.terms)
-                    + sum(coefficient * self.val(value) for coefficient, value in obj.int_terms))
+            return self._decode_literal(obj)
+        if isinstance(obj, IntVar):
+            return self._decode_integer(obj)
+        if isinstance(obj, (Term, PBExpr, _LazyIntExpr, _MultiplexerInt,
+                            _VectorElementBool, _VectorElementInt)):
+            return self._evaluate_expression(obj)
         if isinstance(obj, EnumVar):
-            for choice in obj.choices:
-                lit = obj._choice_lits[choice]
-                if self.val(lit):
-                    return choice
-            return None
+            return next((choice for choice in obj.choices
+                         if self.val(obj._choice_lits[choice])), None)
         if isinstance(obj, IntSetVar):
             return {v for v in obj.universe if self.val(obj._member_lits[v])}
-        if isinstance(obj, DivExpr):
-            return self.val(obj._src) // obj._divisor
-        if isinstance(obj, ModExpr):
-            return self.val(obj._src) % obj._divisor
-        if isinstance(obj, ScaleExpr):
-            return self.val(obj._src) * obj._factor
-        if isinstance(obj, MaxExpr):
-            vals = [self.val(x) for x in obj._items]
-            if obj._kind in {"max", "upper_bound"}:
-                return max(vals)
-            return min(vals)
-        if isinstance(obj, _MultiplexerInt):
-            idx_val = self.val(obj._index_var)
-            array_pos = idx_val - obj._index_var.lb
-            return obj._array[array_pos]
-        if isinstance(obj, _VectorElementInt):
-            idx_val = self.val(obj._index_var)
-            item = obj._items[idx_val]
-            return self.val(item)
-        if isinstance(obj, _LazyIntExpr):
-            obj = obj._realize()
-        if isinstance(obj, IntVar):
-            for value, lit in obj._eq_lits.items():
-                if self.val(lit):
-                    return value
-            # Fallback: unary-prefix interpretation over threshold literals.
-            bits = obj._threshold_lits
-            if isinstance(bits, ThresholdLiterals):
-                end = bits.start + len(bits)
-                if len(bits) <= len(self._true_vars):
-                    count_true = sum(bool(self._true_vars.get(var_id))
-                                     for var_id in range(bits.start, end))
-                else:
-                    count_true = sum(1 for var_id, truth in self._true_vars.items()
-                                     if truth and bits.start <= var_id < end)
-                # Literal attributes are exposed and mutable. Match decoding
-                # through the original literal objects if one was modified.
-                for index, lit in bits._cache.items():
-                    original_id = bits.start + index
-                    if lit.id != original_id or not lit.polarity:
-                        count_true -= bool(self._true_vars.get(original_id))
-                        truth = bool(self._true_vars.get(lit.id))
-                        count_true += truth if lit.polarity else not truth
-            else:
-                count_true = sum(1 for lit in bits if self.val(lit))
-            value = obj.lb + count_true
-            if value > obj.ub:
-                value = obj.ub
-            return value
-        if isinstance(obj, IntVector):
+        if isinstance(obj, _BaseVector):
             return [self.val(x) for x in obj]
-        if isinstance(obj, BoolVector):
-            return [self.val(x) for x in obj]
-        if isinstance(obj, EnumVector):
-            return [self.val(x) for x in obj]
-        if isinstance(obj, IntSetVector):
-            return [self.val(x) for x in obj]
-        if isinstance(obj, IntMatrix):
+        if isinstance(obj, (_BaseMatrixView, IntMatrix, BoolMatrix, EnumMatrix)):
             return [[self.val(x) for x in row] for row in obj._grid]
-        if isinstance(obj, BoolMatrix):
-            return [[self.val(x) for x in row] for row in obj._grid]
-        if isinstance(obj, EnumMatrix):
-            return [[self.val(x) for x in row] for row in obj._grid]
-        if isinstance(obj, IntMatrixView):
-            return [[self.val(x) for x in row] for row in obj._grid]
-        if isinstance(obj, BoolMatrixView):
-            return [[self.val(x) for x in row] for row in obj._grid]
-        if isinstance(obj, EnumMatrixView):
-            return [[self.val(x) for x in row] for row in obj._grid]
-        if isinstance(obj, BoolDict):
-            return {k: self.val(v) for k, v in obj.items()}
-        if isinstance(obj, IntDict):
-            return {k: self.val(v) for k, v in obj.items()}
-        if isinstance(obj, EnumDict):
-            return {k: self.val(v) for k, v in obj.items()}
-        if isinstance(obj, IntSetDict):
-            return {k: self.val(v) for k, v in obj.items()}
+        if isinstance(obj, (_BaseDict, dict)):
+            return {key: self.val(value) for key, value in obj.items()}
         if isinstance(obj, list):
             return [self.val(x) for x in obj]
         if isinstance(obj, tuple):
             return tuple(self.val(x) for x in obj)
-        if isinstance(obj, dict):
-            return {k: self.val(v) for k, v in obj.items()}
         if isinstance(obj, IntervalVar):
-            return {
-                "start": self.val(obj.start),
-                "end": self.val(obj.end),
-                "duration": obj.duration,
-            }
+            return {"start": self.val(obj.start), "end": self.val(obj.end),
+                    "duration": obj.duration}
         raise TypeError(f"Unsupported decode target: {type(obj)!r}")
+
+    def _check_snapshot(self, var_id: int) -> None:
+        if var_id > self._top_id:
+            raise ValueError("Cannot decode a variable created after this saved assignment.")
+
+    def _decode_literal(self, literal: Literal) -> bool:
+        truth = self._true_vars.get(literal.id)
+        if truth is None or literal.id > self._top_id:
+            if isinstance(literal, _PredicateLiteral):
+                truth = bool(literal._evaluate(self))
+            else:
+                for value, constant in self._model._const_lits.items():
+                    if constant.id == literal.id:
+                        truth = value
+                        break
+                else:
+                    self._check_snapshot(literal.id)
+                    truth = False
+        return truth if literal.polarity else not truth
+
+    def _decode_integer(self, integer: IntVar) -> int:
+        bits = integer._threshold_lits
+        if isinstance(bits, ThresholdLiterals):
+            self._check_snapshot(bits.start)
+        for value, literal in integer._eq_lits.items():
+            # Later helpers may reuse IDs belonging to old solver auxiliaries.
+            if literal.id <= self._top_id and literal.id in self._true_vars and self.val(literal):
+                return value
+        count = self._count_thresholds(bits)
+        return min(integer.lb + count, integer.ub)
+
+    def _count_thresholds(self, bits: Sequence[Literal]) -> int:
+        if not isinstance(bits, ThresholdLiterals):
+            return sum(1 for literal in bits if self.val(literal))
+        end = bits.start + len(bits)
+        if len(bits) <= len(self._true_vars):
+            count = sum(bool(self._true_vars.get(var_id))
+                        for var_id in range(bits.start, end))
+        else:
+            count = sum(1 for var_id, truth in self._true_vars.items()
+                        if truth and bits.start <= var_id < end)
+        # Preserve the behavior of exposed literal objects if they were modified.
+        for index, literal in bits._cache.items():
+            original_id = bits.start + index
+            if literal.id != original_id or not literal.polarity:
+                count -= bool(self._true_vars.get(original_id))
+                truth = bool(self._true_vars.get(literal.id))
+                count += truth if literal.polarity else not truth
+        return count
+
+    def _evaluate_expression(self, expression):
+        if isinstance(expression, Term):
+            return expression.coefficient * self.val(expression.literal)
+        if isinstance(expression, PBExpr):
+            return (expression.constant + sum(term.coefficient * self.val(term.literal)
+                                              for term in expression.terms)
+                    + sum(coefficient * self.val(value)
+                          for coefficient, value in expression.int_terms))
+        if isinstance(expression, DivExpr):
+            return self.val(expression._src) // expression._divisor
+        if isinstance(expression, ModExpr):
+            return self.val(expression._src) % expression._divisor
+        if isinstance(expression, ScaleExpr):
+            return self.val(expression._src) * expression._factor
+        if isinstance(expression, MaxExpr):
+            realized = expression._realized
+            if expression._kind in {"upper_bound", "lower_bound"} and realized is not None:
+                if realized.lb == realized.ub or realized._threshold_lits[0].id <= self._top_id:
+                    return self.val(realized)
+            values = [self.val(x) for x in expression._items]
+            return max(values) if expression._kind in {"max", "upper_bound"} else min(values)
+        if isinstance(expression, _MultiplexerInt):
+            index = self.val(expression._index_var) - expression._index_var.lb
+            return expression._array[index]
+        if isinstance(expression, _VectorElementBool):
+            value = self.val(expression._items[self.val(expression._index_var)])
+            return value if expression._expected else not value
+        if isinstance(expression, _VectorElementInt):
+            return self.val(expression._items[self.val(expression._index_var)])
+        raise TypeError(f"Unsupported decode target: {type(expression)!r}")
 
     def __getitem__(self, obj: Any) -> Any:
         """Alias for :meth:`val` allowing indexed access ``result[my_var]``."""

@@ -39,7 +39,7 @@ EncodeResult GswcEncoder::encode(const GroupedLeqConstraint& constraint,
                                  const EncodeOptions& options) const {
     constraint.validate();
 
-    EncodeResult result;
+    EncodeResult result(options.clause_memory);
     VariableManager vm(options.top_id);
     result.cnf.num_vars = options.top_id;
     add_pairwise_amo(constraint, result.cnf);

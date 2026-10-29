@@ -36,6 +36,19 @@ Example:
    row = model.bool_vector("row", 4)
    model &= row.exactly_one()
 
+``BoolVector`` also accepts an ``IntVar`` index:
+
+.. code-block:: python
+
+   flags = model.bool_vector("flags", 3)
+   index = model.int("index", 0, 2)
+   selected = model.bool("selected")
+   model &= flags[index].iff(selected)
+
+``model &= flags[index]`` requires the selected entry to be true.
+Both Boolean and integer vector lookups use zero-based positions and require
+``0 <= index.lb <= index.ub < len(vector)``.
+
 IntVector helpers
 -----------------
 
@@ -188,6 +201,14 @@ Example:
    xmax2 = model.max(xs, name="xmax2")
    xmin2 = model.min(xs, name="xmin2")
 
+``model.max()`` also accepts integer constants, Boolean literals (0 or 1),
+and existing lazy integer operations such as ``x // 3``:
+
+.. code-block:: python
+
+   enabled = model.bool("enabled")
+   limit = model.max([xs[0] // 3, enabled, 2])
+
 The output domain comes from the operands:
 
 * ``max`` uses ``[max(lb_i), max(ub_i)]``
@@ -227,13 +248,9 @@ EnumVector helpers
 
 Backends:
 
-* ``backend=\"auto\"`` (default): aliases to ``\"bipartite\"``
-* ``backend=\"bipartite\"``: column-wise at-most-one over enum choice literals
-* ``backend=\"pairwise\"``: pairwise enum inequality constraints
-
-For nullable enums, the current ``bipartite`` implementation falls back to the
-pairwise backend so that the ``None`` case is handled correctly without adding a
-dedicated ``is_none`` indicator literal.
+* ``backend="auto"`` (default): pairwise for nullable enums, otherwise bipartite
+* ``backend="bipartite"``: column-wise at-most-one, including ``None`` for nullable enums
+* ``backend="pairwise"``: pairwise enum inequality constraints
 
 Allowed combinations: ``Vector.is_in(rows)``
 ---------------------------------------------------
@@ -310,6 +327,10 @@ and also **NumPy indexing**:
 * ``m[:, c]`` -> typed column vector
 * ``m[r0:r1, c0:c1]`` -> typed submatrix view
 * ``m[r0:r1, c0:c1].flatten()`` -> typed vector
+
+For ``IntMatrix``, ``m[row, index]`` accepts an ``IntVar`` column index when
+``row`` is a fixed integer. It is equivalent to ``m[row][index]`` and uses the
+same index bounds as ``IntVector``. Symbolic row indices are not supported.
 
 Example (Sudoku subgrid):
 

@@ -94,14 +94,67 @@ def test_lex_incremental_does_not_advance_after_interrupted_tier():
     a = m.bool("a")
     m.tier_obj.add(~a, weight=1, tier=0)
     m.tier_obj.add(a, weight=1, tier=1)
-    solver = _InterruptedFirstTierSolver()
+    solvers = []
 
-    result = m.solve(solver=solver, lex_strategy="incremental")
+    def factory(**kwargs):
+        solver = _InterruptedFirstTierSolver(**kwargs)
+        solvers.append(solver)
+        return solver
+
+    result = m.solve(solver=factory, lex_strategy="incremental")
 
     assert result.status == "interrupted_sat"
     assert result.ok and not result.proven
     assert result.tier_costs is None
-    assert solver.calls == 1
+    assert len(solvers) == 1
+    assert solvers[0].calls == 1
+
+
+@pytest.mark.parametrize("amount", [1_000_000, 10_000_000])
+def test_stratified_decimal_tier_costs_are_evaluated_without_float_unpacking(amount):
+    m = Model()
+    m.set_objective_precision(decimals=2)
+    a, b = m.bool("a"), m.bool("b")
+    m &= a
+    m &= b
+    m.tier_obj.add(a, weight=amount + 0.01, tier=0)
+    m.tier_obj.add(b, weight=amount + 0.03, tier=1)
+
+    result = m.solve(lex_strategy="stratified")
+
+    assert result.tier_costs == [amount + 0.01, amount + 0.03]
+
+
+def test_single_tier_solve_does_not_compile_an_unused_optimum_constraint():
+    m = Model()
+    flags = m.bool_vector("b", 32)
+    for index, flag in enumerate(flags):
+        m &= flag if index < 16 else ~flag
+    m.tier_obj.set_lexicographic(sum((i + 1) * flag for i, flag in enumerate(flags)))
+    before = m._next_id
+
+    result = m.solve()
+
+    assert result.tier_costs == [136]
+    assert m._next_id == before
+
+
+def test_sequential_tier_hardening_does_not_round_an_exact_integer_cost():
+    m = Model()
+    m.set_objective_precision(decimals=2)
+    a, b, c = m.bool_vector("b", 3)
+    m &= a
+    m &= b
+    m &= c
+    m.tier_obj.add(a, weight=100_000_000_000_000, tier=0)
+    m.tier_obj.add(b, weight=0.01, tier=0)
+    m.tier_obj.add(c, tier=1)
+
+    result = m.solve()
+
+    assert result.ok
+    assert result[[a, b, c]] == [True, True, True]
+    assert result.tier_costs[-1] == 1
 
 
 def test_lex_stratified_honors_tier_priority_over_later_tier_weight():

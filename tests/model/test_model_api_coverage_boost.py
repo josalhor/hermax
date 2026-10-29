@@ -146,8 +146,8 @@ def test_aggregate_helpers_empty_and_singleton_behaviors():
     x = m.int("x", 0, 4)
     assert m.max([x]) is x
     assert m.min([x]) is x
-    assert m.upper_bound([x]) is x
-    assert m.lower_bound([x]) is x
+    assert m.upper_bound([x]) is not x
+    assert m.lower_bound([x]) is not x
 
     with pytest.raises(ValueError, match="empty IntVector"):
         m.max([])

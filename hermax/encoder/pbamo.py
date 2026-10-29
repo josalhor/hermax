@@ -11,7 +11,9 @@ from math import gcd
 from pysat.formula import CNFPlus
 
 from hermax.internal import _pbamo as _native_pbamo
-from hermax.encoder.card import CardEnc, EncType as CardEncType
+from hermax.encoder.card import CardEnc, EncType as CardEncType, ITotalizer
+from hermax.encoder.pb_enc import PBEnc, EncType as PBEncType
+from hermax.internal.kmerge import get_basis, get_conflict_depth, get_short_circuit_subsets
 
 
 CARD_STRUCTURE_THRESHOLD = 0.27
@@ -337,6 +339,19 @@ class _PreparedStructure:
 
 
 class PBAMOEnc:
+    _new_cnf = CNFPlus
+    _pb_encoder = PBEnc
+    _card_encoder = CardEnc
+    _totalizer = ITotalizer
+
+    @staticmethod
+    def _encode_leq_native(**kwargs):
+        return _native_pbamo.encode_leq(**kwargs)
+
+    @staticmethod
+    def _encode_eq_native(**kwargs):
+        return _native_pbamo.encode_eq(**kwargs)
+
     @staticmethod
     def _validate_pb_input(lits, weights, bound) -> None:
         if len(lits) != len(weights):
@@ -374,9 +389,6 @@ class PBAMOEnc:
             stubs: List of PBConstraintStub (weights, bound, op).
             top_id: The current top variable ID.
         """
-        from hermax.internal.kmerge import get_basis, get_conflict_depth, get_short_circuit_subsets
-        from hermax.encoder.card import ITotalizer
-        from hermax.encoder.pb_enc import PBEnc, EncType as PBEncType
 
         for stub in stubs:
             cls._validate_pb_input(lits, stub.weights, stub.bound)
@@ -385,7 +397,7 @@ class PBAMOEnc:
             if stub.op not in ("<=", "=="):
                 raise ValueError(f"Unsupported PB comparison: {stub.op!r}")
         
-        cnf = CNFPlus()
+        cnf = cls._new_cnf()
         cnf.nv = int(top_id)
 
         # A constant PB constraint must be resolved before building the shared
@@ -421,7 +433,7 @@ class PBAMOEnc:
                 continue
                 
             # Use Totalizer for the column
-            tot = ITotalizer(lits=active_lits, ubound=len(active_lits), top_id=cnf.nv)
+            tot = cls._totalizer(lits=active_lits, ubound=len(active_lits), top_id=cnf.nv)
             cnf.clauses.extend(tot.cnf.clauses)
             cnf.nv = max(cnf.nv, tot.cnf.nv)
             # tot.rhs[k] corresponds to 'sum >= k+1'
@@ -534,7 +546,7 @@ class PBAMOEnc:
             # upper bound and add only the missing direct lower bound.
             if stub.op not in ("<=", "=="):
                 raise ValueError(f"Unsupported PB comparison: {stub.op!r}")
-            sub_cnf = PBEnc.leq(
+            sub_cnf = cls._pb_encoder.leq(
                 lits=final_lits,
                 weights=final_weights,
                 bound=stub.bound,
@@ -546,7 +558,7 @@ class PBAMOEnc:
             cnf.nv = max(cnf.nv, sub_cnf.nv)
 
             if stub.op == "==":
-                lower_cnf = PBEnc.geq(
+                lower_cnf = cls._pb_encoder.geq(
                     lits=list(lits),
                     weights=list(stub.weights),
                     bound=stub.bound,
@@ -568,7 +580,7 @@ class PBAMOEnc:
             top_id = max((abs(int(lit)) for lit in lits), default=0)
         if encoding == EncType.best:
             encoding = choose_encoding(lits, weights, grouped, bound)
-        clauses, max_aux = _native_pbamo.encode_leq(
+        clauses, max_aux = cls._encode_leq_native(
             wlits=wlits,
             groups=grouped,
             bound=int(bound),
@@ -576,7 +588,7 @@ class PBAMOEnc:
             encoder=str(encoding),
             emit_amo=bool(emit_amo),
         )
-        cnf = CNFPlus()
+        cnf = cls._new_cnf()
         cnf.clauses = clauses
         cnf.nv = max(int(top_id), int(max_aux))
         return cnf
@@ -594,11 +606,11 @@ class PBAMOEnc:
             raise ValueError("Native equality is supported only by the rggt encoder.")
         if top_id is None:
             top_id = max(map(abs, lits), default=0)
-        clauses, nv = _native_pbamo.encode_eq(
+        clauses, nv = cls._encode_eq_native(
             wlits=list(zip(lits, weights)), groups=_normalize_groups(groups),
             bound=bound, top_id=int(top_id), encoder=encoding, emit_amo=bool(emit_amo),
         )
-        cnf = CNFPlus()
+        cnf = cls._new_cnf()
         cnf.clauses = clauses
         cnf.nv = int(nv)
         return cnf
@@ -652,10 +664,7 @@ class PBAMOEnc:
             )
 
         if choose_portfolio(lits, weights, structure.groups, bound) == "pblib":
-            from hermax.encoder.pb_enc import EncType as PBEncType
-            from hermax.encoder.pb_enc import PBEnc
-
-            cnf = PBEnc.leq(lits=lits, weights=weights, bound=bound, top_id=top_id, encoding=PBEncType.best)
+            cnf = cls._pb_encoder.leq(lits=lits, weights=weights, bound=bound, top_id=top_id, encoding=PBEncType.best)
         else:
             enc = structured_encoding
             if enc == EncType.best:
@@ -690,20 +699,18 @@ class PBAMOEnc:
 
         total_weight = sum(weights)
         if bound < 0 or bound > total_weight:
-            cnf = CNFPlus()
+            cnf = cls._new_cnf()
             cnf.nv = top_id
-            cnf.clauses = [[]]
+            cnf.clauses.append([])
             return cnf
 
         # No structural signal: keep the stronger dedicated equals backend.
         has_structure = any(len(group) > 1 for group in structure.groups)
         if not has_structure and not structure.amo_groups and not structure.eo_groups:
             if all(weight == 1 for weight in weights):
-                return CardEnc.equals(lits=lits, bound=bound, top_id=top_id, encoding=CardEncType.kmtotalizer)
-            from hermax.encoder.pb_enc import EncType as PBEncType
-            from hermax.encoder.pb_enc import PBEnc
+                return cls._card_encoder.equals(lits=lits, bound=bound, top_id=top_id, encoding=CardEncType.kmtotalizer)
 
-            return PBEnc.equals(lits=lits, weights=weights, bound=bound, top_id=top_id, encoding=PBEncType.best)
+            return cls._pb_encoder.equals(lits=lits, weights=weights, bound=bound, top_id=top_id, encoding=PBEncType.best)
 
         return cls._encode_eq_prepared(
             lits, weights, bound, top_id, structure, overlap_policy, structured_encoding,
@@ -719,8 +726,9 @@ class PBAMOEnc:
             top_id=max(top_id, int(upper.nv)), overlap_policy=overlap_policy,
             structured_encoding=structured_encoding,
         )
-        cnf = CNFPlus()
-        cnf.clauses = [*upper.clauses, *lower.clauses]
+        cnf = cls._new_cnf()
+        cnf.clauses.extend(upper.clauses)
+        cnf.clauses.extend(lower.clauses)
         cnf.nv = max(int(upper.nv), int(lower.nv), top_id)
         return cnf
 
@@ -746,7 +754,7 @@ class PBAMOEnc:
     @classmethod
     def _encode_atmost_prepared(cls, lits, bound, top_id, structure, structured_encoding, flat_encoding):
         if choose_cardinality_portfolio(lits, structure.groups, bound) == "card":
-            cnf = CardEnc.atmost(lits=lits, bound=bound, top_id=top_id, encoding=flat_encoding)
+            cnf = cls._card_encoder.atmost(lits=lits, bound=bound, top_id=top_id, encoding=flat_encoding)
         else:
             enc = structured_encoding
             if enc == EncType.best:

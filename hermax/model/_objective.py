@@ -17,6 +17,36 @@ if TYPE_CHECKING:
     from .core import Model
 
 
+def apply_soft_weights(
+    model: "Model", updates: dict[int, int], additions=()
+) -> dict[int, int]:
+    """Apply one batch, restoring its weights if the backend fails."""
+    hard0, soft0 = len(model._hard), len(model._soft)
+    previous = {sid: model._soft[model._soft_id_to_index[sid]][0] for sid in updates}
+    created = {}
+    try:
+        for dim, weight in additions:
+            literal = model._dimacs_to_lit(dim)
+            model._ensure_literal_def_realized(literal)
+            created[dim] = model._append_soft_entry(weight, Clause(model, [literal]))
+        for sid, weight in updates.items():
+            if weight != previous[sid]:
+                model._set_soft_weight_internal(
+                    sid, weight, allow_zero=True, allow_when_sat=True
+                )
+        model._inc_state.route_deltas(hard0, soft0)
+    except Exception:
+        # The backend may have accepted a change before raising. Rebuild it on
+        # the next solve; restore only affected weights and disable new entries.
+        model.close_incremental()
+        for sid, weight in previous.items():
+            model._set_soft_weight_internal(sid, weight, allow_zero=True)
+        for sid in model._soft_ids[soft0:]:
+            model._set_soft_weight_internal(sid, 0, allow_zero=True)
+        raise
+    return created
+
+
 def validate_numeric_objective(model: "Model", expression) -> None:
     if not isinstance(expression, (Literal, Term, PBExpr, IntVar, _LazyIntExpr, int)):
         raise TypeError(
@@ -39,6 +69,18 @@ def validate_soft_constraint(model: "Model", constraint) -> None:
     owner = getattr(constraint, "_model", None)
     if owner is not None and owner is not model:
         raise ValueError("Variables belong to different models.")
+
+
+def coerce_preference_weight(model: "Model", weight) -> tuple[int, float]:
+    scaled, raw = model._coerce_soft_weight(weight, allow_zero=True)
+    if raw > 0 and scaled == 0:
+        raise ValueError("Soft weight rounds to zero for current precision.")
+    return scaled, raw
+
+
+def prepare_soft_preference(model: "Model", constraint, weight) -> tuple[int, float]:
+    validate_soft_constraint(model, constraint)
+    return coerce_preference_weight(model, weight)
 
 
 def prepare_objective(model: "Model", constraint, *, lower=True) -> PBExpr:

@@ -243,6 +243,16 @@ class CardEnc(object):
         # updating the number of variables
         cnf.nv = vpool.top
 
+    _new_cnf = CNFPlus
+
+    @staticmethod
+    def _encode_atmost_native(*args):
+        return pycard.encode_atmost(*args)
+
+    @staticmethod
+    def _encode_atleast_native(*args):
+        return pycard.encode_atleast(*args)
+
     @classmethod
     def atmost(cls, lits, bound=1, top_id=None, vpool=None,
             encoding=EncType.seqcounter):
@@ -272,7 +282,7 @@ class CardEnc(object):
                 'Use either a top id or a pool of variables but not both.'
 
         # we are going to return this formula
-        ret = CNFPlus()
+        ret = cls._new_cnf()
 
         # if the list of literals is empty, return empty formula
         if not lits:
@@ -290,7 +300,7 @@ class CardEnc(object):
             ret.atmosts, ret.nv = [(lits, bound)], top_id
             return ret
 
-        res = pycard.encode_atmost(lits, bound, top_id, encoding,
+        res = cls._encode_atmost_native(lits, bound, top_id, encoding,
                 int(MainThread.check()))
 
         if res:
@@ -375,7 +385,7 @@ class CardEnc(object):
                 'Use either a top id or a pool of variables but not both.'
 
         # we are going to return this formula
-        ret = CNFPlus()
+        ret = cls._new_cnf()
 
         # if the list of literals is empty, return empty formula
         if not lits:
@@ -393,7 +403,7 @@ class CardEnc(object):
             ret.atmosts, ret.nv = [([-l for l in lits], len(lits) - bound)], top_id
             return ret
 
-        res = pycard.encode_atleast(lits, bound, top_id, encoding,
+        res = cls._encode_atleast_native(lits, bound, top_id, encoding,
                 int(MainThread.check()))
 
         if res:
@@ -494,6 +504,12 @@ class ITotalizer(object):
             [6, 7]
     """
 
+    _new_cnf = CNF
+
+    @staticmethod
+    def _new_native(*args):
+        return pycard.itot_new(*args)
+
     def __init__(self, lits=[], ubound=1, top_id=None):
         """
             Constructor.
@@ -510,7 +526,7 @@ class ITotalizer(object):
         self.top_id = 0
 
         # encoding result
-        self.cnf = CNF()  # CNF formula encoding the totalizer object
+        self.cnf = self._new_cnf()  # CNF formula encoding the totalizer object
         self.rhs = []     # upper bounds on the number of literals (rhs)
 
         # number of new clauses
@@ -551,7 +567,7 @@ class ITotalizer(object):
         self.top_id = max(self._max_abs_lit, top_id if top_id != None else 0)
 
         # creating the object
-        self.tobj, clauses, self.rhs, self.top_id = pycard.itot_new(self.lits,
+        self.tobj, clauses, self.rhs, self.top_id = self._new_native(self.lits,
                 self.ubound, self.top_id, int(MainThread.check()))
 
         # saving the result
@@ -582,7 +598,7 @@ class ITotalizer(object):
         self.ubound = 0
         self.top_id = 0
 
-        self.cnf = CNF()
+        self.cnf = self._new_cnf()
         self.rhs = []
 
         self.nof_new = 0

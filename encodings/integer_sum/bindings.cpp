@@ -6,6 +6,7 @@
 #include "order_sum.hpp"
 #include "pb_budget.hpp"
 #include "pb2cnf.h"
+#include "native/clause_api.hpp"
 
 namespace py = pybind11;
 using integer_sum::Chains;
@@ -49,6 +50,23 @@ static Chains read_chains(py::iterable groups, int& top) {
     return result;
 }
 
+static py::object output_clauses(integer_sum::Cnf& cnf, const hermax::clauses::API* api) {
+    if (api) {
+        PyObject* result = api->adopt(&cnf.clauses);
+        if (!result) throw py::error_already_set();
+        return py::reinterpret_steal<py::object>(result);
+    }
+    py::list result(cnf.clauses.size());
+    for (std::size_t i = 0; i < cnf.clauses.size(); ++i) {
+        auto row = cnf.clauses[i];
+        py::list clause(row.size());
+        for (std::size_t j = 0; j < row.size(); ++j) clause[j] = py::int_(row[j]);
+        result[i] = std::move(clause);
+    }
+    return result;
+}
+
+template<bool Packed>
 static py::tuple encode_order_sum(py::iterable groups, py::object bound_value,
                                  py::object top_value, py::object mode_value,
                                  py::object modulus_value) {
@@ -59,10 +77,13 @@ static py::tuple encode_order_sum(py::iterable groups, py::object bound_value,
     if (top < 0 || mode < 0 || mode > 1 || modulus < 0 || modulus == 1)
         throw py::value_error("invalid order-sum configuration");
     auto groups_read = read_chains(groups, top);
-    integer_sum::Cnf cnf;
+    const auto* api = Packed ? hermax::clauses::import_api() : nullptr;
+    if (Packed && !api) throw py::error_already_set();
+    integer_sum::Cnf cnf(Packed ? hermax::clauses::Memory{PyMem_Malloc, PyMem_Free}
+                                : hermax::clauses::Memory{});
     integer_sum::encode(groups_read, bound, mode, modulus, top, cnf);
     if (PyErr_CheckSignals() < 0) throw py::error_already_set();
-    return py::make_tuple(std::move(cnf.clauses), top);
+    return py::make_tuple(output_clauses(cnf, api), top);
 }
 
 static py::dict assess_order_sum(py::iterable values, py::object bound_value) {
@@ -85,6 +106,7 @@ static py::dict assess_order_sum(py::iterable values, py::object bound_value) {
     return result;
 }
 
+template<bool Packed>
 static py::tuple encode_pb(py::iterable pairs, int comparator, std::int64_t bound,
                            int top, int encoder, py::iterable conditions,
                            std::int64_t state_limit, std::int64_t clause_limit) {
@@ -124,17 +146,22 @@ static py::tuple encode_pb(py::iterable pairs, int comparator, std::int64_t boun
         config->use_watch_dog_encoding_in_binary_merger = true;
         config->use_gac_binary_merge = true;
     }
-    integer_sum::ClauseSink sink(config, clause_limit);
+    const auto* api = Packed ? hermax::clauses::import_api() : nullptr;
+    if (Packed && !api) throw py::error_already_set();
+    integer_sum::ClauseSink sink(config, clause_limit,
+        Packed ? hermax::clauses::Memory{PyMem_Malloc, PyMem_Free} : hermax::clauses::Memory{});
     AuxVarManager variables(top + 1);
     PB2CNF compiler(config);
     compiler.encode(constraint, sink, variables);
     if (PyErr_CheckSignals() < 0) throw py::error_already_set();
-    return py::make_tuple(std::move(sink.clauses), std::max(top, variables.getBiggestReturnedAuxVar()));
+    return py::make_tuple(output_clauses(sink, api), std::max(top, variables.getBiggestReturnedAuxVar()));
 }
 
 PYBIND11_MODULE(_integer_sum_native, module) {
     py::register_exception<integer_sum::BudgetExceeded>(module, "EncodingBudgetExceeded", PyExc_RuntimeError);
-    module.def("encode_order_sum", &encode_order_sum, py::arg("chains"), py::arg("bound"),
+    module.def("encode_order_sum", &encode_order_sum<false>, py::arg("chains"), py::arg("bound"),
+               py::arg("top_id"), py::arg("mode") = 0, py::arg("modulus") = 0);
+    module.def("_encode_order_sum_packed", &encode_order_sum<true>, py::arg("chains"), py::arg("bound"),
                py::arg("top_id"), py::arg("mode") = 0, py::arg("modulus") = 0);
     module.def("assess_order_sum", &assess_order_sum);
     module.def("count_states", [](std::vector<std::int64_t> weights, std::int64_t bound, int comparator, std::int64_t limit) {
@@ -142,7 +169,10 @@ PYBIND11_MODULE(_integer_sum_native, module) {
             throw py::value_error("invalid state counter configuration");
         return integer_sum::count_states(std::move(weights), bound, static_cast<PBLib::Comparator>(comparator), limit);
     }, py::arg("weights"), py::arg("bound"), py::arg("comparator"), py::arg("limit") = 20'000);
-    module.def("encode_pb", &encode_pb, py::arg("wlits"), py::arg("comparator"),
+    module.def("encode_pb", &encode_pb<false>, py::arg("wlits"), py::arg("comparator"),
+               py::arg("bound"), py::arg("top_id"), py::arg("pb_encoder"),
+               py::arg("conditionals"), py::arg("state_limit") = 0, py::arg("clause_limit") = 0);
+    module.def("_encode_pb_packed", &encode_pb<true>, py::arg("wlits"), py::arg("comparator"),
                py::arg("bound"), py::arg("top_id"), py::arg("pb_encoder"),
                py::arg("conditionals"), py::arg("state_limit") = 0, py::arg("clause_limit") = 0);
     module.attr("LEQ") = static_cast<int>(PBLib::LEQ);

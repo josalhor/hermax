@@ -183,7 +183,6 @@ def test_internal_hard_soft_storage_invariants_preserve_clause_shapes_and_weight
     m.obj.add_soft(a + b <= 1, 11)
 
     # Hard storage invariants.
-    assert isinstance(m._hard, list)
     assert all(isinstance(cl, tuple) for cl in m._hard)
     # unit a + one clause + all clauses from the ClauseGroup
     assert len(m._hard) == 2 + len(cg._clauses)

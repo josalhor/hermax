@@ -251,7 +251,7 @@ void encode_tree(Node& node, VariableManager& vm, CnfFormula& cnf) {
 
 EncodeResult encode_rggt_equality(const GroupedLeqConstraint& sum, const EncodeOptions& options) {
     sum.validate();
-    EncodeResult result;
+    EncodeResult result(options.clause_memory);
     result.cnf.num_vars = options.top_id;
     VariableManager vm(options.top_id);
     if (sum.emit_amo) {

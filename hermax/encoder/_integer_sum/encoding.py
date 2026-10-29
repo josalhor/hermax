@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from pysat.formula import CNFPlus
 
 from hermax.internal import _integer_sum_native as native
-from hermax.encoder.pb_enc import PBEnc
+from hermax.internal._clause_storage import ClauseStorage
+from hermax.encoder._packed import PBEnc, _EncodedCNF
 
 LEAF = "leaf"
 WHOLE = "whole"
@@ -40,14 +41,18 @@ def encode_order(
     top_id: int,
     kind: str,
     modulus: int = 0,
-) -> CNFPlus:
+    *,
+    _packed: bool = False,
+) -> CNFPlus | _EncodedCNF:
     if kind not in (LEAF, WHOLE):
         raise ValueError("expected an order-sum encoder")
-    clauses, nv = native.encode_order_sum(
+    encode = native._encode_order_sum_packed if _packed else native.encode_order_sum
+    clauses, nv = encode(
         chains, bound, top_id, int(kind == WHOLE), modulus
     )
-    cnf = CNFPlus()
-    cnf.clauses, cnf.nv = clauses, nv
+    cnf = _EncodedCNF() if _packed else CNFPlus()
+    cnf.clauses = ClauseStorage._wrap(clauses) if _packed else clauses
+    cnf.nv = nv
     return cnf
 
 
@@ -113,9 +118,10 @@ def binary_pb(
         or (comparator == "==" and not 0 <= bound <= total)
     )
     if satisfied or impossible:
-        cnf = CNFPlus()
+        cnf = _EncodedCNF()
         cnf.nv = top_id
-        cnf.clauses = [[]] if impossible else []
+        if impossible:
+            cnf.clauses.append([])
         return cnf
     fn = {"<=": PBEnc.leq, ">=": PBEnc.geq, "==": PBEnc.equals}[comparator]
     return fn(lits, weights=weights, bound=bound, top_id=top_id)
@@ -144,5 +150,7 @@ def encode_binary(
             channels.extend(clauses)
         views.append(bits)
     arithmetic = binary_pb(views, coefficients, bound, comparator, top_id)
-    arithmetic.clauses = channels + arithmetic.clauses
-    return arithmetic
+    result = CNFPlus()
+    result.nv = arithmetic.nv
+    result.clauses = channels + arithmetic.clauses.to_lists()
+    return result

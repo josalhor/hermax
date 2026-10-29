@@ -39,6 +39,7 @@ endif()
 
 add_library(_pblib MODULE src/pblib_capi.cpp)
 target_include_directories(_pblib PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../hermax/internal"
     "${PBLIB_ROOT}"
     "${PBLIB_ROOT}/encoder"
     "${CMAKE_CURRENT_SOURCE_DIR}/src")

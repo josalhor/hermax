@@ -1,15 +1,8 @@
-"""
-HERMAX MODEL SEMANTICS (ROUND 2)
-Focused tests to pin down decisions that were underspecified or contradicted in
-earlier drafts (`design.md`, `test1.py`).
-
-This file is intentionally opinionated: it captures the current intended API
-surface as discussed with the project author.
-"""
+"""Core modeling semantics for expressions, constraints, and integer domains."""
 
 import pytest
 
-from hermax.model import Model, Literal, ClauseGroup, PBExpr, PBConstraint
+from hermax.model import Model, ClauseGroup, PBExpr, PBConstraint
 
 
 # =====================================================================
@@ -107,12 +100,11 @@ def test_clausegroup_is_its_own_type_and_exposes_clauses():
     cg = pb.clauses()
     assert isinstance(cg, ClauseGroup)
     assert hasattr(cg, "_clauses")
-    assert isinstance(cg._clauses, tuple)
     assert len(cg) == len(cg._clauses)
-    assert tuple(cg) == cg._clauses
+    assert tuple(cg) == tuple(cg._clauses)
 
 
-def test_clausegroup_is_immutable_surface():
+def test_clausegroup_rejects_disjunction_operator():
     model = Model()
     a = model.bool("a")
     b = model.bool("b")
@@ -120,7 +112,6 @@ def test_clausegroup_is_immutable_surface():
 
     cg = (a + b <= 1).clauses()
 
-    # This should stay a hard failure until/if mutable ops are intentionally added.
     with pytest.raises((TypeError, AttributeError)):
         cg |= c
 
@@ -139,20 +130,16 @@ def test_pbconstraint_only_if_and_implies_literal_are_supported_and_chainable():
 
 
 # =====================================================================
-# SECTION III: INT DOMAIN SEMANTICS (EXCLUSIVE UPPER BOUND)
+# SECTION III: INCLUSIVE INTEGER DOMAINS
 # =====================================================================
 
 
-def test_int_domain_is_lb_inclusive_ub_exclusive():
+def test_int_domain_includes_both_bounds():
     model = Model()
-    speed = model.int("speed", lb=0, ub=4)  # intended domain: {0,1,2,3}
-
-    # Boundary comparisons should map cleanly into literals.
-    assert isinstance(speed >= 0, Literal)
-    assert isinstance(speed < 4, Literal)
-
-    # "Human" inclusive forms at the top boundary should also be supported.
-    assert isinstance(speed <= 3, Literal)
+    speed = model.int("speed", lb=0, ub=4)
+    for value in range(5):
+        result = model.solve(assumptions=[speed == value])
+        assert result.ok and result[speed] == value
 
 
 def test_int_unary_width_matches_inclusive_upper_bound_span():
@@ -160,39 +147,36 @@ def test_int_unary_width_matches_inclusive_upper_bound_span():
     speed = model.int("speed", lb=0, ub=4)  # 5 representable values under [lb, ub]
     a = model.bool("a")
 
-    # Current intended unary/ladder interpretation:
-    # number of generated threshold literals/terms == (ub - lb)
     expr = a + speed
     assert isinstance(expr, PBExpr)
     assert len(expr.terms) == 1 + (4 - 0)
 
     scaled = 3 * speed
     assert isinstance(scaled, PBExpr)
-    assert len(scaled.terms) == (4 - 0 - 1)
+    assert len(scaled.terms) == (4 - 0)
+    assert all(term.coefficient == 3 for term in scaled.terms)
 
 
-def test_int_rejects_empty_or_inverted_domain():
+def test_int_accepts_fixed_domain_and_rejects_inverted_domain():
     model = Model()
-
-    with pytest.raises(ValueError):
-        model.int("x", lb=5, ub=5)
+    fixed = model.int("x", lb=5, ub=5)
+    result = model.solve()
+    assert result.ok and result[fixed] == 5
 
     with pytest.raises(ValueError):
         model.int("y", lb=6, ub=5)
 
 
-def test_int_out_of_domain_exact_equality_is_rejected():
+@pytest.mark.parametrize("value", [-1, 5])
+def test_int_out_of_domain_exact_equality_is_a_lazy_contradiction(value):
     model = Model()
-    speed = model.int("speed", lb=0, ub=4)  # {0,1,2,3}
-
-    # Chosen semantics for now (explicit and easy to reason about):
-    # exact equality outside the declared domain is an error rather than silently
-    # generating tautology/contradiction encodings.
-    with pytest.raises(ValueError):
-        _ = (speed == 4)
-
-    with pytest.raises(ValueError):
-        _ = (speed == -1)
+    speed = model.int("speed", lb=0, ub=4)
+    before = model._top_id(), len(model._hard)
+    condition = speed == value
+    assert (model._top_id(), len(model._hard)) == before
+    assert isinstance(condition, ClauseGroup)
+    model &= condition
+    assert model.solve().status == "unsat"
 
 
 # =====================================================================

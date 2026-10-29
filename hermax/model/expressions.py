@@ -3,6 +3,7 @@ import math
 from dataclasses import dataclass
 from typing import Iterable, Optional, Sequence
 from hermax.utils import batcher_odd_even_unary_add_network
+from hermax.internal._clause_storage import ClauseStorage as _ClauseStorage
 
 from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
@@ -57,6 +58,13 @@ def _nonlinear_error(lhs=None, rhs=None, op: str = "*") -> TypeError:
         f"Unsupported arithmetic: {_label(lhs)} {op} {_label(rhs)}. "
         "Only scalar*Literal and scalar*Int-like products are allowed."
     )
+
+
+def _ensure_model(model: "Model", *objs) -> None:
+    for obj in objs:
+        owner = getattr(obj, "_model", None)
+        if owner is not None and owner is not model:
+            raise ValueError("Variables belong to different models.")
 
 
 def _ensure_same_model(*objs) -> "Model":
@@ -174,17 +182,18 @@ class ClauseGroup:
         reserve_aux_ids: bool = True,
     ):
         self._model = model
-        norm: list[tuple[int, ...]] = []
-        for clause in clauses or ():
-            if isinstance(clause, Clause):
-                _ensure_same_model_pair_fast(self, clause)
-                norm.append(tuple(int(x) for x in clause.dimacs))
-            else:
-                dims = tuple(_normalize_dimacs_literal(x) for x in clause)
-                if reserve_aux_ids and len(dims) > 0:
-                    self._model._reserve_literal_ids_up_to(max(abs(x) for x in dims))
-                norm.append(dims)
-        self._clauses = tuple(norm)
+        def normalized():
+            for clause in clauses or ():
+                if isinstance(clause, Clause):
+                    _ensure_same_model_pair_fast(self, clause)
+                    yield clause.dimacs
+                else:
+                    dims = tuple(_normalize_dimacs_literal(x) for x in clause)
+                    if reserve_aux_ids and dims:
+                        self._model._reserve_literal_ids_up_to(max(abs(x) for x in dims))
+                    yield dims
+
+        self._clauses = _ClauseStorage(normalized())
         self._amo_groups = [list(group) for group in (amo_groups or [])]
         self._eo_groups = [list(group) for group in (eo_groups or [])]
 
@@ -204,20 +213,10 @@ class ClauseGroup:
         """
         group = cls.__new__(cls)
         group._model = model
-        if isinstance(clauses, tuple) and all(isinstance(clause, tuple) for clause in clauses):
-            group._clauses = clauses
-        else:
-            group._clauses = tuple(tuple(int(x) for x in clause) for clause in clauses)
+        group._clauses = _ClauseStorage(clauses)
         group._amo_groups = [] if amo_groups is None else amo_groups
         group._eo_groups = [] if eo_groups is None else eo_groups
         return group
-
-    def _ensure_mutable_clauses(self) -> list[tuple[int, ...]]:
-        if isinstance(self._clauses, list):
-            return self._clauses
-        mutable = list(self._clauses)
-        self._clauses = mutable
-        return mutable
 
     @staticmethod
     def _copy_groups(groups: Sequence[Sequence[int]]) -> list[list[int]]:
@@ -255,7 +254,7 @@ class ClauseGroup:
             raise _detection_error()
         _ensure_same_model_pair_fast(self, condition)
         gate = -self._model._lit_to_dimacs(condition)
-        return ClauseGroup._from_dimacs_trusted(self._model, tuple((*clause, gate) for clause in self._clauses))
+        return ClauseGroup._from_dimacs_trusted(self._model, self._clauses.with_literal(gate))
 
     def implies(self, target):
         """Reject ClauseGroup-as-condition usage in this modeling API."""
@@ -310,7 +309,7 @@ class ClauseGroup:
             _ensure_same_model_pair_fast(self, other)
             return ClauseGroup._from_dimacs_trusted(
                 self._model,
-                (*self._clauses, (self._model._lit_to_dimacs(other),)),
+                self._clauses + _ClauseStorage(((self._model._lit_to_dimacs(other),),)),
                 amo_groups=self._copy_groups(self._amo_groups),
                 eo_groups=self._copy_groups(self._eo_groups),
             )
@@ -318,7 +317,7 @@ class ClauseGroup:
             _ensure_same_model_pair_fast(self, other)
             return ClauseGroup._from_dimacs_trusted(
                 self._model,
-                (*self._clauses, other.dimacs),
+                self._clauses + _ClauseStorage((other.dimacs,)),
                 amo_groups=self._copy_groups(self._amo_groups),
                 eo_groups=self._copy_groups(self._eo_groups),
             )
@@ -327,7 +326,7 @@ class ClauseGroup:
             amo_groups, eo_groups = self._combined_groups(other)
             return ClauseGroup._from_dimacs_trusted(
                 self._model,
-                (*self._clauses, *other._clauses),
+                self._clauses + other._clauses,
                 amo_groups=amo_groups,
                 eo_groups=eo_groups,
             )
@@ -356,15 +355,15 @@ class ClauseGroup:
             other = other._realize()
         if isinstance(other, Literal):
             _ensure_same_model_pair_fast(self, other)
-            self._ensure_mutable_clauses().append((self._model._lit_to_dimacs(other),))
+            self._clauses.append((self._model._lit_to_dimacs(other),))
             return self
         if isinstance(other, Clause):
             _ensure_same_model_pair_fast(self, other)
-            self._ensure_mutable_clauses().append(other.dimacs)
+            self._clauses.append(other.dimacs)
             return self
         if isinstance(other, ClauseGroup):
             _ensure_same_model_pair_fast(self, other)
-            self._ensure_mutable_clauses().extend(other._clauses)
+            self._clauses.extend(other._clauses)
             self._amo_groups.extend(other._amo_groups)
             self._eo_groups.extend(other._eo_groups)
             return self
@@ -386,7 +385,7 @@ class DeferredClauseGroup(ClauseGroup):
 
     def __init__(self, model: "Model", builder):
         self._model = model
-        self._clauses = ()
+        self._clauses = _ClauseStorage()
         self._amo_groups = []
         self._eo_groups = []
         self._builder = builder
@@ -491,8 +490,8 @@ class _Reifiable:
             raise _detection_error()
         _ensure_same_model_pair_fast(self, condition)
         positive = super().only_if(condition)
-        return _ReifiableClauseGroup(
-            self._model,
+        return _semantic_group(
+            self,
             lambda: positive,
             lambda: self._negated() & condition,
         )
@@ -502,8 +501,8 @@ class _Reifiable:
         if not isinstance(target, Literal):
             raise _detection_error()
         _ensure_same_model_pair_fast(self, target)
-        return _ReifiableClauseGroup(
-            self._model,
+        return _semantic_group(
+            self,
             lambda: self._negated().only_if(~target),
             lambda: self.only_if(~target) & ~target,
         )
@@ -527,6 +526,9 @@ class _ReifiableClauseGroup(_Reifiable, DeferredClauseGroup):
             raise TypeError("Cannot use .iff() or .implies() after in-place extension.")
         return self._negative._realize()
 
+    def _posting_parts(self):
+        return None
+
     def extend(self, other, *, inplace: bool = False) -> ClauseGroup:
         super().extend(other, inplace=inplace)
         # The original negation no longer describes the extended conjunction.
@@ -534,39 +536,53 @@ class _ReifiableClauseGroup(_Reifiable, DeferredClauseGroup):
         return self
 
 
+class _BooleanComposition(_ReifiableClauseGroup):
+    """A composed constraint that requires explicit iff() reification."""
+
+    __slots__ = ()
+
+
+def _semantic_group(source, positive, negative):
+    group_type = _BooleanComposition if isinstance(source, _BooleanComposition) else _ReifiableClauseGroup
+    return group_type(source._model, positive, negative)
+
+
+def _realized_group(formula):
+    group = formula._model._as_clausegroup(formula)
+    while isinstance(group, DeferredClauseGroup):
+        group = group._realize()
+    return group
+
+
+def _negated_formula(formula):
+    if isinstance(formula, _Reifiable):
+        return formula._negated()
+    if isinstance(formula, Literal):
+        return formula._model._as_clausegroup(~formula)
+    if isinstance(formula, Clause):
+        return ClauseGroup(formula._model, [Clause(formula._model, [~lit]) for lit in formula.literals])
+    value = formula._model.bool()
+    return formula.iff(value) & ~value
+
+
 def _semantic_and(left, right) -> _ReifiableClauseGroup:
-    """Conjoin formulas without losing the meaning of their helper variables."""
+    """Conjoin formulas while retaining their semantic negations."""
     model = _ensure_same_model_pair_fast(left, right)
 
-    def realized_group(formula):
-        group = model._as_clausegroup(formula)
-        while isinstance(group, DeferredClauseGroup):
-            group = group._realize()
-        return group
-
     def positive():
-        a, b = realized_group(left), realized_group(right)
+        a, b = _realized_group(left), _realized_group(right)
         return ClauseGroup._from_dimacs_trusted(
-            model, (*a._clauses, *b._clauses),
+            model, a._clauses + b._clauses,
             amo_groups=a._copy_groups(a._amo_groups) + b._copy_groups(b._amo_groups),
             eo_groups=a._copy_groups(a._eo_groups) + b._copy_groups(b._eo_groups),
         )
 
     def negative():
         selector = model.bool()
+        return _negated_formula(left).only_if(selector) & _negated_formula(right).only_if(~selector)
 
-        def negated(formula):
-            if isinstance(formula, _Reifiable):
-                return formula._negated()
-            if isinstance(formula, Literal):
-                return model._as_clausegroup(~formula)
-            if isinstance(formula, Clause):
-                return ClauseGroup(model, [Clause(model, [~lit]) for lit in formula.literals])
-            value = model.bool()
-            return formula.iff(value) & ~value
-
-        return negated(left).only_if(selector) & negated(right).only_if(~selector)
-
+    if isinstance(left, _BooleanComposition) or isinstance(right, _BooleanComposition):
+        return _BooleanComposition(model, positive, negative)
     return _ReifiableClauseGroup(model, positive, negative)
 
 
@@ -738,7 +754,7 @@ class Clause:
             _ensure_same_model_pair_fast(self, other)
             return ClauseGroup._from_dimacs_trusted(
                 self._model,
-                (self._dimacs, *other._clauses),
+                _ClauseStorage((self._dimacs,)) + other._clauses,
                 amo_groups=ClauseGroup._copy_groups(other._amo_groups),
                 eo_groups=ClauseGroup._copy_groups(other._eo_groups),
             )
@@ -767,7 +783,8 @@ class Clause:
                 result = ClauseGroup(self._model, [])
                 for lit in self.literals:
                     gated = target.only_if(lit)
-                    result = result & (gated.clauses() if isinstance(gated, PBConstraint) else gated)
+                    group = gated.clauses() if isinstance(gated, PBConstraint) else gated
+                    result.extend(_realized_group(group), inplace=True)
                 return result
 
             def negative() -> ClauseGroup:
@@ -880,6 +897,8 @@ class Literal:
         return self._finalize_pb_comparison(">", other)
 
     def __eq__(self, other):  # type: ignore[override]
+        if isinstance(other, _BooleanComposition):
+            raise _formula_comparison_error(self, other)
         if isinstance(other, _Reifiable):
             _ensure_same_model_pair_fast(self, other)
             return other.iff(self)
@@ -903,6 +922,8 @@ class Literal:
         return self._finalize_pb_comparison("==", other)
 
     def __ne__(self, other):  # type: ignore[override]
+        if isinstance(other, _BooleanComposition):
+            raise _formula_comparison_error(self, other)
         if isinstance(other, _Reifiable):
             _ensure_same_model_pair_fast(self, other)
             return other.iff(~self)
@@ -979,8 +1000,54 @@ class Literal:
         return f"{sign}{self.name}"
 
 
+class _PredicateLiteral(Literal):
+    """A helper whose value can also be evaluated from its source variables."""
+
+    __slots__ = ("_evaluate",)
+
+    def __init__(self, model, id_, name, polarity, evaluate):
+        super().__init__(model, id_, name, polarity)
+        self._evaluate = evaluate
+
+
+class _PBComparable:
+    """Comparison operators shared by numeric PB-compatible expressions."""
+
+    __slots__ = ()
+
+    def _finalize_compare(self, op: str, rhs) -> "ClauseGroup":
+        result = _compare_pb_operands(self, op, rhs)
+        if result is NotImplemented:
+            raise TypeError(f"Unsupported PB comparison operand: {type(rhs)!r}")
+        return result
+
+    def __le__(self, rhs):
+        return self._finalize_compare("<=", rhs)
+
+    def __lt__(self, rhs):
+        return self._finalize_compare("<", rhs)
+
+    def __ge__(self, rhs):
+        return self._finalize_compare(">=", rhs)
+
+    def __gt__(self, rhs):
+        return self._finalize_compare(">", rhs)
+
+    def __eq__(self, rhs):  # type: ignore[override]
+        result = _compare_pb_operands(self, "==", rhs)
+        if result is NotImplemented:
+            raise _unsupported_comparison_error(self, rhs)
+        return result
+
+    def __ne__(self, rhs):  # type: ignore[override]
+        result = _compare_pb_operands(self, "!=", rhs)
+        if result is NotImplemented:
+            raise _unsupported_comparison_error(self, rhs)
+        return result
+
+
 @dataclass(frozen=True)
-class Term:
+class Term(_PBComparable):
     """Weighted literal term used inside :class:`PBExpr`."""
     coefficient: int | float
     literal: Literal
@@ -1025,38 +1092,12 @@ class Term:
         # Immutable-by-operator contract: `x -= y` returns a new PBExpr.
         return PBExpr.from_item(self).__sub__(other)
 
-    def _finalize_compare(self, op: str, rhs) -> "ClauseGroup":
-        result = _compare_pb_operands(self, op, rhs)
-        if result is NotImplemented:
-            raise TypeError(f"Unsupported PB comparison operand: {type(rhs)!r}")
-        return result
-
-    def __le__(self, rhs):
-        return self._finalize_compare("<=", rhs)
-
-    def __lt__(self, rhs):
-        return self._finalize_compare("<", rhs)
-
-    def __ge__(self, rhs):
-        return self._finalize_compare(">=", rhs)
-
-    def __gt__(self, rhs):
-        return self._finalize_compare(">", rhs)
-
-    def __eq__(self, rhs):  # type: ignore[override]
-        result = _compare_pb_operands(self, "==", rhs)
-        if result is NotImplemented:
-            raise _unsupported_comparison_error(self, rhs)
-        return result
-
-    def __ne__(self, rhs):  # type: ignore[override]
-        result = _compare_pb_operands(self, "!=", rhs)
-        if result is NotImplemented:
-            raise _unsupported_comparison_error(self, rhs)
-        return result
+    # Keep dataclass from generating structural equality.
+    __eq__ = _PBComparable.__eq__
+    __ne__ = _PBComparable.__ne__
 
 
-class _LazyIntExpr:
+class _LazyIntExpr(_PBComparable):
     """Lazy derived integer expression that materializes through ``Model`` on demand."""
 
     __slots__ = ("_model", "_realized")
@@ -1093,18 +1134,6 @@ class _LazyIntExpr:
     def __rsub__(self, other):
         return PBExpr.from_item(other).__sub__(self._as_pbexpr())
 
-    def __le__(self, rhs):
-        return self._compare_pb("<=", rhs)
-
-    def __lt__(self, rhs):
-        return self._compare_pb("<", rhs)
-
-    def __ge__(self, rhs):
-        return self._compare_pb(">=", rhs)
-
-    def __gt__(self, rhs):
-        return self._compare_pb(">", rhs)
-
     def __floordiv__(self, divisor: int):
         if isinstance(divisor, (Literal, Term, PBExpr, IntVar, _LazyIntExpr)):
             raise _nonlinear_error(self, divisor, op="//")
@@ -1136,24 +1165,6 @@ class _LazyIntExpr:
         if divisor <= 0:
             raise ValueError("Divisor must be strictly positive.")
         return ModExpr(self, divisor)
-
-    def __eq__(self, rhs):  # type: ignore[override]
-        result = _compare_pb_operands(self, "==", rhs)
-        if result is NotImplemented:
-            raise _unsupported_comparison_error(self, rhs)
-        return result
-
-    def __ne__(self, rhs):  # type: ignore[override]
-        result = _compare_pb_operands(self, "!=", rhs)
-        if result is NotImplemented:
-            raise _unsupported_comparison_error(self, rhs)
-        return result
-
-    def _compare_pb(self, op: str, rhs):
-        result = _compare_pb_operands(self, op, rhs)
-        if result is NotImplemented:
-            raise TypeError(f"Unsupported PB comparison operand: {type(rhs)!r}")
-        return result
 
     @property
     def lb(self) -> int:  # pragma: no cover - overridden by subclasses
@@ -1292,7 +1303,7 @@ class MaxExpr(_LazyIntExpr):
         return self._realized
 
 
-class PBExpr:
+class PBExpr(_PBComparable):
     """Pseudo-Boolean expression (weighted sum of literals / lifted Int variables)."""
     __slots__ = ("_model", "terms", "constant", "int_terms", "_collapsed", "_term_index")
 
@@ -1563,15 +1574,13 @@ class PBExpr:
     def _realize_int_terms(self, model: "Model") -> "PBExpr":
         if not self.int_terms:
             return self
-        _ensure_same_model(self, model)
-        out = PBExpr._from_terms_trusted(model, self.terms, self.constant, collapsed=self._collapsed)
-        for coeff, item in self.int_terms:
-            if isinstance(item, _LazyIntExpr):
-                iv = item._realize()
-            else:
-                iv = item
-            out = out + (coeff * iv)
-        return out
+        _ensure_model(model, self)
+        base = PBExpr._from_terms_trusted(model, self.terms, self.constant, collapsed=self._collapsed)
+        return sum_expr(
+            (coeff * (item._realize() if isinstance(item, _LazyIntExpr) else item)
+             for coeff, item in self.int_terms),
+            start=base,
+        )
 
     def __add__(self, other):
         return self._merge(PBExpr.from_item(other), +1)
@@ -1675,36 +1684,6 @@ class PBExpr:
         if other_expr.int_terms:
             self._accumulate_int_terms_inplace(other_expr.int_terms, -1)
         return self
-
-    def _finalize_compare(self, op: str, rhs):
-        result = _compare_pb_operands(self, op, rhs)
-        if result is NotImplemented:
-            raise TypeError(f"Unsupported PB comparison operand: {type(rhs)!r}")
-        return result
-
-    def __le__(self, rhs):
-        return self._finalize_compare("<=", rhs)
-
-    def __lt__(self, rhs):
-        return self._finalize_compare("<", rhs)
-
-    def __ge__(self, rhs):
-        return self._finalize_compare(">=", rhs)
-
-    def __gt__(self, rhs):
-        return self._finalize_compare(">", rhs)
-
-    def __eq__(self, rhs):  # type: ignore[override]
-        result = _compare_pb_operands(self, "==", rhs)
-        if result is NotImplemented:
-            raise _unsupported_comparison_error(self, rhs)
-        return result
-
-    def __ne__(self, rhs):  # type: ignore[override]
-        result = _compare_pb_operands(self, "!=", rhs)
-        if result is NotImplemented:
-            raise _unsupported_comparison_error(self, rhs)
-        return result
 
     def __repr__(self) -> str:
         return f"PBExpr(terms={self.terms!r}, int_terms={self.int_terms!r}, c={self.constant})"
@@ -1836,6 +1815,9 @@ class PBConstraint:
         negative = comparison.implies(indicator)
 
         def build() -> ClauseGroup:
+            shared = self._model._try_reify_cardinality(self, indicator)
+            if shared is not None:
+                return shared
             result = positive.clauses()
             for condition in self._conditions:
                 result = result & condition.only_if(~indicator)

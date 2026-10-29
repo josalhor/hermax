@@ -72,6 +72,8 @@ Solve strategies:
 * ``model.solve(lex_strategy="incremental")``: sequential lex optimization (default)
 * ``model.solve(lex_strategy="stratified")``: one solve call with scaled weights
 
+Tiered solving requires a solver class.
+
 If stratified scaling would overflow integer bounds, solving raises a
 ``ValueError``/``OverflowError``; use ``lex_strategy="incremental"`` in that case.
 
@@ -113,7 +115,7 @@ or via the convenience result object from ``Model.solve()``.
 ``AssignmentView`` supports decoding:
 
 * ``Literal`` -> ``bool``
-* ``EnumVar`` -> ``str | None``
+* ``EnumVar`` -> ``str | int | None``
 * ``IntVar`` -> ``int``
 * linear expressions -> their numeric value
 * vectors -> lists

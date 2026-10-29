@@ -139,13 +139,20 @@ def test_empty_and_tautological_clauses_in_clausegroup_if_exposed_behave_transpa
     m2 &= ClauseGroup(m2, [empty])
     assert m2.solve().status == "unsat"
 
-    # Empty soft clause is an unavoidable penalty and should be representable at export level.
+    # An always-false preference has the same unavoidable cost in export and solve.
     m3 = Model()
+    m3.set_soft_gcd_optimization(False)
     m3.obj.add_soft(ClauseGroup(m3, [Clause(m3, [])]), 5)
     wcnf = m3.to_wcnf()
-    assert [] in [list(cl) for cl in wcnf.soft]
-    # Do not solve here: RC2 may reject direct empty soft clauses. This regression check
-    # intentionally locks export transparency only.
+    solver_formula, scale = m3._to_wcnf_for_solver()
+    assert scale == 1
+    assert solver_formula.hard == wcnf.hard
+    assert solver_formula.soft == wcnf.soft
+    assert solver_formula.wght == wcnf.wght
+    with PySATRC2(wcnf) as rc2:
+        assert rc2.compute() is not None
+        assert rc2.cost == 5
+    assert m3.solve().cost == 5
 
 
 def test_decode_partial_or_underspecified_solver_model_is_stable():

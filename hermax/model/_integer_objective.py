@@ -24,6 +24,8 @@ def lower_integer_objective(expr: PBExpr, model: "Model") -> PBExpr:
         cutoff = 16 if owner._binary_view is not None else 32
         if width < cutoff or len(terms) != width:
             continue
+        if len({term.literal.id for term in terms}) != width:
+            continue
         coefficient = terms[0].coefficient * (1 if terms[0].literal.polarity else -1)
         if any(
             t.coefficient * (1 if t.literal.polarity else -1) != coefficient

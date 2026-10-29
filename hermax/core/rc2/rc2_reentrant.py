@@ -33,6 +33,7 @@ class RC2Reentrant(ReplayFormulaSolverBase):
         self._require_open()
         limit = validate_time_limit(time_limit)
         assumps = self._normalize_assumptions(assumptions)
+        num_vars = max(self._num_vars, max((abs(lit) for lit in assumps), default=0))
         from hermax.portfolio.solver import PortfolioSolver
 
         portfolio = PortfolioSolver(
@@ -41,7 +42,7 @@ class RC2Reentrant(ReplayFormulaSolverBase):
         )
         try:
             # Reserve original IDs before introducing relaxation variables.
-            for _ in range(self._num_vars):
+            for _ in range(num_vars):
                 portfolio.new_var()
             for clause in self._hard_clauses:
                 portfolio.add_clause(list(clause))
@@ -57,9 +58,9 @@ class RC2Reentrant(ReplayFormulaSolverBase):
             model = None
             cost = None
             if is_feasible(status):
-                model = [lit for lit in portfolio.get_model() if abs(lit) <= self._num_vars]
+                model = [lit for lit in portfolio.get_model() if abs(lit) <= num_vars]
                 cost = self._compute_wrapper_cost(model)
-            self._set_result(status=status, model=model, cost=cost, num_vars=self._num_vars)
+            self._set_result(status=status, model=model, cost=cost, num_vars=num_vars)
         finally:
             portfolio.close()
         self._maybe_raise_on_abnormal(raise_on_abnormal)

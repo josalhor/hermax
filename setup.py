@@ -1776,7 +1776,7 @@ CMAKE_NATIVE_CORE_SPECS = {
     "hermax.internal._pbamo": {
         "component": "pbamo",
         "target": "pbamo_core",
-        "source_roots": ["encodings/pbamo"],
+        "source_roots": ["encodings/pbamo", "hermax/internal/native"],
     },
     CORETRAIL_EXTENSION_NAME: {
         "component": "coretrail",
@@ -1835,10 +1835,19 @@ setup(
     packages=find_packages(include=["hermax", "hermax.*"]),
     ext_modules=[
         Extension(
+            "hermax.internal._clauses",
+            ["hermax/internal/clauses.cpp"],
+            depends=["hermax/internal/native/packed_clauses.hpp", "hermax/internal/native/clause_api.hpp"],
+            extra_compile_args=(["/O2", "/std:c++17"] if platform.system() == "Windows" else ["-O3", "-std=c++17"]),
+            language="c++",
+        ),
+        Extension(
             "hermax_pycard",
             ["encodings/cardenc/pycard.cc"],
+            depends=["hermax/internal/native/packed_clauses.hpp", "hermax/internal/native/clause_api.hpp"],
             include_dirs=[
                 "encodings/cardenc",
+                "hermax/internal",
                 *[
                     p
                     for p in [

@@ -128,7 +128,7 @@ def test_offset_fast_path_bypasses_card_and_pb_encoders(monkeypatch):
 
 def test_non_offset_general_pb_still_uses_pb_encoder(monkeypatch):
     seen = {"pb": 0}
-    real_encode = integer_native.encode_pb
+    real_encode = integer_native._encode_pb_packed
 
     def wrapped_encode(*args, **kwargs):
         seen["pb"] += 1
@@ -136,7 +136,7 @@ def test_non_offset_general_pb_still_uses_pb_encoder(monkeypatch):
         assert kwargs["clause_limit"] == 50_000
         return real_encode(*args, **kwargs)
 
-    monkeypatch.setattr(integer_native, "encode_pb", wrapped_encode)
+    monkeypatch.setattr(integer_native, "_encode_pb_packed", wrapped_encode)
 
     m = Model()
     x = m.int("x", 0, 8)

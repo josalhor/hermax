@@ -87,7 +87,13 @@ def test_three_term_uniform_sums_reach_selector(op, monkeypatch):
 
 
 @pytest.mark.parametrize("op", ["==", "<=", "<"])
-def test_large_adder_budget_routes_to_binary_with_correct_offsets(op, monkeypatch):
+def test_large_adder_budget_uses_general_selector_with_correct_offsets(op, monkeypatch):
+    selected = []
+    original = _integer_sum.selection.choose
+    def record(*args, **kwargs):
+        selected.append(True)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(_integer_sum.selection, "choose", record)
     monkeypatch.setattr(_integer_sum, "UNARY_CLAUSE_LIMIT", 1)
     m = Model()
     xs = [m.int("x", -2, 0), m.int("y", 1, 3), m.int("z", -1, 3)]
@@ -95,7 +101,7 @@ def test_large_adder_budget_routes_to_binary_with_correct_offsets(op, monkeypatc
     b = m.bool("b")
     m &= OPS[op](xs[0] + xs[1] + 1, xs[2]).only_if(g).iff(b)
     cnf = m.to_cnf()
-    assert all(x._binary_view is not None for x in xs)
+    assert selected
     with Solver(bootstrap_with=cnf.clauses) as solver:
         for x, y, z, gv, bv in itertools.product(
             range(-2, 1), range(1, 4), range(-1, 4), [False, True], [False, True]
@@ -181,19 +187,19 @@ def test_unary_guard_matches_network_upper_count_and_is_inclusive(monkeypatch):
         comparisons = len(batcher_odd_even_unary_add_network(left, right))
         cost = 6 * comparisons + 2 * (left + right + 2)
         monkeypatch.setattr(_integer_sum, "UNARY_CLAUSE_LIMIT", cost)
-        assert not _integer_sum.unary_sum_too_large(left, right, equality=True)
+        assert _integer_sum.addition_encoding(left, right, left + right, 0, equality=True) == "merge"
         monkeypatch.setattr(_integer_sum, "UNARY_CLAUSE_LIMIT", cost - 1)
-        assert _integer_sum.unary_sum_too_large(left, right, equality=True)
+        assert _integer_sum.addition_encoding(left, right, left + right, 0, equality=True) == "general"
 
 
 @pytest.mark.parametrize("op", ["==", "<="])
 def test_large_adder_switches_before_network_construction(op, monkeypatch):
-    import hermax.model.encoders as encoders
+    import hermax.model._counting as counting
 
     def fail(*args):
         raise AssertionError("large unary network must not be constructed")
 
-    monkeypatch.setattr(encoders, "batcher_odd_even_unary_add_network", fail)
+    monkeypatch.setattr(counting, "batcher_odd_even_unary_add_network", fail)
     m = Model()
     x = m.int("x", 0, 2000)
     y = m.int("y", 0, 2000)

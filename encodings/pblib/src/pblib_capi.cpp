@@ -12,6 +12,7 @@
 #include "auxvarmanager.h"
 #include "VectorClauseDatabase.h"
 #include "pb2cnf.h"
+#include "native/clause_api.hpp"
 
 #ifndef HERMAX_PBLIB_ENABLE_PYINT_CACHE
 #define HERMAX_PBLIB_ENABLE_PYINT_CACHE 1
@@ -86,7 +87,51 @@ struct PyIntCacheGuard {
     ~PyIntCacheGuard() { pyint_cache_clear(&cache); }
 };
 
-static PyObject* py_encode_pb(PyObject*, PyObject* args, PyObject* kwargs) {
+struct PythonDecref { void operator()(PyObject* value) const { Py_XDECREF(value); } };
+using PythonRef = std::unique_ptr<PyObject, PythonDecref>;
+
+class PackedClauseDatabase final : public ClauseDatabase {
+    const hermax::clauses::API* api;
+    PyObject* output;
+    void addClauseIntern(const std::vector<int32_t>& clause) override {
+        if (api->append(output, clause.data(), clause.size()) < 0)
+            throw std::runtime_error("Packed clause output failed.");
+    }
+public:
+    PackedClauseDatabase(PBConfig config, const hermax::clauses::API* api, PyObject* output)
+        : ClauseDatabase(config), api(api), output(output) {}
+};
+
+static PyObject* python_clauses(const std::vector<std::vector<int32_t>>& clauses) {
+    PyIntCacheGuard cache_guard;
+    PyObject* py_clauses = PyList_New((Py_ssize_t)clauses.size());
+    if (!py_clauses) {
+        return nullptr;
+    }
+
+    for (Py_ssize_t i = 0; i < (Py_ssize_t)clauses.size(); ++i) {
+        const auto& cl = clauses[(size_t)i];
+        PyObject* py_clause = PyList_New((Py_ssize_t)cl.size());
+        if (!py_clause) {
+            Py_DECREF(py_clauses);
+            return nullptr;
+        }
+        for (Py_ssize_t j = 0; j < (Py_ssize_t)cl.size(); ++j) {
+            PyObject* lit = pyint_cache_get_or_make(&cache_guard.cache, (int)cl[(size_t)j]);
+            if (!lit) {
+                Py_DECREF(py_clause);
+                Py_DECREF(py_clauses);
+                return nullptr;
+            }
+            PyList_SET_ITEM(py_clause, j, lit);  // steals
+        }
+        PyList_SET_ITEM(py_clauses, i, py_clause);  // steals
+    }
+
+    return py_clauses;
+}
+
+static PyObject* encode_pb(PyObject* args, PyObject* kwargs, bool packed) {
     PyObject* wlits_obj = nullptr;
     int comparator = 0;
     long long bound = 0;
@@ -134,7 +179,6 @@ static PyObject* py_encode_pb(PyObject*, PyObject* args, PyObject* kwargs) {
     }
 
     try {
-        PyIntCacheGuard cache_guard;
         std::vector<PBLib::WeightedLit> wlits;
         wlits.reserve((size_t)PyList_GET_SIZE(wlits_obj));
 
@@ -174,6 +218,7 @@ static PyObject* py_encode_pb(PyObject*, PyObject* args, PyObject* kwargs) {
             conditionals.push_back((int32_t)lit);
         }
         Py_DECREF(conditionals_obj);
+        conditionals_obj = nullptr;
 
         if (!conditionals.empty()) {
             constr.addConditionals(conditionals);
@@ -189,35 +234,20 @@ static PyObject* py_encode_pb(PyObject*, PyObject* args, PyObject* kwargs) {
             config->pb_encoder = static_cast<PB_ENCODER::PB2CNF_PB_Encoder>(pb_encoder);
         }
 
-        VectorClauseDatabase result(config);
+        const auto* api = packed ? hermax::clauses::import_api() : nullptr;
+        if (packed && !api) return nullptr;
+        PythonRef output(packed ? api->create() : nullptr);
+        if (packed && !output) return nullptr;
+        std::unique_ptr<ClauseDatabase> result = packed
+            ? std::unique_ptr<ClauseDatabase>(new PackedClauseDatabase(config, api, output.get()))
+            : std::unique_ptr<ClauseDatabase>(new VectorClauseDatabase(config));
         AuxVarManager varmgr(top_id + 1);
         PB2CNF pb2cnf(config);
-        pb2cnf.encode(constr, result, varmgr);
+        pb2cnf.encode(constr, *result, varmgr);
 
-        const auto& clauses = result.getClauses();
-        PyObject* py_clauses = PyList_New((Py_ssize_t)clauses.size());
-        if (!py_clauses) {
-            return nullptr;
-        }
-
-        for (Py_ssize_t i = 0; i < (Py_ssize_t)clauses.size(); ++i) {
-            const auto& cl = clauses[(size_t)i];
-            PyObject* py_clause = PyList_New((Py_ssize_t)cl.size());
-            if (!py_clause) {
-                Py_DECREF(py_clauses);
-                return nullptr;
-            }
-            for (Py_ssize_t j = 0; j < (Py_ssize_t)cl.size(); ++j) {
-                PyObject* lit = pyint_cache_get_or_make(&cache_guard.cache, (int)cl[(size_t)j]);
-                if (!lit) {
-                    Py_DECREF(py_clause);
-                    Py_DECREF(py_clauses);
-                    return nullptr;
-                }
-                PyList_SET_ITEM(py_clause, j, lit);  // steals
-            }
-            PyList_SET_ITEM(py_clauses, i, py_clause);  // steals
-        }
+        PyObject* py_clauses = packed ? output.release()
+            : python_clauses(static_cast<VectorClauseDatabase&>(*result).getClauses());
+        if (!py_clauses) return nullptr;
 
         PyObject* py_aux = PyLong_FromLong((long)varmgr.getBiggestReturnedAuxVar());
         if (!py_aux) {
@@ -238,7 +268,7 @@ static PyObject* py_encode_pb(PyObject*, PyObject* args, PyObject* kwargs) {
         if (conditionals_obj) {
             Py_DECREF(conditionals_obj);
         }
-        PyErr_SetString(PyExc_RuntimeError, e.what());
+        if (!PyErr_Occurred()) PyErr_SetString(PyExc_RuntimeError, e.what());
         return nullptr;
     } catch (...) {
         if (conditionals_obj) {
@@ -249,7 +279,16 @@ static PyObject* py_encode_pb(PyObject*, PyObject* args, PyObject* kwargs) {
     }
 }
 
+static PyObject* py_encode_pb(PyObject*, PyObject* args, PyObject* kwargs) {
+    return encode_pb(args, kwargs, false);
+}
+static PyObject* py_encode_pb_packed(PyObject*, PyObject* args, PyObject* kwargs) {
+    return encode_pb(args, kwargs, true);
+}
+
 static PyMethodDef module_methods[] = {
+    {"_encode_pb_packed", reinterpret_cast<PyCFunction>(py_encode_pb_packed),
+     METH_VARARGS | METH_KEYWORDS, nullptr},
     {
         "encode_pb",
         reinterpret_cast<PyCFunction>(py_encode_pb),

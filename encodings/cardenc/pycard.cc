@@ -16,6 +16,7 @@
 
 #include "card.hh"
 #include "itot.hh"
+#include "native/clause_api.hpp"
 
 using namespace std;
 
@@ -130,7 +131,10 @@ struct PyIntCacheGuard {
 extern "C" {
 	static PyObject *py_encode_atmost  (PyObject *, PyObject *);
 	static PyObject *py_encode_atleast (PyObject *, PyObject *);
+	static PyObject *py_encode_atmost_packed (PyObject *, PyObject *);
+	static PyObject *py_encode_atleast_packed (PyObject *, PyObject *);
 	static PyObject *py_itot_new       (PyObject *, PyObject *);
+	static PyObject *py_itot_new_packed(PyObject *, PyObject *);
 	static PyObject *py_itot_inc       (PyObject *, PyObject *);
 	static PyObject *py_itot_ext       (PyObject *, PyObject *);
 	static PyObject *py_itot_mrg       (PyObject *, PyObject *);
@@ -140,9 +144,12 @@ extern "C" {
 // module specification
 //=============================================================================
 static PyMethodDef module_methods[] = {
+    { "_encode_atmost_packed", py_encode_atmost_packed, METH_VARARGS, NULL },
+    { "_encode_atleast_packed", py_encode_atleast_packed, METH_VARARGS, NULL },
 	{ "encode_atmost",  py_encode_atmost,  METH_VARARGS,   atmost_docstring },
 	{ "encode_atleast", py_encode_atleast, METH_VARARGS,  atleast_docstring },
 	{ "itot_new",       py_itot_new,       METH_VARARGS, itot_new_docstring },
+	{ "_itot_new_packed", py_itot_new_packed, METH_VARARGS, NULL },
 	{ "itot_inc",       py_itot_inc,       METH_VARARGS, itot_inc_docstring },
 	{ "itot_ext",       py_itot_ext,       METH_VARARGS, itot_ext_docstring },
 	{ "itot_mrg",       py_itot_mrg,       METH_VARARGS, itot_mrg_docstring },
@@ -462,7 +469,23 @@ static PyObject *vector_to_pylist(const vector<int>& vals)
 
 //
 //=============================================================================
-static PyObject *py_encode_atmost(PyObject *self, PyObject *args)
+static PyObject *clauseset_to_packed(ClauseSet& dest)
+{
+    const auto* api = hermax::clauses::import_api();
+    if (!api) return NULL;
+    PyObject* output = api->create();
+    if (!output) return NULL;
+    for (auto& clause : dest.get_clauses()) {
+        if (api->append(output, clause.data(), clause.size()) < 0) {
+            Py_DECREF(output);
+            return NULL;
+        }
+        vector<int>().swap(clause);
+    }
+    return output;
+}
+
+static PyObject *encode_atmost(PyObject *args, bool packed)
 {
 	PyIntCacheGuard cache_guard;
 	PyObject *lhs_obj;
@@ -496,7 +519,7 @@ static PyObject *py_encode_atmost(PyObject *self, PyObject *args)
 	if (main_thread)
 		PyOS_setsig(SIGINT, sig_save);
 
-	PyObject *dest_obj = clauseset_to_pylist(dest, &cache_guard.cache);
+	PyObject *dest_obj = packed ? clauseset_to_packed(dest) : clauseset_to_pylist(dest, &cache_guard.cache);
 	if (dest_obj == NULL)
 		return NULL;
 
@@ -526,7 +549,7 @@ static PyObject *py_encode_atmost(PyObject *self, PyObject *args)
 
 //
 //=============================================================================
-static PyObject *py_encode_atleast(PyObject *self, PyObject *args)
+static PyObject *encode_atleast(PyObject *args, bool packed)
 {
 	PyIntCacheGuard cache_guard;
 	PyObject *lhs_obj;
@@ -560,7 +583,7 @@ static PyObject *py_encode_atleast(PyObject *self, PyObject *args)
 	if (main_thread)
 		PyOS_setsig(SIGINT, sig_save);
 
-	PyObject *dest_obj = clauseset_to_pylist(dest, &cache_guard.cache);
+	PyObject *dest_obj = packed ? clauseset_to_packed(dest) : clauseset_to_pylist(dest, &cache_guard.cache);
 	if (dest_obj == NULL)
 		return NULL;
 
@@ -592,7 +615,12 @@ static PyObject *py_encode_atleast(PyObject *self, PyObject *args)
 
 //
 //=============================================================================
-static PyObject *py_itot_new(PyObject *self, PyObject *args)
+static PyObject *py_encode_atmost(PyObject *, PyObject *args) { return encode_atmost(args, false); }
+static PyObject *py_encode_atleast(PyObject *, PyObject *args) { return encode_atleast(args, false); }
+static PyObject *py_encode_atmost_packed(PyObject *, PyObject *args) { return encode_atmost(args, true); }
+static PyObject *py_encode_atleast_packed(PyObject *, PyObject *args) { return encode_atleast(args, true); }
+
+static PyObject *itot_new_impl(PyObject *args, bool packed)
 {
 	PyIntCacheGuard cache_guard;
 	PyObject *lhs_obj;
@@ -624,7 +652,7 @@ static PyObject *py_itot_new(PyObject *self, PyObject *args)
 	if (main_thread)
 		PyOS_setsig(SIGINT, sig_save);
 
-	PyObject *dest_obj = clauseset_to_pylist(dest, &cache_guard.cache);
+	PyObject *dest_obj = packed ? clauseset_to_packed(dest) : clauseset_to_pylist(dest, &cache_guard.cache);
 	if (dest_obj == NULL)
 		return NULL;
 	PyObject *ubs_obj = vector_to_pylist(tree->vars);
@@ -663,6 +691,16 @@ static PyObject *py_itot_new(PyObject *self, PyObject *args)
 
 //
 //=============================================================================
+static PyObject *py_itot_new(PyObject *, PyObject *args)
+{
+    return itot_new_impl(args, false);
+}
+
+static PyObject *py_itot_new_packed(PyObject *, PyObject *args)
+{
+    return itot_new_impl(args, true);
+}
+
 static PyObject *py_itot_inc(PyObject *self, PyObject *args)
 {
 	PyIntCacheGuard cache_guard;

@@ -9,7 +9,7 @@ def test_cumulative_task_backend_gating_literal():
     # is always a Literal.
     # While we can't easily check internal locals, we can check 
     # that the constraint works and doesn't crash.
-    m.cumulative(s, [2, 2], [1, 1], capacity=1, backend="task")
+    m &= m.cumulative(s, [2, 2], [1, 1], capacity=1, backend="task")
     
     # Also verify that si == t is a Literal in Hermax
     for si in s:

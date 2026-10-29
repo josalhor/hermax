@@ -12,6 +12,7 @@ The basic Boolean layer is:
 * :class:`hermax.model.Clause`
 * :class:`hermax.model.ClauseGroup`
 
+
 Typical usage:
 
 .. code-block:: python
@@ -35,8 +36,8 @@ Typical usage:
 Notes
 -----
 
-* ``|`` builds a single clause (disjunction).
-* ``&`` builds a clause group (conjunction of clauses).
+* ``|`` between literals builds a single clause (disjunction).
+* ``&`` joins clauses into a clause group (conjunction).
 * ``ClauseGroup`` is immutable by operator: ``x &= y`` returns a new group.
 * ``Clause`` is immutable by operator: ``x |= y`` returns a new clause.
 * Explicit mutation is available (with a guard), for example:

@@ -201,7 +201,7 @@ def test_pb_fastpath_scaled_intvar_relations_match_truth_table_same_domain(op):
             assert sat == truth, (op, xv, yv)
 
 
-def test_pb_fastpath_scaled_intvar_relations_bypass_pb_and_card_encoders():
+def test_pb_fastpath_scaled_intvar_relations_bypass_pb_and_card_encoders(monkeypatch):
     import hermax.model as hm
     from hermax.internal.card import CardEnc
     from hermax.internal.pb import PBEnc
@@ -210,34 +210,17 @@ def test_pb_fastpath_scaled_intvar_relations_bypass_pb_and_card_encoders():
     x = m.int("x", 0, 10)
     y = m.int("y", 0, 30)
 
-    orig_pb_leq = PBEnc.leq
-    orig_pb_geq = PBEnc.geq
-    orig_pb_eq = PBEnc.equals
-    orig_card_atmost = CardEnc.atmost
-    orig_card_atleast = CardEnc.atleast
-    orig_card_eq = CardEnc.equals
-
     def bomb(*args, **kwargs):  # pragma: no cover - should not be called
         raise AssertionError("PB/Card encoder should not be used for scaled IntVar fastpath")
 
-    PBEnc.leq = bomb
-    PBEnc.geq = bomb
-    PBEnc.equals = bomb
-    CardEnc.atmost = bomb
-    CardEnc.atleast = bomb
-    CardEnc.equals = bomb
-    try:
-        m &= (x * 3 + 1 <= y)
-        m &= (x == 4)
-        m &= (y == 13)
-        assert _solve_status(m) != "unsat"
-    finally:
-        PBEnc.leq = orig_pb_leq
-        PBEnc.geq = orig_pb_geq
-        PBEnc.equals = orig_pb_eq
-        CardEnc.atmost = orig_card_atmost
-        CardEnc.atleast = orig_card_atleast
-        CardEnc.equals = orig_card_eq
+    for encoder, names in ((PBEnc, ("leq", "geq", "equals")),
+                           (CardEnc, ("atmost", "atleast", "equals"))):
+        for name in names:
+            monkeypatch.setattr(encoder, name, bomb)
+    m &= (x * 3 + 1 <= y)
+    m &= (x == 4)
+    m &= (y == 13)
+    assert _solve_status(m) != "unsat"
 
 
 def test_mixed_weighted_expression_uses_budgeted_pb_encoder(monkeypatch):

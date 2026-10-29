@@ -39,11 +39,7 @@ Equivalence: ``iff()``
 ----------------------
 
 ``constraint.iff(b)`` means that ``b`` is true exactly when the constraint holds.
-Use it with literals, clauses, PB comparisons, integer comparisons such as
-``x <= y`` or ``x == y``, and globals such as ``all_different()`` and
-``table()``/``is_in()``. It also works with clause groups, set and enum
-comparisons, vector ordering, indexed integer comparisons, and interval
-non-overlap.
+It works with Boolean and integer comparisons, clauses, and supported globals.
 
 .. code-block:: python
 
@@ -65,8 +61,4 @@ Use ``~b`` as the indicator to reverse its meaning. Integer comparisons include
 disequality and comparisons that are always true or false because a constant
 lies outside the variable's domain.
 
-An ordinary clause group is reified as the conjunction of its clauses over all
-their literals. Supported globals retain the meaning of their helper variables
-when reified, gated, or combined with other constraints. Reification may
-introduce helper variables, especially for PB constraints and groups with
-several clauses.
+Reification may add variables and clauses.

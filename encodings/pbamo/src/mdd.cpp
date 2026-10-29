@@ -36,9 +36,9 @@ void mix_hash(std::size_t& hash, std::size_t value) {
 
 struct StateKeyHash {
     std::size_t operator()(const StateKey& key) const noexcept {
-        auto hash = std::hash<std::size_t>{}(key.layer);
-        mix_hash(hash, std::hash<Weight>{}(key.remaining));
-        return hash;
+        // Separate neighboring layers when remaining budgets form dense ranges.
+        return std::hash<Weight>{}(key.remaining) ^
+            (std::hash<std::size_t>{}(key.layer) * 0x9e3779b97f4a7c15ULL);
     }
 };
 
@@ -184,7 +184,7 @@ private:
 EncodeResult MddEncoder::encode(const GroupedLeqConstraint& constraint,
                                 const EncodeOptions& options) const {
     constraint.validate();
-    EncodeResult result;
+    EncodeResult result(options.clause_memory);
     result.cnf.num_vars = options.top_id;
     VariableManager variables(options.top_id);
     add_pairwise_amo(constraint, result.cnf);

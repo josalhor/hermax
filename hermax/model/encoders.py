@@ -5,13 +5,13 @@ import time
 from dataclasses import dataclass
 from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
-from hermax.encoder.pbamo import PBAMOEnc
+from hermax.encoder._packed import PBAMOEnc
 from hermax.encoder import _weighted_sum
-from ._integer_sum import compile_sum, compile_binary_sum, unary_sum_too_large
+from ._integer_sum import compile_sum, addition_encoding
+from ._counting import count_thresholds, merge_thresholds, _append_implication
 from ._weighted_integer_sum import compile_weighted_sum
 from ._integer_affine import extract_integer_sum
 from hermax.internal.pb_normalize import normalize_signed_terms
-from hermax.utils import batcher_odd_even_unary_add_network
 
 from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
@@ -24,6 +24,8 @@ from .expressions import *
 from .expressions import _detection_error, _nonlinear_error, _ensure_same_model, _ensure_same_model_pair_fast, _LazyIntExpr
 from .variables import *
 from .variables import _BaseVector, _BaseDict, _BaseMatrixView, _MultiplexerInt, _VectorElementInt
+
+_CountOutputs = list[bool | Literal] | dict[int, bool | Literal]
 
 
 @dataclass
@@ -230,48 +232,55 @@ class _EncoderDispatch:
         )
 
     @staticmethod
-    def _extract_multi_int_affine(model: "Model", expr: PBExpr) -> tuple[list[tuple[IntVar, int]], int] | None:
-        """Return ``({intvar: coeff, ...}, offset)`` for a pure affine Int expression.
-
-        The expression must consist solely of full lifted threshold sets for one or
-        more IntVars, each with a uniform nonzero coefficient (which may be
-        negative), plus an integer constant. No raw boolean literals are allowed.
-        """
-        if not expr.terms:
-            return [], int(expr.constant)
-        per_owner: dict[int, tuple[IntVar, int, set[int]]] = {}
-        for t in expr.terms:
-            c = int(t.coefficient)
-            if c == 0:
+    def _extract_affine_parts(
+        model: "Model", expr: PBExpr, *, allow_booleans: bool,
+    ) -> tuple[list[tuple[IntVar, int]], list[tuple[Literal, int]], int] | None:
+        """Recover complete, uniformly weighted integer ladders and residual Boolean terms."""
+        if expr.int_terms:
+            return None
+        owners: dict[int, tuple[IntVar, int, set[int]]] = {}
+        booleans: dict[tuple[int, bool], tuple[Literal, int]] = {}
+        for term in expr.terms:
+            coefficient = int(term.coefficient)
+            if not coefficient:
                 continue
-            lit = t.literal
-            if not lit.polarity:
-                return None
-            info = model._intvar_threshold_owner_by_litid.get(lit.id)
+            literal = term.literal
+            info = model._intvar_threshold_owner_by_litid.get(literal.id)
             if info is None:
+                if not allow_booleans:
+                    return None
+                boolean_key = literal.id, literal.polarity
+                previous = booleans.get(boolean_key, (literal, 0))[1]
+                booleans[boolean_key] = literal, previous + coefficient
+                continue
+            if not literal.polarity:
                 return None
-            x, idx = info
-            key = id(x)
-            if key in per_owner:
-                x0, c0, seen = per_owner[key]
-                if x0 is not x or c0 != c:
-                    return None
-                if idx in seen:
-                    return None
-                seen.add(idx)
-            else:
-                per_owner[key] = (x, c, {idx})
+            owner, index = info
+            owner_key = id(owner)
+            if owner_key not in owners:
+                owners[owner_key] = owner, coefficient, set()
+            _, previous, seen = owners[owner_key]
+            if coefficient != previous or index in seen:
+                return None
+            seen.add(index)
 
-        coeffs: list[tuple[IntVar, int]] = []
+        integers = []
         offset = int(expr.constant)
-        for x, c, seen in per_owner.values():
-            if len(seen) != len(x._threshold_lits):
+        for owner, coefficient, seen in owners.values():
+            # Ownership guarantees valid indices; duplicates were rejected above.
+            if len(seen) != len(owner._threshold_lits):
                 return None
-            if seen != set(range(len(x._threshold_lits))):
-                return None
-            coeffs.append((x, c))
-            offset -= c * x.lb
-        return coeffs, offset
+            integers.append((owner, coefficient))
+            offset -= coefficient * owner.lb
+        return integers, [(literal, c) for literal, c in booleans.values() if c], offset
+
+    @staticmethod
+    def _extract_multi_int_affine(model: "Model", expr: PBExpr) -> tuple[list[tuple[IntVar, int]], int] | None:
+        extracted = _EncoderDispatch._extract_affine_parts(model, expr, allow_booleans=False)
+        if extracted is None:
+            return None
+        integers, _, offset = extracted
+        return integers, offset
 
     _extract_integer_sum_with_bools = staticmethod(extract_integer_sum)
 
@@ -328,26 +337,7 @@ class _EncoderDispatch:
             return x > k
         raise ValueError(f"Unsupported comparator {op!r}")
 
-    @staticmethod
-    def _lit_implies(clauses: list[Clause], model: "Model", antecedent: bool | Literal, consequent: bool | Literal) -> None:
-        """Append CNF for ``antecedent -> consequent`` with constant folding."""
-        if isinstance(antecedent, bool):
-            if not antecedent:
-                return
-            if isinstance(consequent, bool):
-                if consequent:
-                    return
-                clauses.append(Clause(model, []))
-                return
-            clauses.append(Clause(model, [consequent]))
-            return
-        # antecedent is a Literal
-        if isinstance(consequent, bool):
-            if consequent:
-                return
-            clauses.append(Clause(model, [~antecedent]))
-            return
-        clauses.append(Clause(model, [~antecedent, consequent]))
+    _lit_implies = staticmethod(_append_implication)
 
     @staticmethod
     def _lit_conj_implies(
@@ -459,99 +449,66 @@ class _EncoderDispatch:
         left_desc: Sequence[bool | Literal],
         right_desc: Sequence[bool | Literal],
         *,
-        network=None,
-    ) -> tuple[list[Clause], list[bool | Literal]]:
-        """Build ``sum >= r`` literals for two descending unary ladders.
+        thresholds=None,
+    ) -> tuple[list[Clause], _CountOutputs]:
+        total = len(left_desc) + len(right_desc)
+        requested = range(1, total + 1) if thresholds is None else thresholds
+        clauses, outputs = merge_thresholds(
+            model, [left_desc, right_desc], requested,
+            _EncoderDispatch._lit_and, _EncoderDispatch._lit_or,
+        )
+        if thresholds is None:
+            return clauses, [True, *outputs.values()]
+        return clauses, outputs
 
-        ``left_desc`` and ``right_desc`` are IntVar threshold ladders in the
-        native descending order ``[x>=lb+1, x>=lb+2, ...]``. The returned
-        ``ge[r]`` literals encode the count sum over both ladders for
-        ``r in [0, len(left_desc)+len(right_desc)]`` with ``ge[0] == True``.
-        """
-        nx = len(left_desc)
-        ny = len(right_desc)
-        total = nx + ny
-        if total == 0:
-            return [], [True]
+    @staticmethod
+    def _addition_domain_cuts(model, x, y, z, target, *, equality=False):
+        clauses = []
+        if z.ub + target < x.ub + y.ub:
+            clauses.extend(_EncoderDispatch._try_bivariate_int_fastpath(
+                model, PBExpr.from_item(x + y), "<=", PBExpr.from_item(z.ub + target)
+            ))
+        if equality and z.lb + target > x.lb + y.lb:
+            clauses.extend(_EncoderDispatch._try_bivariate_int_fastpath(
+                model, PBExpr.from_item(x + y), ">=", PBExpr.from_item(z.lb + target)
+            ))
+        return clauses
 
-        net = batcher_odd_even_unary_add_network(nx, ny) if network is None else network
-        width = int(net.n)
-        clauses: list[Clause] = []
-
-        if nx == 0:
-            wires: list[bool | Literal] = list(reversed(right_desc))
-        elif ny == 0:
-            wires = list(reversed(left_desc))
-        else:
-            p2 = width // 2
-            if 2 * p2 != width:
-                raise AssertionError("Unary-add merge network width must be even for two non-empty inputs.")
-            wires = [
-                *([False] * (p2 - nx)),
-                *reversed(left_desc),
-                *([False] * (p2 - ny)),
-                *reversed(right_desc),
-            ]
-            if len(wires) != width:
-                raise AssertionError("Unary-add merge network width mismatch.")
-
-        for i, j in net:
-            a = wires[i]
-            b = wires[j]
-            lo = _EncoderDispatch._lit_and(clauses, model, a, b)
-            hi = _EncoderDispatch._lit_or(clauses, model, a, b)
-            wires[i] = lo
-            wires[j] = hi
-
-        ge: list[bool | Literal] = [True]
-        for r in range(1, total + 1):
-            ge.append(wires[width - r])
-        return clauses, ge
+    @staticmethod
+    def _extract_addition(model, lhs, op, rhs):
+        left = _EncoderDispatch._extract_multi_int_affine(model, lhs)
+        right = _EncoderDispatch._extract_multi_int_affine(model, rhs)
+        if left is None or right is None:
+            return None
+        coefficients = {}
+        for items, sign in ((left[0], 1), (right[0], -1)):
+            for variable, coefficient in items:
+                previous = coefficients.get(id(variable), (variable, 0))[1]
+                coefficients[id(variable)] = variable, previous + sign * coefficient
+        items = [(v, c) for v, c in coefficients.values() if c]
+        target = right[1] - left[1]
+        if op in (">=", ">") or (op == "==" and sum(c == -1 for _, c in items) == 2):
+            items = [(v, -c) for v, c in items]
+            target = -target
+            op = {">=": "<=", ">": "<", "==": "=="}[op]
+        if op == "<":
+            target -= 1
+        positive = sorted((v for v, c in items if c == 1), key=lambda v: v.name)
+        negative = [v for v, c in items if c == -1]
+        if len(items) != 3 or len(positive) != 2 or len(negative) != 1:
+            return None
+        return positive[0], positive[1], negative[0], target
 
     @staticmethod
     def _try_unary_adder_eq_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
         """Detect and compile ``x + y == z`` (affine-shifted) via unary merge network."""
         if op != "==":
             return None
-        left = _EncoderDispatch._extract_multi_int_affine(model, lhs)
-        right = _EncoderDispatch._extract_multi_int_affine(model, rhs)
-        if left is None or right is None:
+        addition = _EncoderDispatch._extract_addition(model, lhs, op, rhs)
+        if addition is None:
             return None
-        litems, loff = left
-        ritems, roff = right
-
-        coeffs_by_id: dict[int, tuple[IntVar, int]] = {}
-        for x, c in litems:
-            key = id(x)
-            x0, c0 = coeffs_by_id.get(key, (x, 0))
-            if x0 is not x:
-                return None
-            coeffs_by_id[key] = (x, c0 + c)
-        for y, c in ritems:
-            key = id(y)
-            y0, c0 = coeffs_by_id.get(key, (y, 0))
-            if y0 is not y:
-                return None
-            coeffs_by_id[key] = (y, c0 - c)
-
-        coeff_items = [(v, c) for v, c in coeffs_by_id.values() if c != 0]
-        if len(coeff_items) != 3:
-            return None
-
-        plus_vars: list[IntVar] = []
-        minus_vars: list[IntVar] = []
-        for v, c in coeff_items:
-            if c == 1:
-                plus_vars.append(v)
-            elif c == -1:
-                minus_vars.append(v)
-            else:
-                return None
-        if len(plus_vars) != 2 or len(minus_vars) != 1:
-            return None
-
-        x, y = plus_vars
-        z = minus_vars[0]
+        x, y, z, target = addition
+        coeff_items = [(x, 1), (y, 1), (z, -1)]
         # Compact ladder uses (ub-lb) threshold bits.
         nx = len(x._threshold_lits)
         ny = len(y._threshold_lits)
@@ -560,27 +517,20 @@ class _EncoderDispatch:
         # For affine relation lhs == rhs with coeffs built over values:
         #   sum(c_i * (cnt_i + lb_i)) + (loff - roff) == 0
         # -> sum(c_i * cnt_i) == - (sum(c_i * lb_i) + (loff - roff))
-        delta = -(
-            sum(c * v.lb for v, c in coeff_items) + (loff - roff)
-        )
+        delta = target - x.lb - y.lb + z.lb
+        if addition_encoding(nx, ny, nz, delta, equality=True) == 'general':
+            return compile_sum(model, coeff_items, -delta, "==")
 
-        if unary_sum_too_large(nx, ny, equality=True):
-            return compile_binary_sum(model, coeff_items, delta, "==")
-
-        net = batcher_odd_even_unary_add_network(nx, ny)
-        width = int(net.n)
-        if width <= 0:
-            return None
-        clauses, ge = _EncoderDispatch._build_unary_sum_ge_ladder(
-            model,
-            x._threshold_lits,
-            y._threshold_lits,
-            network=net,
-        )
         nsum = nx + ny
+        lo = max(0, min(nsum + 1, delta))
+        hi = min(nsum + 1, max(0, delta + nz + 1))
+        clauses, ge = _EncoderDispatch._build_unary_sum_ge_ladder(
+            model, x._threshold_lits, y._threshold_lits,
+            thresholds=range(max(1, lo), min(nsum, hi) + 1),
+        )
         # Channel boundary-inclusive cuts for exact equality with affine shift.
         # sum_ge(r) <-> z_count_ge(r - c_target), for r in [0, nsum+1]
-        for r in range(0, nsum + 2):
+        for r in range(lo, hi + 1):
             if r <= 0:
                 sum_ge_r: bool | Literal = True
             elif r > nsum:
@@ -600,6 +550,9 @@ class _EncoderDispatch:
             _EncoderDispatch._lit_implies(clauses, model, sum_ge_r, z_ge_t)
             _EncoderDispatch._lit_implies(clauses, model, z_ge_t, sum_ge_r)
 
+        clauses.extend(_EncoderDispatch._addition_domain_cuts(
+            model, x, y, z, target, equality=True
+        ))
         return ClauseGroup(model, clauses)
 
 
@@ -642,14 +595,10 @@ class _EncoderDispatch:
             return (">=", _EncoderDispatch._ceil_div(rhs_val, b))
         if op == ">":
             return (">", rhs_val // b)
-        if op == "==":
+        if op in ("==", "!="):
             if rhs_val % b != 0:
-                return False
-            return ("==", rhs_val // b)
-        if op == "!=":
-            if rhs_val % b != 0:
-                return True
-            return ("!=", rhs_val // b)
+                return op == "!="
+            return op, rhs_val // b
         raise ValueError(f"Unsupported comparator {op!r}")
 
     @staticmethod
@@ -669,138 +618,78 @@ class _EncoderDispatch:
             return True
 
         x_op, k = branch
-        if x_op == "==":
-            ge_lit = _EncoderDispatch._int_cmp_constraint(x, ">=", k)
-            lt_lit = _EncoderDispatch._int_cmp_constraint(x, "<", k + 1)
-            _EncoderDispatch._lit_implies(clauses, model, antecedent, ge_lit)
-            _EncoderDispatch._lit_implies(clauses, model, antecedent, lt_lit)
-            return True
         if x_op == "!=":
-            if k < x.lb or k > x.ub:
-                _EncoderDispatch._lit_implies(clauses, model, antecedent, True)
-                return True
-            neq_lit = _EncoderDispatch._negate_bool_or_lit(_EncoderDispatch._int_cmp_constraint(x, "==", k))
-            _EncoderDispatch._lit_implies(clauses, model, antecedent, neq_lit)
-            return True
-
-        lit = _EncoderDispatch._int_cmp_constraint(x, x_op, k)
-        _EncoderDispatch._lit_implies(clauses, model, antecedent, lit)
+            if x.lb <= k <= x.ub:
+                body = [~atom for atom in x._exact_value_atoms(k)]
+                _EncoderDispatch._append_guarded_clause2(clauses, model, antecedent, True, body)
+        elif x_op == "==":
+            for comparison in (">=", "<="):
+                lit = _EncoderDispatch._int_cmp_constraint(x, comparison, k)
+                _EncoderDispatch._lit_implies(clauses, model, antecedent, lit)
+        else:
+            lit = _EncoderDispatch._int_cmp_constraint(x, x_op, k)
+            _EncoderDispatch._lit_implies(clauses, model, antecedent, lit)
         return True
 
     @staticmethod
     def _extract_univariate_with_bool_affine(model: "Model", expr: PBExpr) -> tuple[IntVar, int, Literal, int, int] | None:
-        """Return ``(x, a, b_lit, w, offset)`` for ``a*x + w*b_lit + offset``.
-
-        The Int part must be a full lifted threshold set for exactly one IntVar
-        with uniform nonzero coefficient. The boolean part must be exactly one
-        (possibly negated) non-threshold literal with nonzero coefficient.
-        """
-        if not expr.terms:
+        extracted = _EncoderDispatch._extract_affine_parts(model, expr, allow_booleans=True)
+        if extracted is None:
             return None
-
-        per_owner: dict[int, tuple[IntVar, int, set[int]]] = {}
-        bool_coeffs: dict[tuple[int, bool], tuple[Literal, int]] = {}
-        for t in expr.terms:
-            c = int(t.coefficient)
-            if c == 0:
-                continue
-            lit = t.literal
-            info = model._intvar_threshold_owner_by_litid.get(lit.id)
-            if info is not None:
-                if not lit.polarity:
-                    return None
-                x, idx = info
-                key = id(x)
-                if key in per_owner:
-                    x0, c0, seen = per_owner[key]
-                    if x0 is not x or c0 != c:
-                        return None
-                    if idx in seen:
-                        return None
-                    seen.add(idx)
-                else:
-                    per_owner[key] = (x, c, {idx})
-            else:
-                key = (lit.id, lit.polarity)
-                if key in bool_coeffs:
-                    lit0, c0 = bool_coeffs[key]
-                    bool_coeffs[key] = (lit0, c0 + c)
-                else:
-                    bool_coeffs[key] = (lit, c)
-
-        bool_items = [(lit, c) for lit, c in bool_coeffs.values() if c != 0]
-        if len(per_owner) != 1 or len(bool_items) != 1:
+        integers, booleans, offset = extracted
+        if len(integers) != 1 or len(booleans) != 1:
             return None
-
-        x, a, seen = next(iter(per_owner.values()))
-        if len(seen) != len(x._threshold_lits) or seen != set(range(len(x._threshold_lits))):
-            return None
-        b_lit, w = bool_items[0]
-        offset = int(expr.constant) - a * x.lb
-        return x, a, b_lit, w, offset
+        (x, coefficient), = integers
+        (literal, weight), = booleans
+        return x, coefficient, literal, weight, offset
 
     @staticmethod
     def _extract_bivariate_with_bool_affine(
-        model: "Model", expr: PBExpr
+        model: "Model", expr: PBExpr,
     ) -> tuple[IntVar, int, IntVar, int, Literal, int, int] | None:
-        """Return ``(x, a, y, b, bit, w, offset)`` for ``a*x + b*y + w*bit + offset``.
-
-        Requirements:
-            * exactly two IntVars represented by full threshold sets
-            * uniform nonzero integer coefficient on each IntVar thresholds
-            * exactly one non-threshold boolean literal term with nonzero coefficient
-            * no lifted ``int_terms``
-        """
-        if not expr.terms or expr.int_terms:
+        extracted = _EncoderDispatch._extract_affine_parts(model, expr, allow_booleans=True)
+        if extracted is None:
             return None
-
-        per_owner: dict[int, tuple[IntVar, int, set[int]]] = {}
-        bool_coeffs: dict[tuple[int, bool], tuple[Literal, int]] = {}
-        for t in expr.terms:
-            c = int(t.coefficient)
-            if c == 0:
-                continue
-            lit = t.literal
-            info = model._intvar_threshold_owner_by_litid.get(lit.id)
-            if info is not None:
-                if not lit.polarity:
-                    return None
-                x, idx = info
-                key = id(x)
-                if key in per_owner:
-                    x0, c0, seen = per_owner[key]
-                    if x0 is not x or c0 != c:
-                        return None
-                    if idx in seen:
-                        return None
-                    seen.add(idx)
-                else:
-                    per_owner[key] = (x, c, {idx})
-                continue
-            key = (lit.id, lit.polarity)
-            if key in bool_coeffs:
-                lit0, c0 = bool_coeffs[key]
-                bool_coeffs[key] = (lit0, c0 + c)
-            else:
-                bool_coeffs[key] = (lit, c)
-
-        int_items = [(x, c, seen) for x, c, seen in per_owner.values() if c != 0]
-        if len(int_items) != 2:
+        integers, booleans, offset = extracted
+        if len(integers) != 2 or len(booleans) != 1:
             return None
-        for x, _c, seen in int_items:
-            if len(seen) != len(x._threshold_lits) or seen != set(range(len(x._threshold_lits))):
-                return None
+        (x, a), (y, b) = sorted(integers, key=lambda item: id(item[0]))
+        (literal, weight), = booleans
+        return x, a, y, b, literal, weight, offset
 
-        bool_items = [(lit, c) for lit, c in bool_coeffs.values() if c != 0]
-        if len(bool_items) != 1:
+    @staticmethod
+    def _try_reify_cardinality(model, constraint, indicator):
+        if constraint._op not in ("<=", "<", ">=", ">", "=="):
             return None
-
-        # Ordering keeps cache/debug behavior stable.
-        int_items.sort(key=lambda it: id(it[0]))
-        (x, a, _), (y, b, _) = int_items
-        bit, w = bool_items[0]
-        offset = int(expr.constant) - a * x.lb - b * y.lb
-        return x, int(a), y, int(b), bit, int(w), int(offset)
+        if constraint._conditions or constraint._lhs.int_terms or constraint._rhs.int_terms:
+            return None
+        model._validate_integral_pbexpr(constraint._lhs)
+        model._validate_integral_pbexpr(constraint._rhs)
+        pairs, constant = _EncoderDispatch._normalize_pb(constraint._lhs, constraint._rhs)
+        comparison, bound = _EncoderDispatch._bound_from_zero_compare(constraint._op, constant)
+        if len(pairs) < 2 or any(weight != 1 for weight, _ in pairs):
+            return None
+        literals = [literal for _, literal in pairs]
+        if any(literal.id in model._intvar_threshold_owner_by_litid for literal in literals):
+            return None
+        if comparison == ">=" or (comparison == "==" and bound != 1 and bound == len(literals) - 1):
+            literals = [~literal for literal in literals]
+            bound = len(literals) - bound
+            comparison = "<=" if comparison == ">=" else "=="
+        if comparison not in ("<=", "==") or bound != 1:
+            return None
+        thresholds = [1, 2] if comparison == "==" else [2]
+        clauses, outputs = _EncoderDispatch._build_sequential_ge_counter(
+            model, literals, thresholds=thresholds
+        )
+        at_most_one = _EncoderDispatch._negate_bool_or_lit(outputs[2])
+        _EncoderDispatch._lit_implies(clauses, model, indicator, at_most_one)
+        if comparison == "==":
+            _EncoderDispatch._lit_implies(clauses, model, indicator, outputs[1])
+            _EncoderDispatch._lit_conj_implies(clauses, model, outputs[1], at_most_one, indicator)
+        else:
+            _EncoderDispatch._lit_implies(clauses, model, at_most_one, indicator)
+        return ClauseGroup(model, clauses)
 
     @staticmethod
     def _extract_unit_bool_sum_affine(model: "Model", expr: PBExpr) -> tuple[list[Literal], int] | None:
@@ -894,79 +783,6 @@ class _EncoderDispatch:
         return lit, int(t.coefficient), int(expr.constant)
 
     @staticmethod
-    def _emit_sum_le_gated(
-        clauses: list[Clause],
-        model: "Model",
-        antecedent: bool | Literal,
-        lits: Sequence[Literal],
-        bound: int,
-        ge_cache: list[bool | Literal] | None,
-    ) -> list[bool | Literal] | None:
-        """Append CNF for ``antecedent -> (sum(lits) <= bound)``."""
-        n = len(lits)
-        if bound >= n:
-            return ge_cache
-        if bound < 0:
-            _EncoderDispatch._lit_implies(clauses, model, antecedent, False)
-            return ge_cache
-        if bound == 0:
-            for lit in lits:
-                _EncoderDispatch._lit_implies(clauses, model, antecedent, ~lit)
-            return ge_cache
-        if bound == n - 1:
-            negated = [~lit for lit in lits]
-            if isinstance(antecedent, bool):
-                if antecedent:
-                    clauses.append(Clause(model, negated))
-                return ge_cache
-            clauses.append(Clause(model, [~antecedent, *negated]))
-            return ge_cache
-        if ge_cache is None:
-            seq_clauses, ge_cache = _EncoderDispatch._build_sequential_ge_counter(model, lits)
-            clauses.extend(seq_clauses)
-        # sum <= bound  <=>  not(sum >= bound+1)
-        ge_lit = ge_cache[bound + 1]
-        if isinstance(ge_lit, bool):
-            _EncoderDispatch._lit_implies(clauses, model, antecedent, not ge_lit)
-        else:
-            _EncoderDispatch._lit_implies(clauses, model, antecedent, ~ge_lit)
-        return ge_cache
-
-    @staticmethod
-    def _emit_sum_ge_gated(
-        clauses: list[Clause],
-        model: "Model",
-        antecedent: bool | Literal,
-        lits: Sequence[Literal],
-        threshold: int,
-        ge_cache: list[bool | Literal] | None,
-    ) -> list[bool | Literal] | None:
-        """Append CNF for ``antecedent -> (sum(lits) >= threshold)``."""
-        n = len(lits)
-        if threshold <= 0:
-            return ge_cache
-        if threshold > n:
-            _EncoderDispatch._lit_implies(clauses, model, antecedent, False)
-            return ge_cache
-        if threshold == n:
-            for lit in lits:
-                _EncoderDispatch._lit_implies(clauses, model, antecedent, lit)
-            return ge_cache
-        if threshold == 1:
-            if isinstance(antecedent, bool):
-                if antecedent:
-                    clauses.append(Clause(model, list(lits)))
-                return ge_cache
-            clauses.append(Clause(model, [~antecedent, *lits]))
-            return ge_cache
-        if ge_cache is None:
-            seq_clauses, ge_cache = _EncoderDispatch._build_sequential_ge_counter(model, lits)
-            clauses.extend(seq_clauses)
-        ge_lit = ge_cache[threshold]
-        _EncoderDispatch._lit_implies(clauses, model, antecedent, ge_lit)
-        return ge_cache
-
-    @staticmethod
     def _emit_sum_le_gated_conj(
         clauses: list[Clause],
         model: "Model",
@@ -974,8 +790,8 @@ class _EncoderDispatch:
         right: bool | Literal,
         lits: Sequence[Literal],
         bound: int,
-        ge_cache: list[bool | Literal] | None,
-    ) -> list[bool | Literal] | None:
+        ge_cache: _CountOutputs | None,
+    ) -> _CountOutputs | None:
         """Append CNF for ``(left and right) -> (sum(lits) <= bound)``."""
         n = len(lits)
         if bound >= n:
@@ -1008,8 +824,8 @@ class _EncoderDispatch:
         right: bool | Literal,
         lits: Sequence[Literal],
         threshold: int,
-        ge_cache: list[bool | Literal] | None,
-    ) -> list[bool | Literal] | None:
+        ge_cache: _CountOutputs | None,
+    ) -> _CountOutputs | None:
         """Append CNF for ``(left and right) -> (sum(lits) >= threshold)``."""
         n = len(lits)
         if threshold <= 0:
@@ -1032,68 +848,6 @@ class _EncoderDispatch:
         return ge_cache
 
     @staticmethod
-    def _emit_sum_ge_implies_lit(
-        clauses: list[Clause],
-        model: "Model",
-        lits: Sequence[Literal],
-        threshold: int,
-        consequent: bool | Literal,
-        ge_cache: list[bool | Literal] | None,
-    ) -> list[bool | Literal] | None:
-        """Append CNF for ``(sum(lits) >= threshold) -> consequent``."""
-        n = len(lits)
-        if threshold <= 0:
-            _EncoderDispatch._lit_implies(clauses, model, True, consequent)
-            return ge_cache
-        if threshold > n:
-            return ge_cache
-        if threshold == 1:
-            for lit in lits:
-                _EncoderDispatch._lit_implies(clauses, model, lit, consequent)
-            return ge_cache
-        if threshold == 2:
-            redundant_pairs: set[tuple[int, int]] = set()
-            for group in model._known_amo_groups.values():
-                group_list = list(group)
-                for i in range(len(group_list)):
-                    for j in range(i + 1, len(group_list)):
-                        a = int(group_list[i])
-                        b = int(group_list[j])
-                        redundant_pairs.add((a, b) if a < b else (b, a))
-            for i in range(len(lits)):
-                li = lits[i]
-                for j in range(i + 1, len(lits)):
-                    lj = lits[j]
-                    # AMO groups are stored as signed DIMACS literals.  Keep
-                    # that polarity here: an AMO over (a, b) says nothing
-                    # about the distinct pair (a, ~b).
-                    li_dim = model._lit_to_dimacs(li)
-                    lj_dim = model._lit_to_dimacs(lj)
-                    key = (li_dim, lj_dim) if li_dim < lj_dim else (lj_dim, li_dim)
-                    if key in redundant_pairs:
-                        continue
-                    if isinstance(consequent, bool):
-                        if not consequent:
-                            clauses.append(Clause(model, [~li, ~lj]))
-                    else:
-                        clauses.append(Clause(model, [~li, ~lj, consequent]))
-            return ge_cache
-        if threshold == n:
-            negated = [~lit for lit in lits]
-            if isinstance(consequent, bool):
-                if not consequent:
-                    clauses.append(Clause(model, negated))
-                return ge_cache
-            clauses.append(Clause(model, [*negated, consequent]))
-            return ge_cache
-        if ge_cache is None:
-            seq_clauses, ge_cache = _EncoderDispatch._build_sequential_ge_counter(model, lits)
-            clauses.extend(seq_clauses)
-        ge_lit = ge_cache[threshold]
-        _EncoderDispatch._lit_implies(clauses, model, ge_lit, consequent)
-        return ge_cache
-
-    @staticmethod
     def _sum_le_bound_is_direct(n: int, bound: int) -> bool:
         return bound >= n or bound < 0 or bound == 0 or bound == n - 1
 
@@ -1103,114 +857,72 @@ class _EncoderDispatch:
 
     @staticmethod
     def _try_boolsum_bigm_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
-        """Detect canonical upper-gated bool-sum forms with aux-free clauses.
-
-        Supported oriented forms:
-            * ``sum(unit_bools) <= k + m*lit``
-
-        only when the loose branch is tautological and the tight branch has
-        ``k <= 1``, so the encoding can stay exact and aux-free with unary,
-        binary, or ternary clauses.
-        """
+        """Encode a Boolean count with one unrestricted and one gated bound."""
         if op not in ("<=", "<", ">=", ">"):
             return None
 
-        def compile_oriented(
-            sum_expr: PBExpr,
-            cmp_op: str,
-            affine_expr: PBExpr,
-        ) -> ClauseGroup | None:
-            ext_sum = _EncoderDispatch._extract_unit_bool_sum_affine(model, sum_expr)
-            if ext_sum is None:
+        def compile_oriented(left, comparison, right):
+            if comparison not in ("<=", "<"):
                 return None
-            lits, sum_const = ext_sum
-            # Keep constant-only branches on generic PB/Card dispatch. This
-            # fast path is meant for real boolean sums.
-            if not lits:
+            count = _EncoderDispatch._extract_unit_bool_sum_affine(model, left)
+            affine = _EncoderDispatch._extract_single_weighted_bool_affine(model, right)
+            if count is None or affine is None:
                 return None
-
-            # Constant-only RHS: sum OP k
-            if (not affine_expr.int_terms) and all(int(t.coefficient) == 0 for t in affine_expr.terms):
-                rhs_const = int(affine_expr.constant)
-                if cmp_op == "<":
-                    cmp_op = "<="
-                    rhs_const -= 1
-                elif cmp_op == ">":
-                    return None
-                k = rhs_const - sum_const
-                # Keep standard cardinality dispatch for generic constant bounds.
-                # Special-case only the degenerate "all must be false" bound,
-                # which gives a zero-aux direct implication form.
-                if not (cmp_op == "<=" and k == 0):
-                    return None
-                clauses: list[Clause] = []
-                ge_cache: list[bool | Literal] | None = None
-                if cmp_op == "<=":
-                    _EncoderDispatch._emit_sum_le_gated(clauses, model, True, lits, k, ge_cache)
-                    return ClauseGroup(model, clauses)
+            literals, offset = count
+            if not literals:
                 return None
-
-            ext_aff = _EncoderDispatch._extract_single_weighted_bool_affine(model, affine_expr)
-            if ext_aff is None:
+            flag, coefficient, constant = affine
+            if comparison == "<":
+                constant -= 1
+            false_bound = constant - offset
+            true_bound = false_bound + coefficient
+            lower, upper = min(false_bound, true_bound), max(false_bound, true_bound)
+            if upper < len(literals):
                 return None
-            ind_lit, mcoef, rhs_const = ext_aff
-            # Normalize strict operators to non-strict by adjusting RHS.
-            if cmp_op == "<":
-                cmp_op = "<="
-                rhs_const -= 1
-            elif cmp_op == ">":
-                return None
+            if lower >= len(literals):
+                return ClauseGroup(model, [])
+            gate = ~flag if false_bound < true_bound else flag
+            if lower < 0:
+                return ClauseGroup(model, [Clause(model, [~gate])])
+            if lower == 0:
+                return ClauseGroup(model, [Clause(model, [~literal, ~gate]) for literal in literals])
+            return _EncoderDispatch._compile_structured_auto_leq(
+                model, [model._lit_to_dimacs(literal) for literal in literals],
+                [1] * len(literals), lower,
+            ).only_if(gate)
 
-            # sum(lits) + sum_const OP rhs_const + mcoef * ind_lit
-            # -> sum(lits) OP (rhs_const - sum_const) + mcoef * ind_lit
-            k = rhs_const - sum_const
-
-            # The branch literal is already used as the gate below. Its
-            # syntactic polarity must not change the value of ``m * lit``.
-            bound_false = k
-            bound_true = k + mcoef
-
-            clauses: list[Clause] = []
-            ge_cache: list[bool | Literal] | None = None
-            if cmp_op == "<=":
-                upper = max(bound_false, bound_true)
-                lower = min(bound_false, bound_true)
-                if upper < len(lits):
-                    return None
-                active_gate = ~ind_lit if bound_false < bound_true else ind_lit
-                if lower >= len(lits):
-                    return ClauseGroup(model, clauses)
-                if lower <= 1:
-                    ge_cache = _EncoderDispatch._emit_sum_ge_implies_lit(
-                        clauses,
-                        model,
-                        lits,
-                        lower + 1,
-                        ~active_gate,
-                        ge_cache,
-                    )
-                    return ClauseGroup(model, clauses)
-                gated_group = _EncoderDispatch._compile_structured_auto_leq(
-                    model,
-                    [model._lit_to_dimacs(lit) for lit in lits],
-                    [1] * len(lits),
-                    lower,
-                ).only_if(active_gate)
-                return gated_group
-            return None
-
-        # Primary orientation: sum_expr OP affine_expr
-        out = compile_oriented(lhs, op, rhs)
-        if out is not None:
-            return out
-
-        # Swapped orientation:
-        #   affine >= sum  <=> sum <= affine
+        result = compile_oriented(lhs, op, rhs)
+        if result is not None:
+            return result
         swapped = {"<=": ">=", "<": ">", ">=": "<=", ">": "<"}
-        out = compile_oriented(rhs, swapped[op], lhs)
-        if out is not None:
-            return out
-        return None
+        return compile_oriented(rhs, swapped[op], lhs)
+
+    @staticmethod
+    def _affine_leq_cuts(width_x, step_x, width_y, step_y, bound):
+        """Yield essential ``x >= k -> y <= limit`` cuts for nonnegative counts."""
+        k = max(0, (bound - step_y * width_y) // step_x + 1)
+        while k <= width_x:
+            limit = (bound - step_x * k) // step_y
+            yield k, limit
+            if limit < 0:
+                break
+            # Skip counts whose rounded consequent is unchanged.
+            k = (bound - step_y * limit) // step_x + 1
+
+    @staticmethod
+    def _int_boolsum_cuts(x, coefficient, bound, comparison, count):
+        if comparison == ">=":
+            # Complement the Boolean count to normalize to <=.
+            coefficient, bound = -coefficient, count - bound
+        bound -= coefficient * (x.lb if coefficient > 0 else x.ub)
+        for k, limit in _EncoderDispatch._affine_leq_cuts(
+            x.ub - x.lb, abs(coefficient), count, 1, bound
+        ):
+            condition = _EncoderDispatch._int_cmp_constraint(
+                x, ">=" if coefficient > 0 else "<=",
+                x.lb + k if coefficient > 0 else x.ub - k,
+            )
+            yield condition, limit if comparison == "<=" else count - limit
 
     @staticmethod
     def _emit_int_boolsum_le_gated(
@@ -1221,19 +933,10 @@ class _EncoderDispatch:
         a: int,
         bool_lits: Sequence[Literal],
         bound: int,
-        ge_cache: list[bool | Literal] | None,
-    ) -> list[bool | Literal] | None:
+        ge_cache: _CountOutputs | None,
+    ) -> _CountOutputs | None:
         """Append CNF for ``antecedent -> (a*x + sum(bool_lits) <= bound)``."""
-        # Enumerate ladder cuts like univariate/bivariate fast paths and push a
-        # gated upper bound on the bool sum for each cut.
-        for k in range(x.lb, x.ub + 2):
-            x_ge_k = _EncoderDispatch._int_cmp_constraint(x, ">=", k)
-            if a > 0:
-                cond = x_ge_k
-                rhs_bound = bound - a * k
-            else:
-                cond = _EncoderDispatch._negate_bool_or_lit(x_ge_k)
-                rhs_bound = bound - a * (k - 1)
+        for cond, rhs_bound in _EncoderDispatch._int_boolsum_cuts(x, a, bound, "<=", len(bool_lits)):
             ge_cache = _EncoderDispatch._emit_sum_le_gated_conj(
                 clauses, model, antecedent, cond, bool_lits, rhs_bound, ge_cache
             )
@@ -1248,16 +951,10 @@ class _EncoderDispatch:
         a: int,
         bool_lits: Sequence[Literal],
         bound: int,
-        ge_cache: list[bool | Literal] | None,
-    ) -> list[bool | Literal] | None:
+        ge_cache: _CountOutputs | None,
+    ) -> _CountOutputs | None:
         """Append CNF for ``antecedent -> (a*x + sum(bool_lits) >= bound)``."""
-        for k in range(x.lb, x.ub + 2):
-            if a > 0:
-                cond = _EncoderDispatch._int_cmp_constraint(x, "<", k)
-                rhs_threshold = bound - a * (k - 1)
-            else:
-                cond = _EncoderDispatch._int_cmp_constraint(x, ">=", k)
-                rhs_threshold = bound - a * k
+        for cond, rhs_threshold in _EncoderDispatch._int_boolsum_cuts(x, a, bound, ">=", len(bool_lits)):
             ge_cache = _EncoderDispatch._emit_sum_ge_gated_conj(
                 clauses, model, antecedent, cond, bool_lits, rhs_threshold, ge_cache
             )
@@ -1298,8 +995,31 @@ class _EncoderDispatch:
             b_false = base
             b_true = base + mcoef
 
-            clauses: list[Clause] = []
-            ge_cache: list[bool | Literal] | None = None
+            minimum = min(a * x.lb, a * x.ub)
+            maximum = max(a * x.lb, a * x.ub) + len(bool_lits)
+            if cmp_op == "<=":
+                false_free, true_free = b_false >= maximum, b_true >= maximum
+            else:
+                false_free, true_free = b_false <= minimum, b_true <= minimum
+            if false_free and true_free:
+                return ClauseGroup(model, [])
+            if false_free or true_free:
+                gate = lit if false_free else ~lit
+                bound = b_true if false_free else b_false
+                return _EncoderDispatch.compile(
+                    model, main_expr, cmp_op, PBExpr.from_item(bound + c_left)
+                ).only_if(gate)
+
+            thresholds = set()
+            direct = (_EncoderDispatch._sum_le_bound_is_direct if cmp_op == "<=" else
+                      _EncoderDispatch._sum_ge_threshold_is_direct)
+            for bound in (b_false, b_true):
+                for _, cut in _EncoderDispatch._int_boolsum_cuts(x, a, bound, cmp_op, len(bool_lits)):
+                    if not direct(len(bool_lits), cut):
+                        thresholds.add(cut + 1 if cmp_op == "<=" else cut)
+            clauses, ge_cache = _EncoderDispatch._build_sequential_ge_counter(
+                model, bool_lits, thresholds=thresholds
+            )
             if cmp_op == "<=":
                 ge_cache = _EncoderDispatch._emit_int_boolsum_le_gated(
                     clauses, model, ~lit, x, a, bool_lits, b_false, ge_cache
@@ -1335,13 +1055,8 @@ class _EncoderDispatch:
     def _try_nonnegative_zero_leq_fastpath(
         model: "Model", lhs: PBExpr, op: str, rhs: PBExpr
     ) -> ClauseGroup | None:
-        """Detect ``sum(nonnegative_terms) <= 0`` and force all terms to zero.
-
-        After normalization all PB terms are nonnegative weighted literals.
-        The only non-trivial zero-bound case is ``sum(w_i*l_i) <= 0`` with
-        ``w_i > 0``, which implies every literal must be false.
-        """
-        if op != "<=":
+        """Force positive-weight literals false, retaining only strongest order cuts."""
+        if op not in ("<=", "<"):
             return None
         pairs, const = _EncoderDispatch._normalize_pb(lhs, rhs)
         cmp_op, bound = _EncoderDispatch._bound_from_zero_compare(op, const)
@@ -1349,51 +1064,34 @@ class _EncoderDispatch:
             return None
         if not pairs:
             return None
-        seen: set[int] = set()
-        clauses: list[Clause] = []
+        booleans: dict[int, Literal] = {}
+        cuts: dict[tuple[int, bool], tuple[int, Literal]] = {}
         for _w, lit in pairs:
-            dim = int(model._lit_to_dimacs(lit))
-            if dim in seen:
+            info = model._intvar_threshold_owner_by_litid.get(lit.id)
+            if info is None:
+                booleans[model._lit_to_dimacs(lit)] = lit
                 continue
-            seen.add(dim)
-            clauses.append(Clause(model, [~lit]))
-        return ClauseGroup(model, clauses)
+            owner, index = info
+            key = (id(owner), lit.polarity)
+            previous = cuts.get(key)
+            if previous is None or (index < previous[0] if lit.polarity else index > previous[0]):
+                cuts[key] = (index, lit)
+        # Domain clauses propagate each retained cut through its threshold chain.
+        forced = list(booleans.values())
+        forced.extend(lit for _index, lit in cuts.values())
+        return ClauseGroup(model, [Clause(model, [~lit]) for lit in forced])
 
     @staticmethod
-    def _build_sequential_ge_counter(model: "Model", lits: Sequence[Literal]) -> tuple[list[Clause], list[bool | Literal]]:
-        """Build ``count >= r`` literals for a sequence of booleans.
-
-        Historical note:
-            The helper name is legacy. The implementation now uses a balanced
-            tree of unary merges rather than the old quadratic sequential table.
-
-        Returns:
-            ``(clauses, ge)`` where ``ge[r]`` encodes ``sum(lits) >= r`` for
-            ``r in [0, len(lits)]`` and ``ge[0]`` is ``True``.
-        """
-        n = len(lits)
-        if n == 0:
-            return [], [True]
-        if n == 1:
-            return [], [True, lits[0]]
-
-        clauses: list[Clause] = []
-        ladders: list[list[bool | Literal]] = [[lit] for lit in lits]
-        while len(ladders) > 1:
-            next_ladders: list[list[bool | Literal]] = []
-            for idx in range(0, len(ladders), 2):
-                if idx + 1 >= len(ladders):
-                    next_ladders.append(ladders[idx])
-                    continue
-                merge_clauses, ge = _EncoderDispatch._build_unary_sum_ge_ladder(
-                    model,
-                    ladders[idx],
-                    ladders[idx + 1],
-                )
-                clauses.extend(merge_clauses)
-                next_ladders.append(ge[1:])
-            ladders = next_ladders
-        return clauses, [True, *ladders[0]]
+    def _build_sequential_ge_counter(
+        model: "Model", lits: Sequence[Literal], *, thresholds=None,
+    ) -> tuple[list[Clause], _CountOutputs]:
+        requested = range(1, len(lits) + 1) if thresholds is None else thresholds
+        clauses, outputs = count_thresholds(
+            model, lits, requested, _EncoderDispatch._lit_and, _EncoderDispatch._lit_or,
+        )
+        if thresholds is None:
+            return clauses, [True, *outputs.values()]
+        return clauses, outputs
 
     @staticmethod
     def _try_weighted_sum_eq_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
@@ -1434,15 +1132,13 @@ class _EncoderDispatch:
                     groups.append(group)
                     used.update(map(abs, group))
             plans = _weighted_sum.plan_candidates(lits, weights, total.ub, groups)
+            plans, possible = _weighted_sum.bounded_candidates(plans)
             if not plans:
-                continue  # Unsupported expression shape; never reject by size.
+                continue
 
-            # Both candidates share these cached predicates and the same private
+            # Candidates share these cached predicates and the same private
             # ID range. Losing clauses and auxiliary IDs never enter the model.
-            values = {
-                value: model._lit_to_dimacs(total == value)
-                for value in range(total.ub + 1)
-            }
+            values = {value: model._lit_to_dimacs(total == value) for value in possible}
             thresholds = [model._lit_to_dimacs(lit) for lit in total._threshold_lits]
             cnf = _weighted_sum.encode_best(plans, thresholds, model._top_id(), values)
             model._debug(
@@ -1500,14 +1196,16 @@ class _EncoderDispatch:
                 # x > sum  <=>  x >= sum+1
                 eff_op = ">="
                 shift += 1
-            clauses, ge = _EncoderDispatch._build_sequential_ge_counter(model, bool_lits)
             n = len(bool_lits)
-
-            # Channel all threshold cuts including the impossible upper boundary
-            # at ``ub + 1``. The closed-domain model needs that final cut to
-            # distinguish ``x == ub`` from larger shifted bool sums.
-            # This is required for exact equality when domains are shifted.
-            for k in range(x.lb, x.ub + 2):
+            # Outside the count's range, the nearest boundary cut propagates
+            # through the integer ladder; the remaining cuts are redundant.
+            lo = max(x.lb, min(x.ub + 1, shift))
+            hi = min(x.ub + 1, max(x.lb, shift + n + 1))
+            thresholds = range(max(1, lo - shift), min(n, hi - shift) + 1)
+            clauses, ge = _EncoderDispatch._build_sequential_ge_counter(
+                model, bool_lits, thresholds=thresholds
+            )
+            for k in range(lo, hi + 1):
                 x_ge_k = _EncoderDispatch._int_cmp_constraint(x, ">=", k)
                 r = k - shift
                 if r <= 0:
@@ -1578,6 +1276,13 @@ class _EncoderDispatch:
         (x, a), (y, b) = coeff_items[0], coeff_items[1]
         c_target = -(loff - roff)
 
+        return _EncoderDispatch._compile_bivariate_int(model, x, a, y, b, c_target, op)
+
+    @staticmethod
+    def _compile_bivariate_int(
+        model: "Model", x: IntVar, a: int, y: IntVar, b: int, c_target: int, op: str,
+    ) -> ClauseGroup | None:
+        """Compile an already recognized ``a*x + b*y OP c_target`` relation."""
         normalized = _EncoderDispatch._normalize_bivariate_to_leq(a, b, c_target, op)
         if normalized is None:
             return None
@@ -1585,135 +1290,45 @@ class _EncoderDispatch:
 
         clauses: list[Clause] = []
         for a1, b1, c1, _ in obligations:
-            # iterate over smaller x-domain for fewer generated implications
             xx, aa, yy, bb = x, a1, y, b1
             if (xx.ub - xx.lb) > (yy.ub - yy.lb):
-                xx, yy = yy, xx
-                aa, bb = bb, aa
+                xx, aa, yy, bb = yy, bb, xx, aa
 
-            # If coefficient of iterated var is zero after swap/normalization, skip (should not happen with 2 vars)
-            if aa == 0 or bb == 0:
-                return None
-
-            # Map each distinct consequent (limit) to the weakest possible antecedent.
-            # For aa > 0, we want the SMALLEST k such that x >= k implies the limit.
-            # For aa < 0, we want the LARGEST k such that x < k (or ~x >= k) implies the limit.
-            limit_to_weakest_k: dict[tuple[str, int], int] = {}
-
-            for k in range(xx.lb, xx.ub + 2):
-                # Calculate the limit for this threshold k.
-                if aa > 0:
-                    V = c1 - aa * k
-                else:
-                    V = c1 - aa * (k - 1)
-
-                if bb > 0:
-                    limit_val = V // bb
-                    consequent_key = ("<=", limit_val)
-                else:
-                    limit_val = -((-V) // bb)
-                    consequent_key = (">=", limit_val)
-
-                if consequent_key not in limit_to_weakest_k:
-                    limit_to_weakest_k[consequent_key] = k
-                else:
-                    # If aa > 0, we want to minimize k (weaker antecedent x >= k).
-                    # If aa < 0, we want to maximize k (weaker antecedent ~x >= k).
-                    if aa > 0:
-                        if k < limit_to_weakest_k[consequent_key]:
-                            limit_to_weakest_k[consequent_key] = k
-                    else:
-                        if k > limit_to_weakest_k[consequent_key]:
-                            limit_to_weakest_k[consequent_key] = k
-
-            for (op_y, lim), k in limit_to_weakest_k.items():
-                if k <= xx.lb:
-                    x_ge_k: bool | Literal = True
-                elif k > xx.ub:
-                    x_ge_k = False
-                else:
-                    x_ge_k = xx.__ge__(k)
-                
-                if aa > 0:
-                    antecedent = x_ge_k
-                else:
-                    antecedent = _EncoderDispatch._negate_bool_or_lit(x_ge_k)
-
-                consequent = _EncoderDispatch._int_cmp_constraint(yy, op_y, lim)
+            # Use nonnegative ladder counts, reversing negative-coefficient inputs.
+            bound = c1 - aa * (xx.lb if aa > 0 else xx.ub) - bb * (yy.lb if bb > 0 else yy.ub)
+            step_x, step_y = abs(aa), abs(bb)
+            width_x, width_y = xx.ub - xx.lb, yy.ub - yy.lb
+            for k, limit in _EncoderDispatch._affine_leq_cuts(
+                width_x, step_x, width_y, step_y, bound
+            ):
+                antecedent = _EncoderDispatch._int_cmp_constraint(
+                    xx, ">=" if aa > 0 else "<=", xx.lb + k if aa > 0 else xx.ub - k
+                )
+                consequent = False if limit < 0 else _EncoderDispatch._int_cmp_constraint(
+                    yy, "<=" if bb > 0 else ">=", yy.lb + limit if bb > 0 else yy.ub - limit
+                )
                 _EncoderDispatch._lit_implies(clauses, model, antecedent, consequent)
         return ClauseGroup(model, clauses)
 
     @staticmethod
     def _try_trivariate_int_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
-        """Detect and compile ternary sum constraints without PB/Card.
-
-        Supported shape:
-            ``x + y <= z`` and ``x + y < z`` (including affine offsets after
-            normalization, i.e. ``x + y - z <= c``).
-
-        This path introduces zero auxiliary variables and emits only binary/
-        ternary clauses via ladder threshold implications.
-        """
-        if op not in ("<=", "<"):
+        """Compile normalized ``x + y <= z`` using direct or merged order thresholds."""
+        if op not in ("<=", "<", ">=", ">"):
             return None
-
-        left = _EncoderDispatch._extract_multi_int_affine(model, lhs)
-        right = _EncoderDispatch._extract_multi_int_affine(model, rhs)
-        if left is None or right is None:
+        addition = _EncoderDispatch._extract_addition(model, lhs, op, rhs)
+        if addition is None:
             return None
-        litems, loff = left
-        ritems, roff = right
-
-        coeffs_by_id: dict[int, tuple[IntVar, int]] = {}
-        for x, c in litems:
-            key = id(x)
-            x0, c0 = coeffs_by_id.get(key, (x, 0))
-            if x0 is not x:
-                return None
-            coeffs_by_id[key] = (x, c0 + c)
-        for y, c in ritems:
-            key = id(y)
-            y0, c0 = coeffs_by_id.get(key, (y, 0))
-            if y0 is not y:
-                return None
-            coeffs_by_id[key] = (y, c0 - c)
-
-        coeff_items = [(v, c) for v, c in coeffs_by_id.values() if c != 0]
-        if len(coeff_items) != 3:
-            return None
-
-        # lhs OP rhs  =>  sum_i(c_i * x_i) OP c_target
-        c_target = -(loff - roff)
-        if op == "<":
-            c_target -= 1
-
-        plus_vars: list[IntVar] = []
-        minus_vars: list[IntVar] = []
-        for v, c in coeff_items:
-            if c == 1:
-                plus_vars.append(v)
-            elif c == -1:
-                minus_vars.append(v)
-            else:
-                return None
-        if len(plus_vars) != 2 or len(minus_vars) != 1:
-            return None
-
-        x, y = plus_vars
-        z = minus_vars[0]
+        x, y, z, c_target = addition
+        coeff_items = [(x, 1), (y, 1), (z, -1)]
         nx = len(x._threshold_lits)
         ny = len(y._threshold_lits)
-        if unary_sum_too_large(nx, ny):
-            bound = c_target - sum(c * v.lb for v, c in coeff_items)
-            return compile_binary_sum(model, coeff_items, bound, "<=")
-
-        net = batcher_odd_even_unary_add_network(nx, ny)
-        pair_clause_upper = (nx + 1) * (ny + 1)
-        merge_clause_upper = 6 * len(net) + (nx + ny)
-
-        if pair_clause_upper <= merge_clause_upper:
+        delta = c_target - x.lb - y.lb + z.lb
+        route = addition_encoding(nx, ny, z.ub - z.lb, delta)
+        if route == 'general':
+            return compile_sum(model, coeff_items, -delta, "<=")
+        if route == 'direct':
             return _EncoderDispatch._compile_trivariate_int_pairwise_leq(model, x, y, z, c_target)
-        return _EncoderDispatch._compile_trivariate_int_merged_leq(model, x, y, z, c_target, network=net)
+        return _EncoderDispatch._compile_trivariate_int_merged_leq(model, x, y, z, c_target)
 
     @staticmethod
     def _compile_trivariate_int_pairwise_leq(
@@ -1724,34 +1339,22 @@ class _EncoderDispatch:
         c_target: int,
     ) -> ClauseGroup:
         """Compile ``x + y - z <= c_target`` by pairwise threshold implications."""
-        if (x.ub - x.lb) > (y.ub - y.lb):
+        if x.ub - x.lb > y.ub - y.lb:
             x, y = y, x
-
+        nx = x.ub - x.lb
+        ny = y.ub - y.lb
+        nz = z.ub - z.lb
+        # Count upward in x/y and downward from z.ub.
+        bound = c_target - x.lb - y.lb + z.ub
         clauses: list[Clause] = []
-        for i in range(x.lb, x.ub + 1):
-            xi = _EncoderDispatch._int_cmp_constraint(x, ">=", i)
-            if xi is False:
-                continue
-            for j in range(y.lb, y.ub + 1):
-                yj = _EncoderDispatch._int_cmp_constraint(y, ">=", j)
-                if yj is False:
-                    continue
-
-                zk = _EncoderDispatch._int_cmp_constraint(z, ">=", i + j - c_target)
-                if zk is True:
-                    continue
-
-                if xi is True and yj is True:
-                    _EncoderDispatch._lit_implies(clauses, model, True, zk)
-                elif xi is True:
-                    _EncoderDispatch._lit_implies(clauses, model, yj, zk)
-                elif yj is True:
-                    _EncoderDispatch._lit_implies(clauses, model, xi, zk)
-                else:
-                    if zk is False:
-                        clauses.append(Clause(model, [~xi, ~yj]))
-                    else:
-                        clauses.append(Clause(model, [~xi, ~yj, zk]))
+        for i, remaining in _EncoderDispatch._affine_leq_cuts(nx, 1, ny + nz, 1, bound):
+            xi = _EncoderDispatch._int_cmp_constraint(x, ">=", x.lb + i)
+            for j, limit in _EncoderDispatch._affine_leq_cuts(ny, 1, nz, 1, remaining):
+                yj = _EncoderDispatch._int_cmp_constraint(y, ">=", y.lb + j)
+                zk = False if limit < 0 else _EncoderDispatch._int_cmp_constraint(
+                    z, ">=", z.ub - limit
+                )
+                _EncoderDispatch._lit_conj_implies(clauses, model, xi, yj, zk)
         return ClauseGroup(model, clauses)
 
     @staticmethod
@@ -1761,21 +1364,18 @@ class _EncoderDispatch:
         y: IntVar,
         z: IntVar,
         c_target: int,
-        *,
-        network=None,
     ) -> ClauseGroup:
         """Compile ``x + y - z <= c_target`` via unary merged sum thresholds."""
-        clauses, sum_ge = _EncoderDispatch._build_unary_sum_ge_ladder(
-            model,
-            x._threshold_lits,
-            y._threshold_lits,
-            network=network,
-        )
-        nsum = len(sum_ge) - 1
+        nsum = len(x._threshold_lits) + len(y._threshold_lits)
         delta_count = c_target - x.lb - y.lb + z.lb
-
-        for r in range(0, nsum + 1):
-            sum_ge_r = sum_ge[r]
+        lo = max(0, min(nsum, delta_count + 1))
+        hi = min(nsum, max(0, delta_count + len(z._threshold_lits) + 1))
+        clauses, sum_ge = _EncoderDispatch._build_unary_sum_ge_ladder(
+            model, x._threshold_lits, y._threshold_lits,
+            thresholds=range(max(1, lo), hi + 1),
+        )
+        for r in range(lo, hi + 1):
+            sum_ge_r = True if r == 0 else sum_ge[r]
             z_count_ge = r - delta_count
             if z_count_ge <= 0:
                 zk: bool | Literal = True
@@ -1785,6 +1385,7 @@ class _EncoderDispatch:
                 zk = _EncoderDispatch._int_cmp_constraint(z, ">=", z.lb + z_count_ge)
             _EncoderDispatch._lit_implies(clauses, model, sum_ge_r, zk)
 
+        clauses.extend(_EncoderDispatch._addition_domain_cuts(model, x, y, z, c_target))
         return ClauseGroup(model, clauses)
 
     @staticmethod
@@ -1851,18 +1452,27 @@ class _EncoderDispatch:
         x, a, y, b, bit, w, offset = ext
         c_target = -offset
 
-        int_aff = a * x + b * y
-        g_false = _EncoderDispatch._try_bivariate_int_fastpath(model, PBExpr.from_item(int_aff), op, PBExpr.from_item(c_target))
+        g_false = _EncoderDispatch._compile_bivariate_int(model, x, a, y, b, c_target, op)
         if g_false is None:
             return None
-        g_true = _EncoderDispatch._try_bivariate_int_fastpath(
-            model, PBExpr.from_item(int_aff), op, PBExpr.from_item(c_target - w)
-        )
+        g_true = _EncoderDispatch._compile_bivariate_int(model, x, a, y, b, c_target - w, op)
         if g_true is None:
             return None
 
-        clauses = [*g_false.only_if(~bit), *g_true.only_if(bit)]
-        return ClauseGroup(model, clauses)
+        false_rows = list(g_false.iter_dimacs())
+        true_rows = list(g_true.iter_dimacs())
+        common = set(false_rows).intersection(true_rows)
+        gate = model._lit_to_dimacs(bit)
+
+        def rows():
+            # Shared clauses hold for either flag value and need no guard.
+            for row in false_rows:
+                yield row if row in common else (*row, gate)
+            for row in true_rows:
+                if row not in common:
+                    yield (*row, -gate)
+
+        return ClauseGroup._from_dimacs_trusted(model, rows())
 
     @staticmethod
     def compile(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup:

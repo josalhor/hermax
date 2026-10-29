@@ -36,10 +36,12 @@ def test_single_item_integer_aggregates_validate_type_and_model(method_name):
         getattr(model, method_name)([foreign])
 
 
-@pytest.mark.parametrize("method_name", ["max", "min", "upper_bound", "lower_bound"])
-def test_single_item_integer_aggregates_reject_non_int_items(method_name):
+@pytest.mark.parametrize("method_name,item", [
+    ("max", 1.5), ("min", 1), ("upper_bound", 1), ("lower_bound", 1),
+])
+def test_single_item_integer_aggregates_reject_unsupported_items(method_name, item):
     with pytest.raises(TypeError, match="IntVar|integer"):
-        getattr(Model(), method_name)([1])
+        getattr(Model(), method_name)([item])
 
 
 @pytest.mark.parametrize(

@@ -15,7 +15,7 @@ def test_cumulative_rejects_overload_and_allows_feasible_schedule(backend):
     s2u = m_unsat.int("s2", 0, 5)
     m_unsat &= (s1u == 0)
     m_unsat &= (s2u == 0)
-    m_unsat.cumulative([s1u, s2u], [2, 2], [2, 2], 3, backend=backend)
+    m_unsat &= m_unsat.cumulative([s1u, s2u], [2, 2], [2, 2], 3, backend=backend)
     assert m_unsat.solve().status == "unsat"
 
     m_sat = Model()
@@ -23,7 +23,7 @@ def test_cumulative_rejects_overload_and_allows_feasible_schedule(backend):
     s2 = m_sat.int("s2", 0, 5)
     m_sat &= (s1 == 0)
     m_sat &= (s2 == 2)
-    m_sat.cumulative([s1, s2], [2, 2], [2, 2], 3, backend=backend)
+    m_sat &= m_sat.cumulative([s1, s2], [2, 2], [2, 2], 3, backend=backend)
     r = _solve_ok(m_sat)
     assert r[s1] == 0
     assert r[s2] == 2
@@ -55,7 +55,7 @@ def test_cumulative_random_fixed_schedules_match_direct_capacity_check():
             vars_ = [m.int(f"s_{backend}_{case}_{i}", 0, 6) for i in range(3)]
             for v, start in zip(vars_, starts):
                 m &= (v == start)
-            m.cumulative(vars_, durations, demands, capacity, backend=backend)
+            m &= m.cumulative(vars_, durations, demands, capacity, backend=backend)
             status = m.solve().status
             assert status == ("unsat" if overload else "sat")
 
@@ -82,7 +82,7 @@ def test_cumulative_task_backend_exhaustive_small_overlap_cases_match_direct_che
         vars_ = [m.int(f"s_task_exh_{i}", 0, 2) for i in range(3)]
         for v, start in zip(vars_, starts):
             m &= (v == start)
-        m.cumulative(vars_, durations, demands, capacity, backend="task")
+        m &= m.cumulative(vars_, durations, demands, capacity, backend="task")
         status = m.solve().status
         assert status == ("unsat" if overload else "sat")
 
@@ -91,7 +91,7 @@ def test_cumulative_auto_matches_time_when_domain_work_exceeds_horizon():
     def stats(backend: str):
         m = Model()
         starts = [m.int(f"s_{backend}_{i}", 0, 49) for i in range(3)]
-        m.cumulative(starts, [2, 2, 2], [1, 1, 1], 2, backend=backend)
+        m &= m.cumulative(starts, [2, 2, 2], [1, 1, 1], 2, backend=backend)
         return m._top_id(), len(m._hard)
 
     auto_stats = stats("auto")
@@ -108,7 +108,7 @@ def test_cumulative_auto_matches_task_when_domain_work_is_smaller_than_horizon()
             m.int(f"s_{backend}_0", 0, 0),
             m.int(f"s_{backend}_1", 100, 100),
         ]
-        m.cumulative(starts, [2, 2], [1, 1], 2, backend=backend)
+        m &= m.cumulative(starts, [2, 2], [1, 1], 2, backend=backend)
         return m._top_id(), len(m._hard)
 
     auto_stats = stats("auto")

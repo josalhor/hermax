@@ -4,6 +4,8 @@ from collections.abc import Sequence
 from pysat.formula import CNFPlus
 
 from hermax.internal import _integer_sum_native as native
+from hermax.internal._clause_storage import ClauseStorage
+from hermax.encoder._packed import _EncodedCNF
 
 STATE_LIMIT = 20_000
 CLAUSE_LIMIT = 50_000
@@ -16,7 +18,9 @@ def encode_thresholds(
     bound: int,
     comparator: str,
     top_id: int,
-) -> CNFPlus:
+    *,
+    _packed: bool = False,
+) -> CNFPlus | _EncodedCNF:
     if len(chains) != len(coefficients):
         raise ValueError("one coefficient per chain is required")
     totals = {}
@@ -35,7 +39,8 @@ def encode_thresholds(
             terms.append((-literal, -coefficient))
         elif coefficient > 0:
             terms.append((literal, coefficient))
-    clauses, top = native.encode_pb(
+    encode = native._encode_pb_packed if _packed else native.encode_pb
+    clauses, top = encode(
         wlits=terms,
         comparator={"<=": native.LEQ, ">=": native.GEQ, "==": native.BOTH}[comparator],
         bound=bound,
@@ -45,6 +50,7 @@ def encode_thresholds(
         state_limit=STATE_LIMIT,
         clause_limit=CLAUSE_LIMIT,
     )
-    result = CNFPlus()
-    result.clauses, result.nv = clauses, max(top, top_id)
+    result = _EncodedCNF() if _packed else CNFPlus()
+    result.clauses = ClauseStorage._wrap(clauses) if _packed else clauses
+    result.nv = max(top, top_id)
     return result

@@ -63,6 +63,8 @@ class PBCompiler:
     efficient as possible.
     """
 
+    _encoder = PBAMOEnc
+
     @classmethod
     def compile_batch(cls, items: List[PBItem], amo_groups: List[List[int]], eo_groups: List[List[int]], top_id: int):
         """
@@ -138,7 +140,7 @@ class PBCompiler:
         def _compile_item_with_overlap(item: PBItem, cur_top: int):
             pb_amo, pb_eo = _get_overlaps(item.lits, amo_groups, eo_groups)
             if item.cmp_op == "<=":
-                return PBAMOEnc.auto_leq(
+                return cls._encoder.auto_leq(
                     lits=item.lits,
                     weights=item.get_weights(),
                     bound=item.bound,
@@ -146,7 +148,7 @@ class PBCompiler:
                     eo_groups=pb_eo,
                     top_id=cur_top,
                 )
-            return PBAMOEnc.auto_eq(
+            return cls._encoder.auto_eq(
                 lits=item.lits,
                 weights=item.get_weights(),
                 bound=item.bound,
@@ -255,7 +257,7 @@ class PBCompiler:
                                 continue
 
                             cluster_config = resolve_cluster_config(cluster_stubs, effective_kmerge_config)
-                            cluster_cnf = PBAMOEnc.multi_leq(
+                            cluster_cnf = cls._encoder.multi_leq(
                                 lits=core,
                                 stubs=cluster_stubs,
                                 top_id=current_top,
@@ -316,7 +318,7 @@ class PBCompiler:
             pb_amo, pb_eo = _get_overlaps(lits, local_amo, local_eo)
             
             if cmp_op == "<=":
-                cnf = PBAMOEnc.auto_leq(
+                cnf = cls._encoder.auto_leq(
                     lits=lits,
                     weights=weights,
                     bound=bound,
@@ -325,7 +327,7 @@ class PBCompiler:
                     top_id=current_top
                 )
             else: # "=="
-                cnf = PBAMOEnc.auto_eq(
+                cnf = cls._encoder.auto_eq(
                     lits=lits,
                     weights=weights,
                     bound=bound,

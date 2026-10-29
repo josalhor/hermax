@@ -13,6 +13,7 @@ namespace structuredpb {
 
 struct EncodeOptions {
     int top_id = 0;
+    hermax::clauses::Memory clause_memory;
 };
 
 struct EncodeStats {
@@ -23,6 +24,7 @@ struct EncodeStats {
 struct EncodeResult {
     CnfFormula cnf;
     EncodeStats stats;
+    explicit EncodeResult(hermax::clauses::Memory memory = {}) : cnf(memory) {}
 };
 
 class Encoder {

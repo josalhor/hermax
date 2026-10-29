@@ -100,6 +100,22 @@ def test_canonical_key_preserves_literal_identities():
             assert solver.solve(assumptions=[i if b else -i for i,b in enumerate(bits,1)]) == (total<=8)
 
 
+@pytest.mark.parametrize('lits', [[1, 2, 3, 4, 5, 6], [-1, 2, -3, 4, -5, 6]])
+def test_distinct_states_remain_distinct_when_cache_hashes_collide(lits):
+    # The old hash maps (layer=0, remaining=63) and (layer=1, remaining=0)
+    # to the same value. Both states occur in this diagram.
+    weights = [63, 31, 15, 7, 3, 1]
+    clauses, _ = encode(lits, weights, [[lit] for lit in lits], 63)
+    with Solver(name='g4', bootstrap_with=clauses) as solver:
+        for bits in itertools.product((False, True), repeat=6):
+            total = sum(
+                weight for lit, weight in zip(lits, weights)
+                if bits[abs(lit) - 1] == (lit > 0)
+            )
+            assumptions = [i if bit else -i for i, bit in enumerate(bits, 1)]
+            assert solver.solve(assumptions=assumptions) == (total <= 63)
+
+
 def propagate(clauses, assumptions):
     known = set(assumptions)
     while True:

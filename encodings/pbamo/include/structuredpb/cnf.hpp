@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <vector>
 #include <limits>
+#include "native/packed_clauses.hpp"
 
 namespace structuredpb {
 
@@ -14,7 +15,9 @@ using Clause = std::vector<int>;
 
 struct CnfFormula {
     int num_vars = 0;
-    std::vector<Clause> clauses;
+    hermax::clauses::PackedClauses clauses;
+
+    explicit CnfFormula(hermax::clauses::Memory memory = {}) : clauses(memory) {}
 
     void add_clause(Clause clause) {
         for (int lit : clause) {

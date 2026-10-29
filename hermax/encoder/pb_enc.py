@@ -225,6 +225,12 @@ class PBEnc(object):
         # updating the number of variables
         cnf.nv = vpool.top
 
+    _new_cnf = CNFPlus
+
+    @staticmethod
+    def _encode_native(**kwargs):
+        return pblib.encode_pb(**kwargs)
+
     @classmethod
     def _encode(cls, lits, weights=None, bound=1, top_id=None, vpool=None,
             encoding=EncType.best, comparator='<', conditionals=None):
@@ -284,7 +290,7 @@ class PBEnc(object):
             raise NotImplementedError("Native PB constraints do not support conditionals.")
 
         # we are going to return this formula
-        ret = CNFPlus()
+        ret = cls._new_cnf()
 
         # Handle the empty sum explicitly. An empty formula is correct only
         # when the comparison holds for zero; otherwise emit a contradiction.
@@ -352,7 +358,7 @@ class PBEnc(object):
 
         assert pblib_present, 'Internal package \'hermax.internal._pblib\' is unavailable. Check your installation.'
 
-        ret.clauses, max_aux = pblib.encode_pb(
+        ret.clauses, max_aux = cls._encode_native(
             wlits=wlits,
             comparator=EncType._to_pbcmp[comparator],
             bound=bound,

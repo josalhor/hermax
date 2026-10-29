@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(PBAMO_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(HERMAX_NATIVE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hermax/internal")
 set(PBAMO_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(PBAMO_CORE_SOURCES
     "${PBAMO_SRC_DIR}/mdd.cpp"
@@ -21,7 +22,7 @@ if(HERMAX_CORE_ARCHIVE)
     set_target_properties(pbamo_core PROPERTIES IMPORTED_LOCATION "${HERMAX_CORE_ARCHIVE}")
 else()
     add_library(pbamo_core STATIC ${PBAMO_CORE_SOURCES})
-    target_include_directories(pbamo_core PUBLIC "${PBAMO_INCLUDE_DIR}" "${PBAMO_SRC_DIR}")
+    target_include_directories(pbamo_core PUBLIC "${PBAMO_INCLUDE_DIR}" "${PBAMO_SRC_DIR}" "${HERMAX_NATIVE_INCLUDE_DIR}")
 endif()
 
 if(HERMAX_CORE_ONLY)
@@ -38,7 +39,7 @@ if(NOT PYTHON_EXTENSION_SUFFIX)
 endif()
 
 add_library(_pbamo MODULE src/pbamo_capi.cpp)
-target_include_directories(_pbamo PRIVATE "${PBAMO_INCLUDE_DIR}" "${PBAMO_SRC_DIR}")
+target_include_directories(_pbamo PRIVATE "${PBAMO_INCLUDE_DIR}" "${PBAMO_SRC_DIR}" "${HERMAX_NATIVE_INCLUDE_DIR}")
 target_link_libraries(_pbamo PRIVATE Python3::Module pbamo_core)
 set_target_properties(_pbamo PROPERTIES
     PREFIX ""

@@ -29,6 +29,7 @@ def binary_view(owner: "IntVar") -> tuple[int, ...]:
 
 
 def binary_view_ready(owner: "IntVar") -> bool:
+    owner = owner._encoding_owner()
     if owner.ub - owner.lb <= 1:
         return True
     view = owner._binary_view

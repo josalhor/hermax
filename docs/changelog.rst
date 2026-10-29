@@ -6,28 +6,50 @@ Version 1.3.0
 
 Breaking changes
 ~~~~~~~~~~~~~~~~
+* ``cumulative()`` no longer posts automatically. Replace ``model.cumulative(...)``
+  with ``model &= model.cumulative(...)``.
 * ``obj[w]`` is no longer accepted. Use ``obj += w * expression`` for numeric
-  costs or ``obj += w * ~literal`` for literal preferences.
+  costs or ``obj += w * ~literal`` for literals.
 * ``tier_obj[t, w]`` is no longer accepted. Use
-  ``tier_obj.add(expression, weight=w, tier=t)`` for numeric costs or
-  ``tier_obj.add(~literal, weight=w, tier=t)`` for literal preferences.
+  ``tier_obj.add(expression, weight=w, tier=t)`` or
+  ``tier_obj.add(~literal, weight=w, tier=t)`` for literals.
 * ``obj.add()`` now returns a handle. Use ``obj.update(term, weight=w)`` to
   change its weight.
 * ``add_soft`` and soft-weight update methods are deprecated. Use numeric
   objective terms and ``obj.update()``. Numeric ``add_soft`` inputs are no
   longer accepted; use ``obj.add(expression, weight=w)``.
 * ``obj.set()`` now replaces the whole objective. Use ``obj +=`` to append.
+* Tiered solving now requires a class.
 
 See :doc:`modeling_objective_migration` for replacements.
 
 Other Highlights
 ~~~~~~~~~~
-* Improved native encoding performance and automatic PBAMO encoder selection.
+* Reduced clause storage memory use, native encoding overhead, and formula export time.
+* Improved encodings of enums reificaiton and big domains.
+* Improved encodings of sets.
+* Fixed assumptions on unused variables and one-sided bounds of single-item vectors.
+* Fixed decoding of derived variables with tiered objectives.
+* Fixed saved-result decoding after creating new equality expressions.
+* Rejected foreign-model constraints and fractional assumption terms.
+* Fixed objective costs for expressions using both polarities on some edge cases.
+* Improved encoding for division or scaling by one and repeated inputs to ``max()`` and ``min()``.
+* Fixed cache reuse for temporary modeling objects.
+* Added support for integer enum labels
+* Added indexing by ``IntVar`` to ``BoolVector``
+* Added and lazy integer inputs to ``max()``.
+* Improved native encoding performance, including MDD, and automatic PBAMO encoder selection.
 * Added a grouped weighted sum equality encoder to PBAMO.
-* Reduced encoding overhead for sums of integer variables.
 * Avoided excessive encoding growth in weighted and mixed integer constraints, including AMO cases.
+* Improved integer-sum encodings, especially for narrow result domains.
+* Improved encoding when comparing integers with different domains.
+* Improved encoding of Interval variables and clauses with fixed duration.
 * Improved performance when comparing integer variables.
-* Reused variables for repeated exact expressions.
+* Improved variable reuse for repeated exact expressions.
+* Reduced memory use for repeated vector lookups and objective replacement.
+* Fixed some weight updates with precision changes.
+* Fixed decoding edge cases of integer comparisons.
+* Other internal changes on edge cases that should not impact the API.
 
 Version 1.2.10
 --------------

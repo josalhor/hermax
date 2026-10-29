@@ -188,7 +188,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
             status=result.status,
             model=result.model,
             cost=result.cost,
-            num_vars=self._num_vars,
+            num_vars=max(self._num_vars, max((abs(lit) for lit in assumps), default=0)),
         )
         if self._model is not None and is_feasible(self._status):
             self._last_cost = self._compute_wrapper_cost(self._model)

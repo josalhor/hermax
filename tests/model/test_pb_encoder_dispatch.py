@@ -257,7 +257,6 @@ def test_boolean_cardinality_structure_registers_on_commit_not_only_on_solve():
     m = Model()
     b = m.bool_vector("b", length=4)
     c_le = sum_expr(b) <= 1
-    c_eq = sum_expr(b) == 1
     assert len(m._known_amo_groups) == 0
     assert len(m._known_eo_groups) == 0
 
@@ -267,7 +266,7 @@ def test_boolean_cardinality_structure_registers_on_commit_not_only_on_solve():
 
     m2 = Model()
     b2 = m2.bool_vector("b", length=4)
-    m2 &= c_eq
+    m2 &= sum_expr(b2) == 1
     assert len(m2._known_amo_groups) == 0
     assert len(m2._known_eo_groups) == 1
 

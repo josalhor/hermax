@@ -6,13 +6,14 @@ import warnings
 from numbers import Integral
 from contextlib import contextmanager
 from functools import reduce
-from typing import Iterable, Mapping, Optional, Sequence
+from typing import Callable, Iterable, Mapping, Optional, Sequence
 from pysat.formula import CNF, WCNF
 from hermax.utils import batcher_odd_even_unary_add_network
 from pysat.solvers import Solver as PySATSolver
 from hermax.non_incremental import RC2 as HermaxRC2
 from hermax.core.time_limits import validate_time_limit
 from hermax.core.interrupt_recovery import InterruptRecovery
+from hermax.core.ipamir_solver_interface import IPAMIRSolver, is_feasible
 from hermax.internal.pysat_execution import solve_pysat_with_time_limit
 from hermax.internal.sat_replay import PySATReplaySolver
 
@@ -24,15 +25,33 @@ if TYPE_CHECKING:
     from .core import *
 
 from .expressions import *
-from .expressions import _detection_error, _nonlinear_error, _ensure_same_model, _ensure_same_model_pair_fast, _LazyIntExpr, _ReifiableClauseGroup, FLOAT_ZERO_TOL
+from .expressions import _detection_error, _nonlinear_error, _ensure_model, _ensure_same_model, _ensure_same_model_pair_fast, _LazyIntExpr, _ReifiableClauseGroup, _PredicateLiteral, FLOAT_ZERO_TOL
 from .variables import *
-from .variables import _BaseVector, _BaseDict, _BaseMatrixView, _MultiplexerInt, _VectorElementInt
+from .variables import _BaseVector, _BaseDict, _BaseMatrixView, _MultiplexerInt, _VectorElementInt, _validate_enum_choices
 from .encoders import *
 from .encoders import _DeferredPBEntry, _EncoderDispatch
 from .encoders import _canonical_pb_cache_key
+from hermax.encoder.pb import PBItem
+from hermax.encoder._packed import PBCompiler
 from ._int_thresholds import ThresholdOwners
-from hermax.internal.operation_cache import OperationCache, cached_operation
-from ._objective import ObjectiveTerm, prepare_objective, normalize_objective, normalize_prepared_objective, validate_numeric_objective, validate_soft_constraint
+from hermax.internal._clause_storage import (
+    ClauseStorage as _ClauseStorage,
+    to_cnf as _hard_to_cnf,
+    to_wcnf as _hard_to_wcnf,
+)
+from hermax.internal.operation_cache import OperationCache, _Identity, cached_operation
+from ._cumulative import cumulative_constraint
+from ._objective import (
+    ObjectiveTerm,
+    apply_soft_weights,
+    coerce_preference_weight,
+    normalize_objective,
+    normalize_prepared_objective,
+    prepare_objective,
+    prepare_soft_preference,
+    validate_numeric_objective,
+    validate_soft_constraint,
+)
 from hermax.internal.kmerge import DEFAULT_KMERGE_CONFIG, KMergeConfig
 
 
@@ -63,123 +82,52 @@ class _ObjectiveProxy:
     def __setitem__(self, weight, value):
         self[weight]
 
-    def _disable_all_active_softs(self) -> None:
-        m = self._model
-        for sid in list(m._soft_ids):
-            idx = m._soft_id_to_index.get(int(sid))
-            if idx is None:
-                continue
-            old_w, _ = m._soft[idx]
-            if int(old_w) > 0:
-                m._set_soft_weight_internal(int(sid), 0, allow_zero=True, allow_when_sat=True)
-
-    def _reset_expression_state(self) -> None:
-        self._lit_to_sid.clear()
-        self._lit_weights.clear()
-        if self._offset:
-            self._model._objective_constant -= int(self._offset)
-        self._offset = 0
-
-    def _ensure_expr_soft_sid(self, dim: int, weight: int) -> int:
-        m = self._model
-        lit = m._dimacs_to_lit(int(dim))
-        m._ensure_literal_def_realized(lit)
-        sid = m._append_soft_entry(int(weight), Clause(m, [lit]), group_id=None)
-        self._lit_to_sid[int(dim)] = int(sid)
-        return int(sid)
-
     def _normalize_expr(self, constraint, *, weight):
         return normalize_objective(self._model, constraint, weight=weight)
 
-    def _current_lit_weights(self) -> dict[int, int]:
-        out: dict[int, int] = {}
+    def _plan_lit_weights(self, weights: dict[int, int]):
         m = self._model
-        stale_dims: list[int] = []
-        for dim, cached_w in self._lit_weights.items():
-            sid = self._lit_to_sid.get(int(dim))
-            if sid is None:
-                stale_dims.append(int(dim))
-                continue
-            idx = m._soft_id_to_index.get(int(sid))
-            if idx is None:
-                stale_dims.append(int(dim))
-                continue
-            w, _ = m._soft[idx]
-            if int(w) > 0:
-                out[int(dim)] = int(w)
-                if int(cached_w) != int(w):
-                    self._lit_weights[int(dim)] = int(w)
+        updates, additions = {}, []
+        for dim, weight in weights.items():
+            sid = self._lit_to_sid.get(dim)
+            if sid is None or sid not in m._soft_id_to_index:
+                if weight:
+                    additions.append((dim, weight))
             else:
-                stale_dims.append(int(dim))
-        for dim in stale_dims:
-            self._lit_weights.pop(int(dim), None)
-            self._lit_to_sid.pop(int(dim), None)
-        return out
+                updates[sid] = weight
+        return updates, additions
 
     def _apply_lit_weights(self, lit_weights: dict[int, int], offset: int):
         m = self._model
-        hard0 = len(m._hard)
-        soft0 = len(m._soft)
-        current = self._current_lit_weights()
-        all_lits = set(current.keys()) | set(lit_weights.keys())
-        for dim in all_lits:
-            sid = self._lit_to_sid.get(dim)
-            new_w = int(lit_weights.get(dim, 0))
-            if sid is None:
-                if new_w <= 0:
-                    continue
-                self._ensure_expr_soft_sid(dim, new_w)
-                continue
-            idx = m._soft_id_to_index.get(sid)
-            if idx is None:
-                if new_w <= 0:
-                    self._lit_to_sid.pop(dim, None)
-                    continue
-                self._ensure_expr_soft_sid(dim, new_w)
-                continue
-            old_w, _cl = m._soft[idx]
-            if int(old_w) == new_w:
-                continue
-            m._set_soft_weight_internal(sid, new_w, allow_zero=True, allow_when_sat=True)
-
-        self._lit_weights = {int(dim): int(w) for dim, w in lit_weights.items() if int(w) > 0}
-
-        delta = int(offset) - int(self._offset)
-        if delta:
-            m._objective_constant += int(delta)
-        self._offset = int(offset)
-        m._inc_state.route_deltas(hard0, soft0)
+        updates = {
+            sid: 0 for sid in m._soft_ids
+            if m._soft[m._soft_id_to_index[sid]][0] > 0
+        }
+        selected, additions = self._plan_lit_weights(lit_weights)
+        updates.update(selected)
+        created = apply_soft_weights(m, updates, additions)
+        self._lit_to_sid.update(created)
+        self._lit_weights = {dim: weight for dim, weight in lit_weights.items() if weight > 0}
+        m._objective_constant = self._offset = offset
+        self._generation += 1
         return self
 
-    def _add_lit_weights(self, add_map: dict[int, int], offset_delta: int):
+    def _change_lit_weights(self, changes: dict[int, int], offset_delta: int):
         m = self._model
-        hard0 = len(m._hard)
-        soft0 = len(m._soft)
-        for dim, w in add_map.items():
-            inc = int(w)
-            if inc <= 0:
+        targets = {}
+        for dim, delta in changes.items():
+            if not delta:
                 continue
-            sid = self._lit_to_sid.get(int(dim))
-            if sid is None:
-                self._ensure_expr_soft_sid(int(dim), inc)
-                self._lit_weights[int(dim)] = int(self._lit_weights.get(int(dim), 0)) + inc
-                continue
-            idx = m._soft_id_to_index.get(int(sid))
-            if idx is None:
-                self._ensure_expr_soft_sid(int(dim), inc)
-                self._lit_weights[int(dim)] = int(self._lit_weights.get(int(dim), 0)) + inc
-                continue
-            old_w, _cl = m._soft[idx]
-            new_w = int(old_w) + inc
-            if new_w != int(old_w):
-                m._set_soft_weight_internal(int(sid), new_w, allow_zero=True, allow_when_sat=True)
-            self._lit_weights[int(dim)] = new_w
-
-        if int(offset_delta):
-            m._objective_constant += int(offset_delta)
-            self._offset += int(offset_delta)
-        m._inc_state.route_deltas(hard0, soft0)
-        return self
+            sid = self._lit_to_sid.get(dim)
+            index = m._soft_id_to_index.get(sid)
+            current = m._soft[index][0] if index is not None else 0
+            targets[dim] = current + delta
+        updates, additions = self._plan_lit_weights(targets)
+        created = apply_soft_weights(m, updates, additions)
+        self._lit_to_sid.update(created)
+        self._lit_weights.update(targets)
+        m._objective_constant += offset_delta
+        self._offset += offset_delta
 
     def set(self, constraint, *, weight: int = 1):
         """Replace the entire objective with a numeric cost expression."""
@@ -188,7 +136,6 @@ class _ObjectiveProxy:
         _scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=True)
         norm_weight = raw if self._model._objective_precision_decimals is not None else _scaled
         weights, offset = self._normalize_expr(constraint, weight=norm_weight) if norm_weight else ({}, 0)
-        self.clear()
         return self._apply_lit_weights(weights, offset)
 
     def add(self, expression, *, weight=1) -> ObjectiveTerm:
@@ -199,7 +146,7 @@ class _ObjectiveProxy:
         value = raw if self._model._objective_precision_decimals is not None else scaled
         snapshot = prepare_objective(self._model, expression, lower=bool(value))
         weights, offset = normalize_prepared_objective(self._model, snapshot, weight=value) if value else ({}, 0)
-        self._add_lit_weights(weights, offset)
+        self._change_lit_weights(weights, offset)
         return ObjectiveTerm(self, snapshot, value, weights, offset)
 
     def update(self, term, *, weight) -> None:
@@ -222,49 +169,13 @@ class _ObjectiveProxy:
         value = raw if m._objective_precision_decimals is not None else scaled
         snapshot = prepare_objective(self._model, term._expression, lower=bool(value))
         weights, offset = normalize_prepared_objective(self._model, snapshot, weight=value) if value else ({}, 0)
-        self._replace_contribution(term._weights, weights)
-        delta = offset - term._offset
-        m._objective_constant += delta
-        self._offset += delta
+        changes = {
+            dim: weights.get(dim, 0) - term._weights.get(dim, 0)
+            for dim in term._weights.keys() | weights.keys()
+        }
+        self._change_lit_weights(changes, offset - term._offset)
         term._expression = snapshot
         term._weight, term._weights, term._offset = value, weights, offset
-
-    def _replace_contribution(self, old_weights, new_weights):
-        m = self._model
-        hard0, soft0 = len(m._hard), len(m._soft)
-        previous = {}
-        for dim in old_weights.keys() | new_weights.keys():
-            sid = self._lit_to_sid.get(dim)
-            weight = m._soft[m._soft_id_to_index[sid]][0] if sid is not None else 0
-            previous[dim] = sid, self._lit_weights.get(dim), weight
-        try:
-            for dim, (sid, _cached, current) in previous.items():
-                delta = new_weights.get(dim, 0) - old_weights.get(dim, 0)
-                if not delta:
-                    continue
-                if sid is None:
-                    self._ensure_expr_soft_sid(dim, delta)
-                else:
-                    m._set_soft_weight_internal(sid, current + delta, allow_zero=True, allow_when_sat=True)
-                self._lit_weights[dim] = current + delta
-            m._inc_state.route_deltas(hard0, soft0)
-        except Exception:
-            # A backend can reject a later update after accepting earlier ones.
-            # Detach it and restore this contribution before allowing another solve.
-            m.close_incremental()
-            for sid in m._soft_ids[soft0:]:
-                m._set_soft_weight_internal(sid, 0, allow_zero=True)
-            for dim, (sid, cached, weight) in previous.items():
-                if sid is None:
-                    self._lit_to_sid.pop(dim, None)
-                else:
-                    self._lit_to_sid[dim] = sid
-                    m._set_soft_weight_internal(sid, weight, allow_zero=True)
-                if cached is None:
-                    self._lit_weights.pop(dim, None)
-                else:
-                    self._lit_weights[dim] = cached
-            raise
 
     def add_soft(self, constraint, weight: int):
         """Deprecated: prefer a condition to hold with its original polarity."""
@@ -277,18 +188,20 @@ class _ObjectiveProxy:
 
     def _add_preference(self, constraint, weight):
         self._model._ensure_no_tier_objective_active()
-        validate_soft_constraint(self._model, constraint)
-        scaled_w, raw_w = self._model._coerce_soft_weight(weight, allow_zero=True)
+        scaled_w, raw_w = prepare_soft_preference(self._model, constraint, weight)
         m = self._model
-        if not scaled_w:
+        if not scaled_w and isinstance(constraint, (Literal, bool)):
             gid = m._next_soft_group_id
             m._next_soft_group_id += 1
             m._soft_group_to_ids[gid] = []
             return SoftRef(gid, [], objective=self, weight=raw_w, constraint=constraint)
+        if not scaled_w:
+            constraint = m._as_clausegroup(constraint)
         gid, sids = m._add_soft(int(scaled_w), constraint, dedup=bool(m._soft_dedup_enabled), raw_weight=float(raw_w))
+        # An empty soft group is permanently satisfied, even if its source is mutated.
         return SoftRef(gid, sids, objective=self,
                        weight=raw_w if m._objective_precision_decimals is not None else scaled_w,
-                       scaled_weight=scaled_w, constraint=constraint)
+                       scaled_weight=scaled_w, constraint=True if not sids else None)
 
     def update_soft(self, target, new_weight):
         """Deprecated: use obj.update(ref, weight=new_weight)."""
@@ -303,25 +216,30 @@ class _ObjectiveProxy:
         if target._objective is not self:
             raise ValueError("SoftRef belongs to a different objective.")
         target._check_active()
-        scaled, raw = self._model._coerce_soft_weight(new_weight, allow_zero=True)
+        scaled, raw = coerce_preference_weight(self._model, new_weight)
         m = self._model
-        if not target.soft_ids and scaled and not target._weight:
+        if not target.soft_ids and scaled and not target._weight and target._constraint is not True:
             fresh = self._add_preference(target._constraint, new_weight)
             target.group_id, target.soft_ids = fresh.group_id, fresh.soft_ids
             target._weight, target._scaled_weight = fresh._weight, fresh._scaled_weight
+            return
         for sid in target.soft_ids:
             current = m._soft[m._soft_id_to_index[sid]][0]
             m._set_soft_weight_internal(sid, current - target._scaled_weight + scaled,
-                                       allow_zero=True, allow_when_sat=False)
+                                       allow_zero=True, allow_when_sat=target._scaled_weight == 0)
             m._soft_raw_weight_by_id[sid] += raw - target._weight
         target._weight = raw if m._objective_precision_decimals is not None else scaled
         target._scaled_weight = scaled
 
     def clear(self):
         """Clear all numeric costs and soft preferences."""
-        self._disable_all_active_softs()
-        self._reset_expression_state()
-        self._model._objective_constant = 0
+        m = self._model
+        apply_soft_weights(m, {
+            sid: 0 for sid in m._soft_ids
+            if m._soft[m._soft_id_to_index[sid]][0] > 0
+        })
+        self._lit_weights.clear()
+        m._objective_constant = self._offset = 0
         self._generation += 1
         return self
 
@@ -405,13 +323,16 @@ class _TierObjectiveProxy:
         warnings.warn("add_soft() is deprecated; use tier_obj.add(~indicator, weight=w, tier=t).",
                       FutureWarning, stacklevel=2)
         self._check_exclusive()
-        validate_soft_constraint(self._model, constraint)
         # Validate all arguments before compiling the condition.
-        self._model._coerce_soft_weight(weight, allow_zero=True)
+        prepare_soft_preference(self._model, constraint, weight)
         if isinstance(tier, bool) or not isinstance(tier, int):
             raise TypeError("tier index must be an integer.")
         if tier < 0:
             raise ValueError("tier index must be a non-negative integer.")
+        if isinstance(constraint, Literal):
+            return self.add(~constraint, weight=weight, tier=tier)
+        if isinstance(constraint, bool):
+            return self.add(int(not constraint), weight=weight, tier=tier)
         group = self._model._as_clausegroup(constraint)
         if group.is_empty():
             return self.add(0, weight=weight, tier=tier)
@@ -468,6 +389,12 @@ class _TierObjectiveProxy:
             lw = {int(k): int(v) for k, v in lw_raw.items() if int(v) > 0}
             out.append((int(tier), lw, off))
         return out
+
+    def _scaled_cost(self, lit_weights, offset, assignment):
+        return offset + sum(
+            weight for dim, weight in lit_weights.items()
+            if not assignment[self._model._dimacs_to_lit(dim)]
+        )
 
 
 class SolveResult:
@@ -558,6 +485,7 @@ class _IncrementalCoordinator:
         "solver_kwargs",
         "ip_next_vid",
         "soft_lit_by_id",
+        "soft_weight_by_lit",
         "hard_routed",
         "soft_routed",
     )
@@ -573,6 +501,7 @@ class _IncrementalCoordinator:
         self.solver_kwargs: dict = {}
         self.ip_next_vid = 0
         self.soft_lit_by_id: dict[int, int] = {}
+        self.soft_weight_by_lit: dict[int, int] = {}
         self.hard_routed = 0
         self.soft_routed = 0
 
@@ -596,6 +525,7 @@ class _IncrementalCoordinator:
         self.solver_kwargs = {}
         self.ip_next_vid = 0
         self.soft_lit_by_id.clear()
+        self.soft_weight_by_lit.clear()
         self.hard_routed = 0
         self.soft_routed = 0
 
@@ -624,45 +554,33 @@ class _IncrementalCoordinator:
         while self.ip_next_vid < target:
             self._ip_next_var()
 
-    def _route_soft_index(self, idx: int) -> None:
+    def _route_soft_index(self, idx: int, *, weight: int | None = None) -> None:
         if self.mode != "maxsat" or self.ip_solver is None:
             return
         m = self._model
         sid = m._soft_ids[idx]
-        weight, clause = m._soft[idx]
+        if sid in self.soft_lit_by_id:
+            return
+        stored_weight, clause = m._soft[idx]
+        if weight is None:
+            weight = stored_weight
         self._reserve_ip_vars(max((abs(int(l)) for l in clause), default=0))
         if int(weight) <= 0:
-            lit = self.soft_lit_by_id.get(sid)
-            if lit is not None:
-                self.ip_solver.set_soft(int(lit), 0)
             return
         lits = list(clause)
         if len(lits) == 1:
             soft_lit = int(lits[0])
-            already_routed = any(int(mapped) == soft_lit for mapped in self.soft_lit_by_id.values())
-            self.soft_lit_by_id[sid] = soft_lit
-            if already_routed:
-                self.ip_solver.set_soft(soft_lit, self._effective_soft_weight(soft_lit))
+            total = self.soft_weight_by_lit.get(soft_lit, 0) + int(weight)
+            if soft_lit in self.soft_weight_by_lit:
+                self.ip_solver.set_soft(soft_lit, total)
             else:
                 self.ip_solver.add_soft_unit(soft_lit, int(weight))
-            return
-        relax = self._ip_next_var()
-        self.ip_solver.add_soft_relaxed([int(l) for l in lits], int(weight), relax)
-        self.soft_lit_by_id[sid] = -int(relax)
-
-    def _effective_soft_weight(self, soft_lit: int) -> int:
-        """Sum active model soft entries represented by one backend literal."""
-        total = 0
-        for mapped_sid, mapped_lit in self.soft_lit_by_id.items():
-            if int(mapped_lit) != int(soft_lit):
-                continue
-            index = self._model._soft_id_to_index.get(int(mapped_sid))
-            if index is None:
-                continue
-            weight, _clause = self._model._soft[index]
-            if int(weight) > 0:
-                total += int(weight)
-        return total
+        else:
+            relax = self._ip_next_var()
+            self.ip_solver.add_soft_relaxed(lits, int(weight), relax)
+            soft_lit, total = -int(relax), int(weight)
+        self.soft_lit_by_id[sid] = soft_lit
+        self.soft_weight_by_lit[soft_lit] = total
 
     def route_deltas(self, hard_start: int, soft_start: int) -> None:
         """Push hard/soft changes since offsets into the bound backend."""
@@ -681,14 +599,14 @@ class _IncrementalCoordinator:
             if soft_from < len(m._soft):
                 return
             assert self.sat_solver is not None
-            for c in m._hard[hard_from:]:
+            for c in m._hard.iter_from(hard_from):
                 self.sat_solver.add_clause(m._clause_to_dimacs_list(c))
             self.hard_routed = len(m._hard)
             self.soft_routed = len(m._soft)
             return
         if self.mode == "maxsat":
             assert self.ip_solver is not None
-            for c in m._hard[hard_from:]:
+            for c in m._hard.iter_from(hard_from):
                 clause = m._clause_to_dimacs_list(c)
                 self._reserve_ip_vars(max((abs(int(l)) for l in clause), default=0))
                 self.ip_solver.add_clause(clause)
@@ -712,7 +630,6 @@ class _IncrementalCoordinator:
 
     def bind_maxsat(self, solver, solver_kwargs: dict | None) -> None:
         """Bind an incremental MaxSAT backend and replay current formula."""
-        from hermax.core.ipamir_solver_interface import IPAMIRSolver
 
         if self.mode == "maxsat":
             return
@@ -831,23 +748,20 @@ class _IncrementalCoordinator:
         if self.mode == "maxsat":
             if self.ip_solver is None:
                 return
-            lit = self.soft_lit_by_id.get(sid)
-            if lit is None:
-                self._route_soft_index(idx)
-                lit = self.soft_lit_by_id.get(sid)
-            if lit is None:
-                raise RuntimeError("Soft id is not mapped in incremental MaxSAT backend.")
             if int(new_weight) == 0 and not allow_zero:
                 raise ValueError("Cannot set soft weight to zero without allow_zero=True.")
+            lit = self.soft_lit_by_id.get(sid)
+            if lit is None:
+                self._route_soft_index(idx, weight=int(new_weight))
+                return
             if m._debug_level >= m.DEBUG_DELTA:
                 m._debug(
                     m.DEBUG_DELTA,
                     f"update_soft route maxsat sid={sid} lit={int(lit)} new={int(new_weight)}",
                 )
-            self.ip_solver.set_soft(
-                int(lit),
-                self._effective_soft_weight(int(lit)) + int(new_weight) - int(old_w),
-            )
+            total = self.soft_weight_by_lit[lit] + int(new_weight) - int(old_w)
+            self.ip_solver.set_soft(int(lit), total)
+            self.soft_weight_by_lit[lit] = total
 
     def solve(
         self,
@@ -899,8 +813,7 @@ class _IncrementalCoordinator:
         elif self.mode == "maxsat" and b == "sat":
             raise ValueError("Cannot change incremental backend from MaxSAT to SAT.")
 
-        m._commit_pb()
-        m._ensure_all_pending_literal_defs_realized()
+        m._prepare_encoding()
         self.route_deltas(len(m._hard), len(m._soft))
 
         if self.mode == "sat":
@@ -1022,7 +935,7 @@ class Model:
         self._container_names: set[str] = set()
         self._canonical_internal_lits: dict[object, Literal] = {}
         self._anon_counter = 0
-        self._hard: list[tuple[int, ...]] = []
+        self._hard = _ClauseStorage()
         self._soft: list[tuple[int, tuple[int, ...]]] = []
         self._objective_constant = 0
         self._const_lits: dict[bool, Literal] = {}
@@ -1112,7 +1025,7 @@ class Model:
     def _clause_to_dimacs_list(self, clause: "Clause | Sequence[int]") -> list[int]:
         if isinstance(clause, Clause):
             return list(clause.dimacs)
-        return [int(x) for x in clause]
+        return list(clause)
 
     @staticmethod
     def _safe_close_backend(obj) -> None:
@@ -1197,7 +1110,7 @@ class Model:
             raise ValueError("decimals must be a non-negative integer.")
         if decimals == self._objective_precision_decimals:
             return
-        if self._obj_proxy._lit_to_sid or self._obj_proxy._offset or self._tier_obj_proxy._tiers:
+        if self._obj_proxy._lit_weights or self._obj_proxy._offset or self._tier_obj_proxy._tiers:
             raise ValueError(
                 "Configure objective precision before adding numeric costs; "
                 "clear the objective before changing precision."
@@ -1214,10 +1127,9 @@ class Model:
             if scaled <= 0:
                 raise ValueError("Configured precision rounds an existing positive soft weight to zero.")
             updates.append((sid, scaled))
+        apply_soft_weights(self, dict(updates))
         self._objective_precision_decimals = int(decimals)
         self._objective_precision_scale = scale
-        for sid, scaled in updates:
-            self._set_soft_weight_internal(sid, scaled, allow_zero=False, allow_when_sat=True)
 
     def _coerce_soft_weight(self, weight, *, allow_zero: bool = False) -> tuple[int, float]:
         if isinstance(weight, bool):
@@ -1307,7 +1219,7 @@ class Model:
         return self._tier_obj_proxy
 
     def _has_active_flat_objective(self) -> bool:
-        return any(int(w) > 0 for w, _ in self._soft)
+        return bool(self._objective_constant) or any(int(w) > 0 for w, _ in self._soft)
 
     def _ensure_no_flat_objective_active(self) -> None:
         if self._has_active_flat_objective():
@@ -1342,17 +1254,23 @@ class Model:
         name = self._reserve_name(None)
         return self._new_literal_pair(name)
 
-    def canonical_internal_bool(self, key: object, debug_name: Optional[str] = None) -> Literal:
+    def canonical_internal_bool(
+        self, key: object, debug_name: Optional[str] = None, *,
+        definition: Callable[[Literal], ClauseGroup] | None = None,
+    ) -> Literal:
         """Return a canonical reusable internal helper literal for ``key``.
 
         Repeated requests with the same semantic ``key`` return the same
         internal literal. The helper remains hidden from the public registry.
+        ``definition`` is evaluated only when creating a new helper.
         """
         del debug_name
         cached = self._canonical_internal_lits.get(key)
         if cached is not None:
             return cached
         lit = self.fresh_internal_bool()
+        if definition is not None:
+            self._register_literal_definition(lit, definition(lit))
         self._canonical_internal_lits[key] = lit
         return lit
 
@@ -1392,17 +1310,8 @@ class Model:
             raise ValueError("Integer domain requires lb <= ub.")
 
     @staticmethod
-    def _validate_enum_domain(choices: Sequence[str], nullable: bool) -> None:
-        if isinstance(choices, (str, bytes)) or not isinstance(choices, Sequence):
-            raise TypeError("Enum choices must be a sequence of strings.")
-        if not isinstance(nullable, bool):
-            raise TypeError("nullable must be a bool.")
-        if any(not isinstance(choice, str) for choice in choices):
-            raise TypeError("Enum choices must be strings.")
-        if len(set(choices)) != len(choices):
-            raise ValueError("Enum choices must be unique.")
-        if not choices and not nullable:
-            raise ValueError("Non-nullable EnumVar requires at least one choice.")
+    def _validate_enum_domain(choices: Sequence[str | int], nullable: bool) -> None:
+        _validate_enum_choices(choices, nullable)
 
     @staticmethod
     def _validate_int_set_domain(
@@ -1423,7 +1332,7 @@ class Model:
         if lb > ub:
             raise ValueError("int_set() requires lb <= ub.")
 
-    def _new_literal_pair(self, name: str, *, var_id: int | None = None) -> Literal:
+    def _new_literal_pair(self, name: str, *, var_id: int | None = None, evaluate=None) -> Literal:
         if var_id is None:
             id_ = self._next_id
             # A live MaxSAT backend may own auxiliary IDs outside the model's
@@ -1440,8 +1349,12 @@ class Model:
         ):
             raise ValueError(f"Variable id {id_} is already allocated.")
         self._next_id = max(self._next_id, id_ + 1)
-        pos = Literal(self, id_, name, True)
-        neg = Literal(self, id_, name, False)
+        if evaluate is None:
+            pos = Literal(self, id_, name, True)
+            neg = Literal(self, id_, name, False)
+        else:
+            pos = _PredicateLiteral(self, id_, name, True, evaluate)
+            neg = _PredicateLiteral(self, id_, name, False, evaluate)
         pos._link_negation(neg)
         neg._link_negation(pos)
         self._lits_by_id[id_] = pos
@@ -1494,7 +1407,7 @@ class Model:
             lit = a.literal
             if lit._model is not self:
                 raise ValueError("Variables belong to different models.")
-            c = int(a.coefficient)
+            c = a.coefficient
             if c == 1:
                 return self._lit_to_dimacs(lit)
             if c == -1:
@@ -1578,7 +1491,7 @@ class Model:
         Definitions are materialized only when a constraint containing ``lit`` is
         added to the model or exported/solved.
         """
-        _ensure_same_model(self, lit, group)
+        _ensure_model(self, lit, group)
         existing = self._pending_literal_defs.get(lit.id)
         if existing is None:
             self._pending_literal_defs[lit.id] = group
@@ -1603,24 +1516,25 @@ class Model:
             if group_id in self._realized_definition_group_ids:
                 self._realized_literal_defs.add(lit_id)
                 return
-            self._ensure_deferred_defs_in_group(group)
-            self._hard.extend(group)
-            self._realized_definition_group_ids.add(group_id)
+            self._ensure_deferred_defs_in_group(group, defining=True)
+            if group_id not in self._realized_definition_group_ids:
+                self._hard.extend(group)
+                self._realized_definition_group_ids.add(group_id)
             self._realized_literal_defs.add(lit_id)
         finally:
             self._realizing_literal_defs.discard(lit_id)
 
     def _ensure_all_pending_literal_defs_realized(self) -> None:
-        if not self._pending_literal_defs:
+        if len(self._realized_literal_defs) == len(self._pending_literal_defs):
             return
         for lit_id in list(self._pending_literal_defs):
             lit = self._find_literal_by_id(int(lit_id))
             if lit is not None:
                 self._ensure_literal_def_realized(lit)
 
-    def _ensure_deferred_defs_in_group(self, group: ClauseGroup) -> None:
+    def _ensure_deferred_defs_in_group(self, group: ClauseGroup, *, defining: bool = False) -> None:
         pending_defs = self._pending_literal_defs
-        if not pending_defs:
+        if len(self._realized_literal_defs) == len(pending_defs):
             return
         realized_defs = self._realized_literal_defs
         ensure_realized = self._ensure_literal_def_realized
@@ -1630,6 +1544,9 @@ class Model:
         for clause in group:
             for dim in clause:
                 lit_id = dim if dim > 0 else -dim
+                # A definition group supplies all its own registered outputs.
+                if defining and pending_defs.get(lit_id) is group:
+                    continue
                 if realized_contains(lit_id) or not pending_contains(lit_id):
                     continue
                 lit = get_lit(lit_id)
@@ -1654,7 +1571,13 @@ class Model:
         self._registry[final_name] = lit
         return lit
 
-    def enum(self, name: str, choices: Sequence[str], nullable: bool = False) -> EnumVar:
+    def _predicate_bool(self, evaluate, name: Optional[str] = None) -> Literal:
+        final_name = self._reserve_name(name)
+        lit = self._new_literal_pair(final_name, evaluate=evaluate)
+        self._registry[final_name] = lit
+        return lit
+
+    def enum(self, name: str, choices: Sequence[str | int], nullable: bool = False) -> EnumVar:
         """Create an enum variable with the given choices.
 
         Non-nullable enums are exactly-one; nullable enums are at-most-one and
@@ -1718,13 +1641,16 @@ class Model:
         """Materialize a quotient integer ``x // divisor`` using ladder threshold ties."""
         if isinstance(x, _LazyIntExpr):
             x = x._realize()
-        _ensure_same_model(self, x)
+        if x._model is not self:
+            raise ValueError("Variables belong to different models.")
         if isinstance(divisor, bool):
             raise ValueError("Divisor must be strictly positive.")
         if not isinstance(divisor, int):
             raise TypeError("Divisor must be an integer.")
         if divisor <= 0:
             raise ValueError("Divisor must be strictly positive.")
+        if divisor == 1:
+            return x if name is None else IntVar._from_offset(x, 0, name)
 
         out_lb = x.lb // divisor
         out_ub = x.ub // divisor
@@ -1745,13 +1671,16 @@ class Model:
         """Materialize a scaled integer ``x * factor`` using ladder threshold ties."""
         if isinstance(x, _LazyIntExpr):
             x = x._realize()
-        _ensure_same_model(self, x)
+        if x._model is not self:
+            raise ValueError("Variables belong to different models.")
         if isinstance(factor, bool):
             raise ValueError("Scale factor must be strictly positive.")
         if not isinstance(factor, int):
             raise TypeError("Scale factor must be an integer.")
         if factor == 0:
             raise ValueError("Scale factor must be nonzero.")
+        if factor == 1:
+            return x if name is None else IntVar._from_offset(x, 0, name)
 
         out_lb = min(x.lb * factor, x.ub * factor)
         out_ub = max(x.lb * factor, x.ub * factor)
@@ -1790,12 +1719,19 @@ class Model:
             raise TypeError("Divisor must be an integer.")
         if divisor <= 0:
             raise ValueError("Divisor must be strictly positive.")
-        _ensure_same_model(self, x)
+        _ensure_model(self, x)
         expr = ModExpr(x, divisor)
         if name is not None:
             self._assert_names_available(name)
         if isinstance(x, _LazyIntExpr):
             x = x._realize()
+        quotient = x.lb // divisor
+        if quotient == x.ub // divisor:
+            offset = -quotient * divisor
+            if offset == 0 and name is None:
+                return x
+            out_name = self._reserve_name(None) if name is None else name
+            return IntVar._from_offset(x, offset, out_name)
         out_name = self._reserve_name(None) if name is None else name
         out = self.int(out_name, expr.lb, expr.ub)
         if out.lb == out.ub:
@@ -1821,66 +1757,45 @@ class Model:
     def _build_int_aggregate_extreme(self, items: Sequence[IntVar], kind: str, name: Optional[str] = None) -> IntVar:
         if not items:
             raise ValueError(f"Cannot compute {kind} of an empty IntVector.")
-        if any(not isinstance(item, IntVar) for item in items):
+        if kind == "max":
+            if any(not isinstance(item, (IntVar, Literal, int)) for item in items):
+                raise TypeError("max requires IntVar items, Boolean literals, or integer constants.")
+            if any(getattr(item, "_model", self) is not self for item in items):
+                raise ValueError("Variables belong to different models.")
+            items = tuple(self.as_int(item) for item in items)
+        elif any(not isinstance(item, IntVar) for item in items):
             raise TypeError(f"{kind} requires IntVar items.")
         if any(item._model is not self for item in items):
             raise ValueError("Variables belong to different models.")
         if len(items) == 1:
             return items[0]
+        items = tuple({id(item): item for item in items}.values())
+        if len(items) == 1:
+            return items[0] if name is None else IntVar._from_offset(items[0], 0, name)
 
         assert kind in {"max", "min"}, f"Unknown extreme kind {kind!r}"
         if kind == "max":
             out_lb = max(x.lb for x in items)
             out_ub = max(x.ub for x in items)
+            winner = max(items, key=lambda x: x.lb)
+            determined = all(x is winner or x.ub <= winner.lb for x in items)
         else:
             out_lb = min(x.lb for x in items)
             out_ub = min(x.ub for x in items)
+            winner = min(items, key=lambda x: x.ub)
+            determined = all(x is winner or x.lb >= winner.ub for x in items)
+        if determined:
+            return winner if name is None else IntVar._from_offset(winner, 0, name)
         out_name = self._reserve_name(None) if name is None else name
         z = self.int(out_name, lb=out_lb, ub=out_ub)
-        m = self
+        is_max = kind == "max"
         for k in range(z.lb + 1, z.ub + 1):
-            zk = z.__ge__(k)
-            nonconst_srcs: list[Literal] = []
-            saw_true = False
-            saw_false = False
-            for x in items:
-                if k <= x.lb:
-                    saw_true = True
-                    continue
-                if k > x.ub:
-                    saw_false = True
-                    continue
-                nonconst_srcs.append(x.__ge__(k))
-            if kind == "max":
-                if saw_true:
-                    m._hard.append(Clause(m, [zk]))
-                    continue
-                if not nonconst_srcs:
-                    m._hard.append(Clause(m, [~zk]))
-                    continue
-                if len(nonconst_srcs) == 1:
-                    s = nonconst_srcs[0]
-                    m._hard.append(Clause(m, [~s, zk]))
-                    m._hard.append(Clause(m, [~zk, s]))
-                    continue
-                for s in nonconst_srcs:
-                    m._hard.append(Clause(m, [~s, zk]))
-                m._hard.append(Clause(m, [~zk, *nonconst_srcs]))
-            else:
-                if saw_false:
-                    m._hard.append(Clause(m, [~zk]))
-                    continue
-                if not nonconst_srcs:
-                    m._hard.append(Clause(m, [zk]))
-                    continue
-                if len(nonconst_srcs) == 1:
-                    s = nonconst_srcs[0]
-                    m._hard.append(Clause(m, [~s, zk]))
-                    m._hard.append(Clause(m, [~zk, s]))
-                    continue
-                for s in nonconst_srcs:
-                    m._hard.append(Clause(m, [~zk, s]))
-                m._hard.append(Clause(m, [zk, *(~s for s in nonconst_srcs)]))
+            zk = z >= k
+            sources = [x >= k for x in items if x.lb < k <= x.ub]
+            for source in sources:
+                self._hard.append(Clause(self, [~source, zk] if is_max else [~zk, source]))
+            reverse = [~zk, *sources] if is_max else [zk, *(~source for source in sources)]
+            self._hard.append(Clause(self, reverse))
         return z
 
     def _build_int_aggregate_bound(self, items: Sequence[IntVar], kind: str, name: Optional[str] = None) -> IntVar:
@@ -1890,8 +1805,6 @@ class Model:
             raise TypeError(f"{kind} requires IntVar items.")
         if any(item._model is not self for item in items):
             raise ValueError("Variables belong to different models.")
-        if len(items) == 1:
-            return items[0]
         assert kind in {"upper_bound", "lower_bound"}, f"Unknown one-sided bound kind {kind!r}"
         if kind == "upper_bound":
             out_lb = max(x.lb for x in items)
@@ -1901,37 +1814,21 @@ class Model:
             out_ub = min(x.ub for x in items)
         out_name = self._reserve_name(None) if name is None else name
         z = self.int(out_name, lb=out_lb, ub=out_ub)
-        m = self
-        for k in range(z.lb + 1, z.ub + 1):
-            zk = z.__ge__(k)
-            if kind == "upper_bound":
-                for x in items:
-                    if k <= x.lb:
-                        m._hard.append(Clause(m, [zk]))
-                        break
-                    if k > x.ub:
-                        continue
-                    m._hard.append(Clause(m, [~x.__ge__(k), zk]))
-            else:
-                active = False
-                forced_false = False
-                for x in items:
-                    if k > x.ub:
-                        forced_false = True
-                        break
-                    if k <= x.lb:
-                        continue
-                    active = True
-                    m._hard.append(Clause(m, [~zk, x.__ge__(k)]))
-                if forced_false:
-                    m._hard.append(Clause(m, [~zk]))
-                elif not active:
-                    pass
+        for item in items:
+            left, right = (item, z) if kind == "upper_bound" else (z, item)
+            self._hard.extend(left._order_implications(right))
         return z
 
     def max(self, vec_or_items, name: Optional[str] = None) -> IntVar:
-        """Materialize exact maximum over an IntVector or IntVar sequence."""
+        """Materialize the maximum of integer inputs, including lazy operations."""
         items = tuple(vec_or_items._items) if isinstance(vec_or_items, IntVector) else tuple(vec_or_items)
+        if any(not isinstance(item, (IntVar, Literal, int, _LazyIntExpr)) for item in items):
+            raise TypeError("max requires integer variables, Boolean literals, constants, or lazy integer operations.")
+        if any(getattr(item, "_model", self) is not self for item in items):
+            raise ValueError("Variables belong to different models.")
+        if len(items) > 1 and name is not None:
+            self._assert_names_available(name)
+        items = tuple(_realize_integer_source(item) for item in items)
         return self._build_int_aggregate_extreme(items, "max", name=name)
 
     def min(self, vec_or_items, name: Optional[str] = None) -> IntVar:
@@ -1967,11 +1864,16 @@ class Model:
                 raise ValueError("Integer conversion requires an object from this model.")
             if isinstance(value, IntVar):
                 return value
-            return IntVar._from_bool(value)
+            return self._as_int_view(value)
         if isinstance(value, int):
-            value = int(value)
-            return IntVar(self, f"as_int({value})", value, value)
+            return self._as_int_view(int(value))
         raise TypeError("as_int() expects an IntVar, Literal, integer, or Boolean constant.")
+
+    @cached_operation()
+    def _as_int_view(self, value: Literal | int) -> IntVar:
+        if isinstance(value, Literal):
+            return IntVar._from_bool(value)
+        return IntVar(self, f"as_int({value})", value, value)
 
     def int_vector(self, name: str, length: int, lb: int, ub: int) -> IntVector:
         """Create a vector of bounded integers sharing the same domain."""
@@ -1981,7 +1883,7 @@ class Model:
         self._reserve_container_name(name)
         return IntVector(self, name, [self.int(f"{name}[{i}]", lb=lb, ub=ub) for i in range(length)])
 
-    def enum_vector(self, name: str, length: int, choices: Sequence[str], nullable: bool = False) -> EnumVector:
+    def enum_vector(self, name: str, length: int, choices: Sequence[str | int], nullable: bool = False) -> EnumVector:
         """Create a vector of enum variables."""
         self._validate_size(length, "length")
         self._validate_enum_domain(choices, nullable)
@@ -2031,7 +1933,7 @@ class Model:
         self._reserve_container_name(name)
         return IntDict(self, name, {k: self.int(f"{name}[{k!r}]", lb=lb, ub=ub) for k in keys})
 
-    def enum_dict(self, name: str, keys: Sequence, choices: Sequence[str], nullable: bool = False) -> EnumDict:
+    def enum_dict(self, name: str, keys: Sequence, choices: Sequence[str | int], nullable: bool = False) -> EnumDict:
         """Create a keyed dictionary of enum variables."""
         self._validate_enum_domain(choices, nullable)
         if not isinstance(keys, Sequence):
@@ -2111,7 +2013,7 @@ class Model:
         items_list = list(items)
         if not items_list:
             raise ValueError("sum_var() cannot sum an empty sequence.")
-        _ensure_same_model(self, *items_list)
+        _ensure_model(self, *items_list)
         if any(not isinstance(x, (IntVar, Literal)) for x in items_list):
             raise TypeError("sum_var() expects IntVar or Literal items.")
         items_list = [self.as_int(x) if isinstance(x, Literal) else x for x in items_list]
@@ -2135,22 +2037,19 @@ class Model:
         while len(heap) > 1:
             _wa, _ia, a = heappop(heap)
             _wb, _ib, b = heappop(heap)
-            step_name: Optional[str]
-            if name is not None:
-                step_name = f"{name}_step{step}"
+            step_name = f"{name}_step{step}" if name is not None else None
+            if a.lb == a.ub:
+                merged = (b if a.lb == 0 and step_name is None else
+                          IntVar._from_offset(b, a.lb, self._reserve_name(step_name)))
             else:
-                step_name = None
-            merged_lb = a.lb + b.lb
-            merged_ub = a.ub + b.ub
-            n = self._reserve_name(step_name)
-            merged = self.int(n, lb=merged_lb, ub=merged_ub)
-            self &= (merged == (a + b))
+                merged = self.int(self._reserve_name(step_name),
+                                  lb=a.lb + b.lb, ub=a.ub + b.ub)
+                self &= (merged == (a + b))
             heappush(heap, (_ladder_width(merged), next_idx, merged))
             next_idx += 1
             step += 1
 
-        result = heap[0][2]
-        return result
+        return heap[0][2]
 
     def cumulative(
         self,
@@ -2160,172 +2059,13 @@ class Model:
         capacity: int,
         *,
         backend: str = "auto",
-    ) -> None:
-        """Add a fixed-duration cumulative resource constraint.
+    ) -> ClauseGroup:
+        """Return a fixed-duration resource constraint; post it with ``model &=``.
 
-        This is an interval scheduling primitive over explicit start
-        variables and constant durations/demands.
-
-        Args:
-            backend: Encoding strategy for capacity cuts.
-
-                ``"time"`` loops over every integer time tick in the horizon
-                and adds a PB capacity constraint at each. Formula size is
-                ``O(N × H)`` where ``H`` is the horizon width. Efficient when
-                task count ``N`` is very large relative to ``H``.
-
-                ``"task"`` creates ``O(N²)`` pairwise precedence indicator
-                variables (one per conflicting pair), then conditionally adds
-                capacity cuts **only** at the start-times of active tasks.
-                Formula size is ``O(N² × N)``. Efficient when ``H`` is large
-                and N is small.
-
-                ``"auto"`` (default) picks ``"task"`` when ``N² < H``,
-                otherwise ``"time"``.
+        ``time`` checks each integer time tick. ``task`` checks possible job
+        start times. ``auto`` chooses from the domains and horizon width.
         """
-        if isinstance(capacity, bool) or not isinstance(capacity, int):
-            raise TypeError("cumulative() expects an integer capacity.")
-        if capacity < 0:
-            raise ValueError("cumulative() expects nonnegative capacity.")
-        if backend not in ("auto", "time", "task"):
-            raise ValueError(f"cumulative() backend must be 'auto', 'time', or 'task'; got {backend!r}")
-
-        starts_list = list(starts)
-        durs_list = list(durations)
-        demands_list = list(demands)
-        if not (len(starts_list) == len(durs_list) == len(demands_list)):
-            raise ValueError("cumulative() expects starts, durations, and demands of equal length.")
-        if not starts_list:
-            return
-        _ensure_same_model(self, *starts_list)
-        if any(not isinstance(s, IntVar) for s in starts_list):
-            raise TypeError("cumulative() expects IntVar starts.")
-        if any(isinstance(d, bool) or not isinstance(d, int) for d in durs_list):
-            raise TypeError("cumulative() expects integer durations.")
-        if any(isinstance(r, bool) or not isinstance(r, int) for r in demands_list):
-            raise TypeError("cumulative() expects integer demands.")
-        if any(d < 0 for d in durs_list):
-            raise ValueError("cumulative() does not support negative durations.")
-        if any(r < 0 for r in demands_list):
-            raise ValueError("cumulative() does not support negative demands.")
-
-        model = self
-        true_lit = self._get_bool_constant_literal(True)
-        false_lit = self._get_bool_constant_literal(False)
-
-        def _same_lit(a: Literal, b: Literal) -> bool:
-            return a.id == b.id and bool(a.polarity) == bool(b.polarity)
-
-        def _and_lits(a: Literal, b: Literal) -> Literal:
-            if _same_lit(a, false_lit) or _same_lit(b, false_lit):
-                return false_lit
-            if _same_lit(a, true_lit):
-                return b
-            if _same_lit(b, true_lit):
-                return a
-            if _same_lit(a, b):
-                return a
-            if a.id == b.id and bool(a.polarity) != bool(b.polarity):
-                return false_lit
-            out = model.bool()
-            model.__iand__(ClauseGroup(
-                model,
-                [
-                    Clause(model, [~out, a]),
-                    Clause(model, [~out, b]),
-                    Clause(model, [~a, ~b, out]),
-                ],
-            ))
-            return out
-
-        def _order_indicator(left: IntVar, shift: int, right: IntVar) -> Literal:
-            rel = left._relop_intvar(right, "<=", shift)
-            assert isinstance(rel, IntRelation)
-            if len(rel) == 0:
-                return true_lit
-            if any(len(clause) == 0 for clause in rel):
-                return false_lit
-            out = model.bool()
-            model.__iand__(rel.only_if(out))
-            return out
-
-        active_jobs = [(s, int(d), int(r)) for s, d, r in zip(starts_list, durs_list, demands_list) if d > 0 and r > 0]
-        if not active_jobs:
-            return
-        if capacity == 0:
-            self &= self._get_bool_constant_literal(False)
-            return
-
-        # --- Mandatory conflict disjunctions (shared by all backends) ---
-        for i, (si, di, ri) in enumerate(active_jobs):
-            for sj, dj, rj in active_jobs[i + 1:]:
-                if ri + rj > capacity:
-                    left = _order_indicator(si, di, sj)
-                    right = _order_indicator(sj, dj, si)
-                    self &= Clause(self, [left, right])
-
-        min_t = min(s.lb for s, _, _ in active_jobs)
-        max_t_exclusive = max(s.ub + d + 1 for s, d, _ in active_jobs)
-        horizon = max_t_exclusive - min_t
-        n = len(active_jobs)
-        domain_work = sum((s.ub - s.lb + 1) for s, _, _ in active_jobs)
-
-        if backend == "auto":
-            backend = "task" if domain_work < horizon else "time"
-
-        if backend == "time":
-            # Time-indexed: one PB cut per tick.  O(N × H) constraints.
-            for t in range(min_t, max_t_exclusive):
-                load_expr = 0
-                for start, dur, demand in active_jobs:
-                    started = start <= t
-                    not_ended = start >= (t - dur + 1)
-                    assert isinstance(started, Literal)
-                    assert isinstance(not_ended, Literal)
-                    active = _and_lits(started, not_ended)
-                    if _same_lit(active, false_lit):
-                        continue
-                    if _same_lit(active, true_lit):
-                        load_expr = load_expr + demand
-                    else:
-                        load_expr = load_expr + demand * active
-                self &= (load_expr <= capacity)
-
-        else:  # "task"
-            # Task-event-based: capacity cuts only at the possible start times
-            # of each job (the only moments when load can increase).
-            # For each job i starting at time t in its domain, we check the
-            # total demand of all other jobs j that *must* overlap with i at t.
-            # We enforce: sum(demand_j * overlap_ij(t)) <= capacity - demand_i
-            # only when job i is actually active (start_i == t).
-            for i, (si, di, ri) in enumerate(active_jobs):
-                # Iterate only over each integer in si's domain as a potential
-                # observation point.
-                for t in range(si.lb, si.ub + 1):
-                    # Indicator: si == t  (exact start of task i)
-                    eq_i = (si == t)
-                    load_expr = 0
-                    for j, (sj, dj, rj) in enumerate(active_jobs):
-                        if j == i:
-                            continue
-                        # Job j overlaps with i starting at t iff:
-                        #   sj <= t  (j has started)  AND  sj >= t - dj + 1  (j hasn't ended)
-                        started_j = sj <= t
-                        not_ended_j = sj >= (t - dj + 1)
-                        assert isinstance(started_j, Literal)
-                        assert isinstance(not_ended_j, Literal)
-                        overlap_j = _and_lits(started_j, not_ended_j)
-                        if _same_lit(overlap_j, false_lit):
-                            continue
-                        if _same_lit(overlap_j, true_lit):
-                            load_expr = load_expr + rj
-                        else:
-                            load_expr = load_expr + rj * overlap_j
-                    # Gate the capacity cut on eq_i being true.
-                    cap_cut = (load_expr <= (capacity - ri))
-                    gated = self._as_clausegroup(cap_cut).only_if(eq_i)
-                    self &= gated
-
+        return cumulative_constraint(self, starts, durations, demands, capacity, backend=backend)
 
     def bool_matrix(self, name: str, rows: int, cols: int) -> BoolMatrix:
         """Create a Boolean matrix."""
@@ -2335,7 +2075,7 @@ class Model:
         self._reserve_container_name(name)
         return BoolMatrix(self, name, rows=rows, cols=cols)
 
-    def enum_matrix(self, name: str, rows: int, cols: int, choices: Sequence[str], nullable: bool = False) -> EnumMatrix:
+    def enum_matrix(self, name: str, rows: int, cols: int, choices: Sequence[str | int], nullable: bool = False) -> EnumMatrix:
         """Create an enum matrix."""
         self._validate_size(rows, "rows")
         self._validate_size(cols, "cols")
@@ -2371,14 +2111,8 @@ class Model:
         """Return the cached literal representing a nullable enum's ``None`` value."""
         if not item.nullable:
             raise ValueError("Table row uses None for a non-nullable enum.")
-        key = ("table_enum_none", id(item))
-        lit = self.canonical_internal_bool(key, debug_name=f"{item.name}==None")
-        if lit.id not in self._pending_literal_defs and lit.id not in self._realized_literal_defs:
-            choices = list(item._choice_lits.values())
-            clauses = [Clause(self, [~lit, ~choice]) for choice in choices]
-            clauses.append(Clause(self, [*choices, lit]))
-            self._register_literal_definition(lit, ClauseGroup(self, clauses))
-        return lit
+        _ensure_model(self, item)
+        return item._none_indicator()
 
     def _table_normalize_value(self, item, value) -> object:
         """Validate and normalize a table cell without allocating literals."""
@@ -2400,10 +2134,7 @@ class Model:
                 if not item.nullable:
                     raise ValueError("Table row uses None for a non-nullable enum.")
                 return None
-            if not isinstance(value, str):
-                raise TypeError("Enum table columns must contain labels (or None for nullable enums).")
-            if value not in item._choice_lits:
-                raise ValueError(f"Unknown enum choice {value!r}")
+            item._choice_literal(value)
             return value
         raise TypeError("Model.table() items must be Literal, IntVar, or EnumVar instances.")
 
@@ -2473,6 +2204,9 @@ class Model:
             seen.add(norm_row)
             norm_rows.append(norm_row)
 
+        if width == 1 and isinstance(items_list[0], IntVar):
+            return items_list[0]._allowed_values(row[0] for row in norm_rows)
+
         row_atoms = None
 
         def _get_row_atoms():
@@ -2506,9 +2240,11 @@ class Model:
                 clauses.append(Clause(self, [entry[0] for entry in by_left.values()]))
                 clauses.append(Clause(self, [entry[0] for entry in by_right.values()]))
                 for left_atom, right_atoms in by_left.values():
-                    clauses.append(Clause(self, [~left_atom, *right_atoms]))
+                    if len(right_atoms) < len(by_right):
+                        clauses.append(Clause(self, [~left_atom, *right_atoms]))
                 for right_atom, left_atoms in by_right.values():
-                    clauses.append(Clause(self, [~right_atom, *left_atoms]))
+                    if len(left_atoms) < len(by_left):
+                        clauses.append(Clause(self, [~right_atom, *left_atoms]))
                 return ClauseGroup(self, clauses)
             if len(row_atoms) == 1:
                 return ClauseGroup(self, [Clause(self, [atom]) for atom in row_atoms[0]])
@@ -2531,16 +2267,16 @@ class Model:
             lit = self._get_bool_constant_literal(constraint)
             return ClauseGroup(self, [Clause(self, [lit])])
         if isinstance(constraint, PBConstraint):
-            _ensure_same_model(self, constraint)
+            _ensure_model(self, constraint)
             return constraint.clauses()
         if isinstance(constraint, ClauseGroup):
-            _ensure_same_model(self, constraint)
+            _ensure_model(self, constraint)
             return constraint
         if isinstance(constraint, Clause):
-            _ensure_same_model(self, constraint)
+            _ensure_model(self, constraint)
             return ClauseGroup(self, [constraint])
         if isinstance(constraint, Literal):
-            _ensure_same_model(self, constraint)
+            _ensure_model(self, constraint)
             return ClauseGroup(self, [Clause(self, [constraint])])
         raise TypeError("Expected Literal, Clause, or ClauseGroup")
 
@@ -2608,6 +2344,13 @@ class Model:
         self._inc_state.close()
 
     def __iand__(self, constraint):
+        _ensure_model(self, constraint)
+        if isinstance(constraint, _ReifiableClauseGroup):
+            parts = constraint._posting_parts()
+            if parts is not None:
+                for part in parts:
+                    self.__iand__(part)
+                return self
         hard0 = len(self._hard)
         soft0 = len(self._soft)
         scope_kind = "add_hard_pb" if isinstance(constraint, PBConstraint) else "add_hard"
@@ -2688,6 +2431,8 @@ class Model:
             group_id_i: Optional[int],
             raw_weight_i: Optional[float] = None,
         ) -> int:
+            if not clause_i:
+                clause_i = (self._lit_to_dimacs(self._get_bool_constant_literal(False)),)
             if not dedup:
                 return self._append_soft_entry(weight_i, clause_i, group_id=group_id_i, raw_weight=raw_weight_i)
             sid_existing = _find_soft_sid_for_clause(clause_i)
@@ -2696,13 +2441,17 @@ class Model:
             # Accumulate onto existing soft clause.
             idx_existing = self._soft_id_to_index[sid_existing]
             old_w, _old_clause = self._soft[idx_existing]
-            old_raw = float(self._soft_raw_weight_by_id.get(int(sid_existing), float(int(old_w))))
-            self._set_soft_weight_internal(
-                sid_existing,
-                int(old_w) + int(weight_i),
-                allow_zero=False,
-                allow_when_sat=True,
+            old_raw = (
+                float(self._soft_raw_weight_by_id.get(int(sid_existing), float(int(old_w))))
+                if old_w > 0 else 0.0
             )
+            if weight_i:
+                self._set_soft_weight_internal(
+                    sid_existing,
+                    int(old_w) + int(weight_i),
+                    allow_zero=False,
+                    allow_when_sat=True,
+                )
             self._soft_raw_weight_by_id[int(sid_existing)] = float(old_raw + float(weight_i if raw_weight_i is None else raw_weight_i))
             # Keep per-group membership for SoftRef handles.
             if group_id_i is not None:
@@ -2745,7 +2494,7 @@ class Model:
             return group_id, _done()
 
         if isinstance(constraint, ClauseGroup):
-            _ensure_same_model(self, constraint)
+            _ensure_model(self, constraint)
             _add_soft_group_targeted(constraint)
             return group_id, _done()
 
@@ -2769,9 +2518,12 @@ class Model:
         self._coerce_soft_weight(new_weight, allow_zero=False)
         self.obj._reweight_soft(target, new_weight)
 
+    def _try_reify_cardinality(self, constraint: PBConstraint, indicator: Literal):
+        return _EncoderDispatch._try_reify_cardinality(self, constraint, indicator)
+
     def _compile_pb_compare(self, lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup:
         with self.profile_scope("compile_pb_compare", metadata={"op": op}):
-            _ensure_same_model(self, lhs, rhs)
+            _ensure_model(self, lhs, rhs)
             lhs_r = lhs._realize_int_terms(self)
             rhs_r = rhs._realize_int_terms(self)
             self._validate_integral_pbexpr(lhs_r)
@@ -2809,7 +2561,7 @@ class Model:
 
     def _defer_pb_constraint(self, constraint: PBConstraint) -> None:
         """Register a PB/Card constraint for later clause materialization."""
-        _ensure_same_model(self, constraint)
+        _ensure_model(self, constraint)
         current = self._encoding_profile.current_event() if self._encoding_profile is not None else None
         self._pending_pb_constraints.append(
             _DeferredPBEntry(
@@ -2932,7 +2684,7 @@ class Model:
     def _prepare_pb_constraint(self, constraint: PBConstraint) -> ClauseGroup | PBConstraint:
         """Compile eager PB fast paths now, but classify PB/Card fallback for deferral."""
         with self.profile_scope("prepare_pb_constraint", metadata={"op": constraint._op}):
-            _ensure_same_model(self, constraint)
+            _ensure_model(self, constraint)
             # Any comparator that still originates from IntVar / lazy-int arithmetic
             # should keep the historical eager behavior. Those constraints may lower
             # through specialized fast paths or through the generic PB encoder, but
@@ -3054,7 +2806,6 @@ class Model:
             hard0 = len(self._hard)
             soft0 = len(self._soft)
             pending, self._pending_pb_constraints = self._pending_pb_constraints, []
-            from hermax.encoder import PBCompiler, PBItem
 
             batch_entries: list[tuple[_DeferredPBEntry, PBItem]] = []
 
@@ -3201,6 +2952,10 @@ class Model:
             if route:
                 self._inc_state.route_deltas(hard0, soft0)
 
+    def _prepare_encoding(self) -> None:
+        self._commit_pb()
+        self._ensure_all_pending_literal_defs_realized()
+
     def to_cnf(self) -> CNF:
         """Export the current hard constraints to a PySAT :class:`~pysat.formula.CNF`.
 
@@ -3209,23 +2964,13 @@ class Model:
         """
         if self._soft:
             raise ValueError("Model contains soft clauses; use to_wcnf() instead.")
-        self._commit_pb()
-        self._ensure_all_pending_literal_defs_realized()
-        self._ensure_deferred_defs_in_group(ClauseGroup(self, self._hard, reserve_aux_ids=False))
-        cnf = CNF()
-        for clause in self._hard:
-            cnf.append(self._clause_to_dimacs_list(clause))
-        return cnf
+        self._prepare_encoding()
+        return _hard_to_cnf(self._hard)
 
     def to_wcnf(self) -> WCNF:
         """Export hard and soft constraints to a PySAT :class:`~pysat.formula.WCNF`."""
-        self._commit_pb()
-        self._ensure_all_pending_literal_defs_realized()
-        self._ensure_deferred_defs_in_group(ClauseGroup(self, self._hard, reserve_aux_ids=False))
-        self._ensure_deferred_defs_in_group(ClauseGroup(self, [c for _, c in self._soft], reserve_aux_ids=False))
-        wcnf = WCNF()
-        for clause in self._hard:
-            wcnf.append(self._clause_to_dimacs_list(clause))
+        self._prepare_encoding()
+        wcnf = _hard_to_wcnf(self._hard)
         for weight, clause in self._soft:
             if int(weight) <= 0:
                 continue
@@ -3243,14 +2988,9 @@ class Model:
 
     def _to_wcnf_for_solver(self) -> tuple[WCNF, int]:
         """Build solver WCNF plus soft-weight scaling factor for one-shot solve."""
-        self._commit_pb()
-        self._ensure_all_pending_literal_defs_realized()
-        self._ensure_deferred_defs_in_group(ClauseGroup(self, self._hard, reserve_aux_ids=False))
-        self._ensure_deferred_defs_in_group(ClauseGroup(self, [c for _, c in self._soft], reserve_aux_ids=False))
+        self._prepare_encoding()
         g = int(self._soft_weight_gcd())
-        wcnf = WCNF()
-        for clause in self._hard:
-            wcnf.append(self._clause_to_dimacs_list(clause))
+        wcnf = _hard_to_wcnf(self._hard)
         merged_soft: dict[tuple[int, ...], int] = {}
         for weight, clause in self._soft:
             if int(weight) <= 0:
@@ -3329,15 +3069,13 @@ class Model:
         last_raw_model: list[int] | None = None
         last_backend = "hermax.unknown"
 
-        for _tier_idx, lit_weights, offset in tiers:
+        for stage, (_tier_idx, lit_weights, offset) in enumerate(tiers):
             # Build temporary one-shot formula from hard + hardening + current tier soft units.
-            self._ensure_deferred_defs_in_group(ClauseGroup(self, self._hard, reserve_aux_ids=False))
+            self._ensure_deferred_defs_in_group(ClauseGroup._from_dimacs_trusted(self, self._hard))
             soft_group = self._tier_entry_to_clausegroup_units(lit_weights)
             self._ensure_deferred_defs_in_group(soft_group)
 
-            formula = WCNF()
-            for c in self._hard:
-                formula.append(self._clause_to_dimacs_list(c))
+            formula = _hard_to_wcnf(self._hard)
             for a in assumptions_dimacs:
                 v = abs(int(a))
                 if v > 0:
@@ -3386,11 +3124,13 @@ class Model:
             tier_costs.append(res.cost)
             tier_models.append(list(res.raw_model or []))
 
+            if stage == len(tiers) - 1:
+                break
+
             # Harden current tier optimum for next tiers: tier_expr <= tier_cost_scaled
-            if self._objective_precision_decimals is None:
-                hard_bound_scaled = int(res.cost)
-            else:
-                hard_bound_scaled = int(round(float(res.cost) * float(self._objective_precision_scale)))
+            hard_bound_scaled = self._tier_obj_proxy._scaled_cost(
+                lit_weights, offset, res.assignment
+            )
             hard_group = self._tier_hardening_group(lit_weights, int(offset), int(hard_bound_scaled))
             self._ensure_deferred_defs_in_group(hard_group)
             hardening.append(hard_group)
@@ -3426,10 +3166,8 @@ class Model:
             )
 
         max_var: list[int] = []
-        offsets: list[int] = []
         for _idx, lit_weights, offset in tiers:
             max_var.append(sum(int(w) for w in lit_weights.values() if int(w) > 0))
-            offsets.append(int(offset))
 
         bases = [1] * len(tiers)
         i64 = self._i64_max()
@@ -3458,13 +3196,11 @@ class Model:
                 if flat_lit_weights[int(dim)] > i64:
                     raise OverflowError("Lexicographic stratification overflow risk detected. Use lex_strategy='incremental'.")
 
-        self._ensure_deferred_defs_in_group(ClauseGroup(self, self._hard, reserve_aux_ids=False))
+        self._ensure_deferred_defs_in_group(ClauseGroup._from_dimacs_trusted(self, self._hard))
         soft_group = self._tier_entry_to_clausegroup_units(flat_lit_weights)
         self._ensure_deferred_defs_in_group(soft_group)
 
-        formula = WCNF()
-        for c in self._hard:
-            formula.append(self._clause_to_dimacs_list(c))
+        formula = _hard_to_wcnf(self._hard)
         for a in assumptions_dimacs:
             v = abs(int(a))
             if v > 0:
@@ -3492,24 +3228,10 @@ class Model:
                 tier_models=None,
             )
 
-        raw_flat_var = 0
-        if self._objective_precision_decimals is None:
-            raw_total = int(res.cost or 0)
-            raw_flat_var = int(raw_total) - int(flat_offset)
-        else:
-            raw_total = int(round(float(res.cost or 0.0) * float(self._objective_precision_scale)))
-            raw_flat_var = int(raw_total) - int(flat_offset)
-        if raw_flat_var < 0:
-            raw_flat_var = 0
-
         tier_costs: list[int | float] = []
-        rem = int(raw_flat_var)
-        for i in range(len(tiers)):
-            b = int(bases[i])
-            var_i = rem // b if b > 0 else 0
-            rem = rem % b if b > 0 else 0
-            scaled_i = int(var_i) + int(offsets[i])
-            tier_costs.append(self._format_objective_cost(int(scaled_i)))
+        for _idx, lit_weights, offset in tiers:
+            scaled = self._tier_obj_proxy._scaled_cost(lit_weights, offset, res.assignment)
+            tier_costs.append(self._format_objective_cost(scaled))
 
         return SolveResult(
             self,
@@ -3547,6 +3269,7 @@ class Model:
             In incremental mode, adding soft clauses can switch a SAT binding
             to MaxSAT when ``sat_upgrade`` allows it.
             ``lex_strategy`` applies only to tiered objectives.
+            Sequential tiered solving requires a solver class or factory.
         """
         limit = validate_time_limit(time_limit)
         if not isinstance(incremental, bool):
@@ -3562,9 +3285,14 @@ class Model:
                     "time_limit with tier_obj is not supported yet because a single "
                     "budget must cover several lexicographic solves."
                 )
-            self._commit_pb()
             if ls is None:
                 ls = "incremental"
+            if ls == "incremental" and isinstance(solver, IPAMIRSolver):
+                raise ValueError(
+                    "Sequential tiered solving requires a solver class or factory, "
+                    "not a solver instance."
+                )
+            self._prepare_encoding()
             if ls == "incremental":
                 return self._solve_lex_incremental(
                     assumptions=assumptions,
@@ -3671,7 +3399,6 @@ class Model:
         objective_constant_override: Optional[int] = None,
     ) -> SolveResult:
         """Solve via a Hermax ``IPAMIRSolver`` backend (including portfolios)."""
-        from hermax.core.ipamir_solver_interface import IPAMIRSolver, is_feasible
 
         if formula_override is None:
             formula, soft_gcd = self._to_wcnf_for_solver()

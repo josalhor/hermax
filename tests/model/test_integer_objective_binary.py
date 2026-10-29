@@ -65,6 +65,47 @@ def test_partial_threshold_expression_keeps_its_meaning():
     assert len(m._soft) == 1
 
 
+@pytest.mark.parametrize("cached,width", [(False, 32), (True, 16)])
+@pytest.mark.parametrize("style", ["add", "set"])
+def test_opposite_polarities_do_not_disguise_an_incomplete_threshold_chain(cached, width, style):
+    m = Model()
+    x = m.int("x", -3, width - 3)
+    if cached:
+        x._get_binary_view()
+    expression = sum(
+        (x >= k) - ~(x >= k) for k in range(x.lb + 1, x.lb + width // 2 + 1)
+    )
+    if style == "add":
+        m.obj += expression
+    else:
+        m.obj = expression
+    formula = m.to_wcnf()
+    with Solver(bootstrap_with=formula.hard) as solver:
+        for value in range(x.lb, x.ub + 1):
+            fixed = [m._lit_to_dimacs(lit) for lit in x._exact_value_atoms(value)]
+            assert solver.solve(assumptions=fixed)
+            assignment = set(solver.get_model())
+            cost = m._objective_constant + sum(
+                w for w, clause in zip(formula.wght, formula.soft)
+                if not any(lit in assignment for lit in clause)
+            )
+            expected = 2 * min(value - x.lb, width // 2) - width // 2
+            assert cost == expected, value
+
+
+def test_complete_chain_with_mixed_polarities_still_uses_binary_objective():
+    m = Model()
+    x = m.int("x", 0, 32)
+    expression = sum(
+        (x >= k) if k % 2 else -1 * ~(x >= k) for k in range(1, 33)
+    )
+    m &= x == 20
+    m.obj = expression
+    assert x._binary_view is not None
+    result = m.solve()
+    assert result.ok and result.cost == result[expression] == 4
+
+
 def test_binary_objective_reuses_view_and_realizes_channel():
     m = Model()
     x = m.int("x", 0, 16)

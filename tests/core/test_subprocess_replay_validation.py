@@ -1,5 +1,3 @@
-import pytest
-
 from hermax.core.ipamir_subprocess_replay_base import OneShotSubprocessReplaySolverBase
 from hermax.core.ipamir_solver_interface import SolveStatus
 from hermax.internal.subprocess_oneshot import OneShotRunResult
@@ -31,10 +29,6 @@ def _worker_result(model):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="OneShotSubprocessReplaySolverBase coerces worker model literals with int() before validation",
-)
 def test_subprocess_replay_rejects_non_integer_worker_model(monkeypatch):
     monkeypatch.setattr(
         "hermax.core.ipamir_subprocess_replay_base.run_oneshot_worker",
@@ -47,10 +41,6 @@ def test_subprocess_replay_rejects_non_integer_worker_model(monkeypatch):
     assert solver.get_status() is SolveStatus.ERROR
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="OneShotSubprocessReplaySolverBase accepts a feasible worker response without a model",
-)
 def test_subprocess_replay_rejects_feasible_worker_response_without_model(monkeypatch):
     monkeypatch.setattr(
         "hermax.core.ipamir_subprocess_replay_base.run_oneshot_worker",

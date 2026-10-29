@@ -247,3 +247,180 @@ def test_decode_rejects_unsupported_target_type():
     dec = m.decode_model([])
     with pytest.raises(TypeError, match="Unsupported decode target"):
         dec[object()]
+
+
+@pytest.mark.parametrize("value", range(-2, 4))
+def test_decode_integer_comparisons_created_after_solve(value):
+    m = Model()
+    x = m.int("x", -2, 3)
+    m &= x >= value
+    m &= x <= value
+    result = _solve_ok(m)
+    hard_before = len(m._hard)
+
+    for candidate in range(-2, 4):
+        assert result[x == candidate] is (value == candidate)
+        assert result[x != candidate] is (value != candidate)
+    assert len(m._hard) == hard_before
+
+
+@pytest.mark.parametrize("bounds", [(4, 4), (4, 5)])
+def test_decode_unmentioned_small_integer_comparisons_after_solve(bounds):
+    m = Model()
+    x = m.int("x", *bounds)
+    result = _solve_ok(m)
+    value = result[x]
+    assert result[x == value] is True
+    assert result[x != value] is False
+    assert result[x >= x.lb] is True
+    assert result[x < x.lb] is False
+
+
+def test_decode_late_equality_uses_the_saved_assignment():
+    m = Model()
+    x = m.int("x", 0, 5)
+    m &= x >= 2
+    m &= x <= 4
+    first = _solve_ok(m)
+    value = first[x]
+    equality = x == value
+    m &= ~equality
+    second = _solve_ok(m)
+
+    assert first[equality] is True
+    assert second[equality] is False
+    assert first[x] == value
+    assert second[x] != value
+
+
+@pytest.mark.parametrize("kind,chosen", [("upper_bound", 9), ("lower_bound", 3)])
+def test_decode_materialized_one_sided_bound_uses_its_actual_value(kind, chosen):
+    m = Model()
+    xs = m.int_vector("x", 2, 0, 10)
+    m &= xs[0] == 7
+    m &= xs[1] == 7
+    bound = getattr(xs, kind)()
+    m &= bound == chosen
+    result = _solve_ok(m)
+    before = m._next_id, len(m._hard)
+
+    assert result[bound] == chosen
+    assert result[bound] == result[bound._realized]
+    assert (m._next_id, len(m._hard)) == before
+
+
+@pytest.mark.parametrize("kind,chosen", [("upper_bound", 9), ("lower_bound", 3)])
+def test_saved_bound_decoding_is_unchanged_by_later_materialization(kind, chosen):
+    m = Model()
+    xs = m.int_vector("x", 2, 0, 10)
+    m &= xs[0] == 7
+    m &= xs[1] == 7
+    bound = getattr(xs, kind)()
+    first = _solve_ok(m)
+    assert first[bound] == 7
+
+    m &= bound == chosen
+    second = _solve_ok(m)
+    assert second[bound] == chosen
+    assert first[bound] == 7
+
+
+@pytest.mark.parametrize("kind", ["range", "membership"])
+@pytest.mark.parametrize("value", range(6))
+def test_late_predicates_decode_without_posting_or_solving(kind, value):
+    m = Model()
+    x = m.int("x", 0, 5)
+    selected = m.int_set("selected", values=[1, 3, 5])
+    m &= selected.contains(3)
+    m &= ~selected.contains(1)
+    m &= ~selected.contains(5)
+    m &= x >= value
+    m &= x <= value
+    first = _solve_ok(m)
+    predicate = x.in_range(2, 4) if kind == "range" else selected.contains(x)
+    expected = 2 <= value <= 4 if kind == "range" else value == 3
+    before = m._next_id, len(m._hard)
+
+    assert first[predicate] is expected
+    assert first[~predicate] is not expected
+    assert (m._next_id, len(m._hard)) == before
+    second = _solve_ok(m)
+    assert second[predicate] is expected
+    assert first[predicate] is expected
+
+
+@pytest.mark.parametrize("kind", ["floor_div", "modulo", "scale", "max", "min", "sum", "card", "union"])
+def test_new_materialized_variables_cannot_silently_decode_from_an_older_result(kind):
+    m = Model()
+    x, y = m.int("x", 0, 10), m.int("y", 0, 10)
+    selected = m.int_set("selected", values=[1, 3])
+    other = m.int_set("other", values=[1, 3])
+    m &= x == 8
+    m &= y == 3
+    m &= selected == {1}
+    m &= other == {3}
+    result = _solve_ok(m)
+    target = {
+        "floor_div": lambda: m.floor_div(x, 3),
+        "modulo": lambda: m.modulo(x, 3),
+        "scale": lambda: m.scale(y, -1),
+        "max": lambda: m.max([x, y]),
+        "min": lambda: m.min([x, y]),
+        "sum": lambda: m.sum_var([x, y]),
+        "card": selected.card,
+        "union": lambda: selected | other,
+    }[kind]()
+    with pytest.raises(ValueError, match="created after"):
+        result[target]
+    assert result[[x // 3, x % 3, y.scale(-1), x + y]] == [2, 2, -3, 11]
+
+
+def test_new_boolean_variable_cannot_decode_from_an_older_result():
+    m = Model()
+    x = m.bool("x")
+    m &= x
+    result = _solve_ok(m)
+    new = m.bool("new")
+    with pytest.raises(ValueError, match="created after"):
+        result[new]
+    assert result[m.as_int(x)] == 1
+    assert result[m.as_int(7)] == 7
+
+
+def test_new_variable_cannot_decode_an_old_backend_auxiliary_with_the_same_id():
+    m = Model()
+    a, b = m.bool("a"), m.bool("b")
+    m &= ~a
+    m &= ~b
+    with pytest.warns(FutureWarning):
+        m.obj.add_soft(a | b, 5)
+    result = m.solve(backend="maxsat")
+    assert result.ok and result.cost == 5
+    m.close_incremental()
+    new = m.bool("new")
+    with pytest.raises(ValueError, match="created after"):
+        result[new]
+
+
+def test_late_equality_cannot_use_an_old_backend_auxiliary_as_a_decode_hint():
+    m = Model()
+    x = m.int("x", 0, 4)
+    a, b = m.bool("a"), m.bool("b")
+    m &= x >= 1
+    m &= x <= 3
+    m &= ~a
+    m &= ~b
+    with pytest.warns(FutureWarning):
+        m.obj.add_soft(a | b, 5)
+    first = m.solve(backend="maxsat")
+    value = first[x]
+    m.close_incremental()
+    equality = x == value
+    assert first[x] == value
+    assert first[equality] is True
+    assert first[~equality] is False
+    m &= ~equality
+    second = m.solve()
+    assert second.ok and second[x] != value
+    assert first[x] == value and first[equality] is True
+    assert second[equality] is False

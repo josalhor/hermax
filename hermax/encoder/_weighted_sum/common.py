@@ -84,6 +84,20 @@ def normalize_terms(
     return layers, shift
 
 
+def exclude_value_gaps(thresholds: Sequence[int], values, cnf: CNFBuilder) -> None:
+    possible = sorted(values)
+    if not possible:
+        cnf.add()
+        return
+    if possible[0] > 0:
+        cnf.add(thresholds[possible[0] - 1])
+    for lower, upper in zip(possible, possible[1:]):
+        if upper > lower + 1:
+            cnf.add(-thresholds[lower], thresholds[upper - 1])
+    if possible[-1] < len(thresholds):
+        cnf.add(-thresholds[possible[-1]])
+
+
 def define_value_literals(thresholds: Sequence[int], cnf: CNFBuilder) -> dict[int, int]:
     """Define exact integer values from the caller's ordered threshold literals."""
     upper = len(thresholds)
