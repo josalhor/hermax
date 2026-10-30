@@ -73,3 +73,14 @@ def test_compressed_boundaries_still_propagate_all_redundant_units_when_enabled(
         expected = {-lit.id for lit in x._threshold_lits} | {lit.id for lit in y._threshold_lits}
         assert expected <= set(propagated)
         assert solver.solve(assumptions=[-flag.id, (x >= 40).id, -(y >= 1).id])
+
+
+@pytest.mark.parametrize("compare", [operator.le, operator.lt, operator.ge, operator.gt, operator.eq])
+def test_order_comparisons_do_not_materialize_threshold_objects(compare):
+    m = Model()
+    x, y = m.int("x", -20, 100), m.int("y", 0, 80)
+    flag = m.bool("flag")
+    m &= compare(x, y).only_if(flag)
+    m.to_cnf()
+    assert not x._threshold_lits._cache
+    assert not y._threshold_lits._cache

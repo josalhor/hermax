@@ -1299,6 +1299,10 @@ class _EncoderDispatch:
 
         clauses: list[Clause] = []
         for a1, b1, c1, _ in obligations:
+            if a1 == -b1:
+                left, right = (x, y) if a1 > 0 else (y, x)
+                clauses.extend(left._order_implications(right, c1 // abs(a1)))
+                continue
             xx, aa, yy, bb = x, a1, y, b1
             if (xx.ub - xx.lb) > (yy.ub - yy.lb):
                 xx, aa, yy, bb = yy, bb, xx, aa

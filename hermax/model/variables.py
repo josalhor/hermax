@@ -1063,17 +1063,24 @@ class IntVar:
             return []
         if self.lb > other.ub + shift:
             return [Clause(self._model, [])]
+
+        def threshold_id(x, value):
+            bits = x._threshold_lits
+            index = value - x.lb - 1
+            return (bits.start + index if isinstance(bits, ThresholdLiterals)
+                    else x._model._lit_to_dimacs(bits[index]))
+
         clauses = []
         # The threshold chains propagate each boundary unit through its region.
         if self.lb > other.lb + shift:
-            clauses.append(Clause(self._model, [other.__ge__(self.lb - shift)]))
+            clauses.append((threshold_id(other, self.lb - shift),))
         lo = max(self.lb, other.lb + shift)
         hi = min(self.ub, other.ub + shift)
         for k in range(lo + 1, hi + 1):
-            clauses.append(Clause(self._model, [~self.__ge__(k), other.__ge__(k - shift)]))
+            clauses.append((-threshold_id(self, k), threshold_id(other, k - shift)))
         if self.ub > other.ub + shift:
-            clauses.append(Clause(self._model, [~self.__ge__(other.ub + shift + 1)]))
-        return clauses
+            clauses.append((-threshold_id(self, other.ub + shift + 1),))
+        return [Clause._from_dimacs_trusted(self._model, clause) for clause in clauses]
 
     def _exact_value_atoms(self, value: int) -> list[Literal]:
         # Compact exact-value pattern over the ladder bits (at most 2 literals,
