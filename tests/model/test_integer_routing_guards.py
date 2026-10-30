@@ -226,3 +226,20 @@ def test_mixed_uniform_gcd_and_negative_boolean_are_exact(scale, op, monkeypatch
             assert solver.solve(
                 assumptions=fixed(xs, [x, y, z]) + [b.id if bv else -b.id]
             ) == OPS[op](scale * (x - y + z - (not bv)) + 2, 3)
+
+
+@pytest.mark.parametrize("lower", [0, -3])
+@pytest.mark.parametrize("context", ["plain", "gated", "iff"])
+def test_two_value_integers_reuse_boolean_count_encoding(lower, context):
+    def stats(integer):
+        m = Model()
+        xs = m.int_vector("x", 32, lower, lower + 1) if integer else m.bool_vector("x", 32)
+        total = m.int("total", 32 * lower, 32 * (lower + 1))
+        flag = m.bool("flag")
+        condition = total == (sum(xs) if integer else sum(xs) + 32 * lower)
+        m &= (condition if context == "plain" else condition.only_if(flag)
+              if context == "gated" else condition.iff(flag))
+        cnf = m.to_cnf()
+        return cnf.nv, len(cnf.clauses)
+
+    assert stats(True) == stats(False)

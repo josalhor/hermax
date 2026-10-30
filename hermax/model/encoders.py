@@ -695,8 +695,8 @@ class _EncoderDispatch:
     def _extract_unit_bool_sum_affine(model: "Model", expr: PBExpr) -> tuple[list[Literal], int] | None:
         """Return ``(lits, offset)`` for ``sum(lits) + offset`` with unit coefficients.
 
-        The expression must contain no lifted IntVar threshold literals and every
-        term must have coefficient exactly ``+1``.
+        Each term must have coefficient ``+1`` and represent a Boolean input;
+        a two-value integer also has exactly one Boolean threshold.
         """
         if expr.int_terms:
             return None
@@ -705,7 +705,8 @@ class _EncoderDispatch:
             if int(t.coefficient) != 1:
                 return None
             lit = t.literal
-            if model._intvar_threshold_owner_by_litid.get(lit.id) is not None:
+            info = model._intvar_threshold_owner_by_litid.get(lit.id)
+            if info is not None and info[0].ub - info[0].lb > 1:
                 return None
             lits.append(lit)
         return lits, int(expr.constant)
