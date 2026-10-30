@@ -154,23 +154,23 @@ class IntSetVar:
                 self._contains_cache[key] = lit
                 return lit
 
-            equalities: list[Literal] = []
-            members: list[Literal] = []
-            for candidate in candidate_vals:
-                equal = value == candidate
-                member = self._member_lits[candidate]
-                equalities.append(equal)
-                members.append(member)
+            owner = value._encoding_owner()
+            reuse = any(candidate - value.lb + owner.lb in owner._eq_lits
+                        for candidate in candidate_vals)
+            if reuse:
+                equalities = [value == candidate for candidate in candidate_vals]
+                guards = ([~equal] for equal in equalities)
+            else:
+                guards = ([~atom for atom in value._exact_value_atoms(candidate)]
+                          for candidate in candidate_vals)
 
             b = self._model._predicate_bool(lambda result: result[value] in result[self])
-            # Let e_v mean x == v and m_v mean v is selected in this set.
-            # Since x takes exactly one value, these clauses encode
-            # b <-> OR_v(e_v AND m_v) without an auxiliary AND literal per v:
-            #   b -> some e_v; b AND e_v -> m_v; e_v AND m_v -> b.
-            clauses = [Clause(self._model, [~b, *equalities])]
-            for equal, member in zip(equalities, members):
-                clauses.append(Clause(self._model, [~b, ~equal, member]))
-                clauses.append(Clause(self._model, [~equal, ~member, b]))
+            clauses = ([Clause(self._model, [~b, *equalities])] if reuse else
+                       list(value._allowed_values(candidate_vals).only_if(b)))
+            for candidate, guard in zip(candidate_vals, guards):
+                member = self._member_lits[candidate]
+                clauses.append(Clause(self._model, [*guard, ~b, member]))
+                clauses.append(Clause(self._model, [*guard, ~member, b]))
             self._model._register_literal_definition(b, ClauseGroup(self._model, clauses))
             self._contains_cache[key] = b
             return b

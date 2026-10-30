@@ -283,10 +283,37 @@ def test_int_set_contains_intvar_uses_no_per_value_conjunction_helpers():
 
     _ = s.contains(x)
 
-    # Interior exact-value atoms for x==1 and x==2 are required by the
-    # encoding, plus one result literal. No extra AND literal is necessary
-    # for every possible set member.
-    assert m._top_id() - top_before == 3
+    # Only the result literal is needed; input values use threshold atoms.
+    assert m._top_id() - top_before == 1
+    assert not x._eq_lits
+
+
+@pytest.mark.parametrize("offset_view", [False, True])
+@pytest.mark.parametrize("cached_values", [[1], [1, 3]])
+def test_int_set_contains_reuses_existing_equalities_and_their_propagation(
+    offset_view, cached_values
+):
+    from pysat.solvers import Solver
+
+    m = Model()
+    if offset_view:
+        interval = m.interval("job", start=-10, duration=10, end=4)
+        owner, x = interval.start, interval.end
+    else:
+        owner = x = m.int("x", 0, 4)
+    s = m.int_set("s", values=[1, 3])
+    existing = {value: owner == value - x.lb + owner.lb for value in cached_values}
+    b = s.contains(x)
+    equalities = [x == value for value in [1, 3]]
+    assert all((x == value) is literal for value, literal in existing.items())
+    m &= b | ~b
+    cnf = m.to_cnf()
+    with Solver(bootstrap_with=cnf.clauses) as solver:
+        consistent, propagated = solver.propagate(
+            assumptions=[m._lit_to_dimacs(~equal) for equal in equalities]
+        )
+        assert consistent
+        assert m._lit_to_dimacs(~b) in propagated
 
 
 def test_int_set_contains_intvar_random_matches_python_membership():
