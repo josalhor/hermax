@@ -5,7 +5,7 @@
   <a href="https://pypi.org/project/hermax/"><img alt="PyPI wheel" src="https://img.shields.io/pypi/wheel/hermax.svg"></a>
   <a href="https://pypi.org/project/hermax/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/hermax.svg"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
-  <a href="https://hermax.readthedocs.io/en/latest/?badge=latest"><img alt="Documentation Status" src="https://readthedocs.org/projects/hermax/badge/?version=latest"></a>
+  <a href="https://hermax.readthedocs.io/en/latest/"><img alt="Documentation Status" src="https://img.shields.io/readthedocs/hermax?version=latest"></a>
   <br>
   <a href="https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.SAT.2026.41"><img alt="Paper: SAT 2026" src="https://img.shields.io/badge/Paper-SAT%202026-007C7A"></a>
   <img alt="Windows supported" src="https://img.shields.io/badge/Windows-supported-0078D6?logo=windows">
