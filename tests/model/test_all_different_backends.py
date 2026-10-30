@@ -314,3 +314,43 @@ def test_mixed_integer_all_different_avoids_pairwise_growth(reified):
     condition = xs.all_different()
     m &= condition.iff(m.bool("flag")) if reified else condition
     assert len(m.to_cnf().clauses) < (120_000 if reified else 50_000)
+
+
+def test_integer_all_different_two_owner_columns_need_no_auxiliaries():
+    m = Model()
+    xs = m.vector([m.int(f"x{i}", (i // 2) * 10, (i // 2) * 10 + 2)
+                   for i in range(32)])
+    baseline = m.to_cnf()
+    top, clauses = baseline.nv, len(baseline.clauses)
+    m &= xs.all_different()
+    cnf = m.to_cnf()
+    assert cnf.nv == top
+    assert len(cnf.clauses) - clauses == 16 * 3
+
+
+@pytest.mark.parametrize("repeated", [False, True])
+@pytest.mark.parametrize("mode", ["plain", "iff", "implies", "only_if"])
+def test_integer_all_different_two_owner_columns_truth_table(repeated, mode):
+    import itertools
+    from pysat.solvers import Solver
+
+    m = Model()
+    a = m.int("a", 0, 2)
+    b = a if repeated else m.int("b", 0, 2)
+    c, d = m.int("c", 4, 6), m.int("d", 4, 6)
+    fixed = [m.int(f"fixed{i}", 20 + i, 20 + i) for i in range(28)]
+    xs = m.vector([a, b, c, d, *fixed])
+    flag = m.bool("flag")
+    condition = xs.all_different()
+    m &= condition if mode == "plain" else getattr(condition, mode)(flag)
+    with Solver(bootstrap_with=m.to_cnf().clauses) as solver:
+        for av, bv, cv, dv in itertools.product(range(3), range(3), range(4, 7), range(4, 7)):
+            if repeated and av != bv:
+                continue
+            truth = av != bv and cv != dv
+            atoms = [m._lit_to_dimacs(atom) for x, value in zip([a, b, c, d], [av, bv, cv, dv])
+                     for atom in x._exact_value_atoms(value)]
+            for enabled in (False, True):
+                expected = (truth if mode == "plain" else truth == enabled if mode == "iff"
+                            else not truth or enabled if mode == "implies" else not enabled or truth)
+                assert solver.solve(assumptions=atoms + [flag.id if enabled else -flag.id]) == expected

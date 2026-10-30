@@ -1922,22 +1922,30 @@ class IntVector(_BaseVector):
             raise ValueError("IntVector.bipartite all_different requires domain size >= vector length.")
         return lb, ub
 
-    def _all_different_columns(self):
+    def _all_different_value_columns(self):
         owners = {}
         for x in self:
             for value in range(x.lb, x.ub + 1):
                 owners.setdefault(value, []).append(x)
         for value, column in owners.items():
             if len(column) > 1:
-                yield [x == value for x in column]
+                yield value, column
+
+    def _all_different_columns(self):
+        for value, column in self._all_different_value_columns():
+            yield [x == value for x in column]
 
     def _all_different_bipartite(self) -> ClauseGroup:
         clauses: list[Clause] = []
         amo_groups: list[list[int]] = []
         if self._model._inc_state.bound:
             self._model._reserve_literal_ids_up_to(int(self._model._inc_state.ip_next_vid))
-        for column in self._all_different_columns():
-            col = [self._model._lit_to_dimacs(lit) for lit in column]
+        for value, column in self._all_different_value_columns():
+            if len(column) == 2:
+                atoms = [atom for x in column for atom in x._exact_value_atoms(value)]
+                clauses.append(Clause(self._model, [~atom for atom in atoms]))
+                continue
+            col = [self._model._lit_to_dimacs(x == value) for x in column]
             cnf = CardEnc.atmost(lits=col, bound=1, top_id=self._model._top_id(), encoding=CardEncType.seqcounter)
             clauses.extend(self._model._cnfplus_to_clausegroup(cnf))
             amo_groups.append(col)
