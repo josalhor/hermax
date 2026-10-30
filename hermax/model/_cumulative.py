@@ -44,30 +44,6 @@ class _CumulativeEncoding:
         self._positive = None
         self._negative = None
 
-    def _and_literal(self, left, right, parts):
-        m = self.model
-        true = m._get_bool_constant_literal(True)
-        false = m._get_bool_constant_literal(False)
-        ld, rd = m._lit_to_dimacs(left), m._lit_to_dimacs(right)
-        if ld == m._lit_to_dimacs(false) or rd == m._lit_to_dimacs(false) or ld == -rd:
-            return false
-        if ld == m._lit_to_dimacs(true):
-            return right
-        if rd == m._lit_to_dimacs(true) or ld == rd:
-            return left
-        result = m.bool()
-        parts.append(
-            ClauseGroup(
-                m,
-                [
-                    Clause(m, [~result, left]),
-                    Clause(m, [~result, right]),
-                    Clause(m, [~left, ~right, result]),
-                ],
-            )
-        )
-        return result
-
     def _order_indicator(self, left, duration, right, parts):
         relation = left._relop_intvar(right, "<=", duration)
         if not relation:
@@ -78,15 +54,13 @@ class _CumulativeEncoding:
         parts.append(relation.only_if(indicator))
         return indicator
 
-    def _load(self, time, parts):
+    def _load(self, time):
         terms = []
         m = self.model
         true = m._get_bool_constant_literal(True)
         false = m._get_bool_constant_literal(False)
         for start, duration, demand in self.jobs:
-            active = self._and_literal(
-                start <= time, start >= time - duration + 1, parts
-            )
+            active = start.in_range(time - duration + 1, time)
             dim = m._lit_to_dimacs(active)
             if dim == m._lit_to_dimacs(false):
                 continue
@@ -130,7 +104,7 @@ class _CumulativeEncoding:
         # A load increase can occur only at an actual job start, which is
         # included in the union of possible start times.
         for time in self._events():
-            parts.append(self._load(time, parts) <= self.capacity)
+            parts.append(self._load(time) <= self.capacity)
         self._positive = parts
         return parts
 
@@ -140,7 +114,7 @@ class _CumulativeEncoding:
         m, parts, witnesses = self.model, [], []
         # Overload is witnessed at a time tick, or at an actual job start.
         for time in self._events():
-            cut = self._load(time, parts) > self.capacity
+            cut = self._load(time) > self.capacity
             if cut is False:
                 continue
             witness = m.bool()

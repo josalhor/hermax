@@ -15,10 +15,7 @@ def test_load_avoids_repeated_expression_merges(monkeypatch):
 
     with monkeypatch.context() as patch:
         patch.setattr(PBExpr, '_merge', forbidden)
-        parts = []
-        load = encoding._load(1, parts)
-    for part in parts:
-        m &= part
+        load = encoding._load(1)
     for time in (0, 1, 2):
         result = m.solve(assumptions=[s == time for s in starts])
         expected = sum(range(1, 13)) if time == 1 else 0
@@ -28,4 +25,4 @@ def test_load_avoids_repeated_expression_merges(monkeypatch):
 def test_empty_load_is_numeric_zero():
     m = Model()
     encoding = _CumulativeEncoding(m, [], 1, 'time')
-    assert encoding._load(0, []) == 0
+    assert encoding._load(0) == 0
