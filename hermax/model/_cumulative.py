@@ -44,16 +44,6 @@ class _CumulativeEncoding:
         self._positive = None
         self._negative = None
 
-    def _order_indicator(self, left, duration, right, parts):
-        relation = left._relop_intvar(right, "<=", duration)
-        if not relation:
-            return self.model._get_bool_constant_literal(True)
-        if any(not clause for clause in relation):
-            return self.model._get_bool_constant_literal(False)
-        indicator = self.model.bool()
-        parts.append(relation.only_if(indicator))
-        return indicator
-
     def _load(self, time):
         terms = []
         m = self.model
@@ -98,9 +88,17 @@ class _CumulativeEncoding:
         for i, (si, di, ri) in enumerate(self.jobs):
             for sj, dj, rj in self.jobs[i + 1 :]:
                 if ri + rj > self.capacity:
-                    left = self._order_indicator(si, di, sj, parts)
-                    right = self._order_indicator(sj, dj, si, parts)
-                    parts.append(Clause(m, [left, right]))
+                    left = si._relop_intvar(sj, "<=", di)
+                    right = sj._relop_intvar(si, "<=", dj)
+                    if left.is_empty() or right.is_empty():
+                        continue
+                    if left.single_clause_or_none() == ():
+                        parts.append(right)
+                    elif right.single_clause_or_none() == ():
+                        parts.append(left)
+                    else:
+                        selector = m.bool()
+                        parts.extend((left.only_if(selector), right.only_if(~selector)))
         # A load increase can occur only at an actual job start, which is
         # included in the union of possible start times.
         for time in self._events():
