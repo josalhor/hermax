@@ -1256,20 +1256,14 @@ class IntVar:
         _ensure_same_model_pair_fast(self, other)
         m = self._model
 
-        if op == "<=":
-            # self + offset <= other  <=>  self <= other - offset
-            clauses = self._order_implications(other, -offset)
-            return IntRelation(m, clauses, self, other, "<=", offset)
-        if op == ">=":
-            # self + offset >= other  <=>  other <= self + offset
-            clauses = other._order_implications(self, offset)
-            return IntRelation(m, clauses, self, other, ">=", offset)
-        if op == "<":
-            # self + offset < other  <=>  self + (offset + 1) <= other
-            return IntRelation(self._model, list(self._relop_intvar(other, "<=", offset + 1)), self, other, "<", offset)
-        if op == ">":
-            # self + offset > other  <=>  self + (offset - 1) >= other
-            return IntRelation(self._model, list(self._relop_intvar(other, ">=", offset - 1)), self, other, ">", offset)
+        if op in ("<=", "<", ">=", ">"):
+            shift = offset + (op == "<") - (op == ">")
+            clauses = (
+                self._order_implications(other, -shift)
+                if op in ("<=", "<")
+                else other._order_implications(self, shift)
+            )
+            return IntRelation(m, clauses, self, other, op, offset)
         if op == "!=":
             if offset != 0:
                 raise ValueError("IntVar '!=' with offset is not supported")
