@@ -1,3 +1,4 @@
+from hermax.internal import _encoding_policy as policy
 import itertools
 import pytest
 from hermax.encoder import _weighted_sum as weighted
@@ -25,12 +26,12 @@ def test_dense_reachability_decodes_across_byte_boundaries():
 def test_growth_limits_are_inclusive(monkeypatch):
     plans = weighted.plan_candidates([1, 2], [2, 3], 5)
     # Prefix states: 1 + 2 + 4; transitions: 2 + 4.
-    monkeypatch.setattr(weighted, 'STATE_LIMIT', 7)
-    monkeypatch.setattr(weighted, 'CLAUSE_LIMIT', 53)
+    monkeypatch.setattr(policy, 'STATE_LIMIT', 7)
+    monkeypatch.setattr(policy, 'CLAUSE_LIMIT', 53)
     accepted, values = weighted.bounded_candidates(plans)
     assert accepted == plans and values == (0, 2, 3, 5)
-    monkeypatch.setattr(weighted, 'STATE_LIMIT', 6)
+    monkeypatch.setattr(policy, 'STATE_LIMIT', 6)
     assert weighted.bounded_candidates(plans) == ((), ())
-    monkeypatch.setattr(weighted, 'STATE_LIMIT', 7)
-    monkeypatch.setattr(weighted, 'CLAUSE_LIMIT', 52)
+    monkeypatch.setattr(policy, 'STATE_LIMIT', 7)
+    monkeypatch.setattr(policy, 'CLAUSE_LIMIT', 52)
     assert weighted.bounded_candidates(plans) == ((), ())

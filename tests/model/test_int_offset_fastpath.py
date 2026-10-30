@@ -133,7 +133,7 @@ def test_non_offset_general_pb_still_uses_pb_encoder(monkeypatch):
     def wrapped_encode(*args, **kwargs):
         seen["pb"] += 1
         assert kwargs["state_limit"] == 20_000
-        assert kwargs["clause_limit"] == 50_000
+        assert kwargs["clause_limit"] == 40_000
         return real_encode(*args, **kwargs)
 
     monkeypatch.setattr(integer_native, "_encode_pb_packed", wrapped_encode)

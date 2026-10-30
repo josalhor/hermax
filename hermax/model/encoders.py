@@ -7,8 +7,9 @@ from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
 from hermax.encoder._packed import PBAMOEnc
 from hermax.encoder import _weighted_sum
-from ._integer_sum import compile_sum, addition_encoding
-from ._counting import count_thresholds, merge_thresholds, _append_implication
+from ._integer_sum import compile_sum, compile_binary_sum, addition_encoding
+from hermax.internal import _encoding_policy as policy
+from ._counting import count_thresholds, count_clause_upper, merge_thresholds, _append_implication
 from ._weighted_integer_sum import compile_weighted_sum
 from ._integer_affine import extract_integer_sum
 from hermax.internal.pb_normalize import normalize_signed_terms
@@ -1203,6 +1204,10 @@ class _EncoderDispatch:
             lo = max(x.lb, min(x.ub + 1, shift))
             hi = min(x.ub + 1, max(x.lb, shift + n + 1))
             thresholds = range(max(1, lo - shift), min(n, hi - shift) + 1)
+            cost = count_clause_upper(n, thresholds) + 2 * len(thresholds) + 2
+            if policy.exceeds_limits(clauses=cost):
+                items = [(x, 1)] + [(model.as_int(lit), -1) for lit in bool_lits]
+                return compile_binary_sum(model, items, shift - x.lb, eff_op)
             clauses, ge = _EncoderDispatch._build_sequential_ge_counter(
                 model, bool_lits, thresholds=thresholds
             )

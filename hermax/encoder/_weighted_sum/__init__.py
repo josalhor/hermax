@@ -5,6 +5,8 @@ private CNF buffers; only the smaller result is committed to the Model.
 """
 from collections.abc import Iterable, Mapping, Sequence
 
+from hermax.internal import _encoding_policy as policy
+
 from .common import CNFBuilder, exclude_value_gaps
 from .graph import GraphPlan, plan_graph, encode_graph
 from .grouped import GroupedPlan, plan_grouped, encode_grouped
@@ -14,9 +16,6 @@ from .networks import comparator_count
 Plan = GraphPlan | GroupedPlan | SortingPlan
 
 __all__ = ['plan_candidates', 'encode_best']
-
-STATE_LIMIT = 20_000
-CLAUSE_LIMIT = 50_000
 
 
 def plan_candidates(
@@ -88,7 +87,7 @@ def bounded_candidates(plans: Iterable[Plan]):
             if isinstance(plan, GroupedPlan):
                 clauses += sum(6 * comparator_count(len(group)) + 4 * (len(group) - 1)
                                for group, _ in plan.buckets)
-        if states > STATE_LIMIT or clauses > CLAUSE_LIMIT:
+        if policy.exceeds_limits(clauses=clauses, states=states):
             continue
         accepted.append(plan)
         if not possible:

@@ -1923,6 +1923,26 @@ class IntVector(_BaseVector):
             amo_groups.append(col)
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
+    def _not_all_different_bipartite(self) -> ClauseGroup:
+        from .encoders import _EncoderDispatch
+
+        if len(self) < 32:
+            return self._not_all_different()
+        lb, ub = self._all_different_bipartite_domain()
+        clauses, collisions = [], []
+        for value in range(lb, ub + 1):
+            definitions, outputs = _EncoderDispatch._build_sequential_ge_counter(
+                self._model, [x == value for x in self], thresholds=[2]
+            )
+            clauses.extend(definitions)
+            collision = outputs[2]
+            if collision is True:
+                return ClauseGroup(self._model, [])
+            if collision is not False:
+                collisions.append(collision)
+        clauses.append(Clause(self._model, collisions))
+        return ClauseGroup(self._model, clauses)
+
     def all_different(self, backend: str = "auto") -> ClauseGroup:
         """Return an all-different constraint supporting ``.iff()`` and ``.implies()``.
 
@@ -1944,7 +1964,8 @@ class IntVector(_BaseVector):
             builder = self._all_different_bipartite
         else:
             raise ValueError("Unknown all_different backend.")
-        return _ReifiableClauseGroup(self._model, builder, self._not_all_different)
+        opposite = self._not_all_different_bipartite if backend == "bipartite" else self._not_all_different
+        return _ReifiableClauseGroup(self._model, builder, opposite)
 
     def increasing(self) -> ClauseGroup:
         """Return nondecreasing chain constraints ``x[i] <= x[i+1]``."""

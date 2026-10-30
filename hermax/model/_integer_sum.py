@@ -5,7 +5,9 @@ from typing import TYPE_CHECKING
 from hermax.encoder._integer_sum import BINARY, LEAF, assess, encode_order, selection
 from hermax.encoder._integer_sum.encoding import binary_pb, channel_cost
 from hermax.encoder.pb_enc import EncType as PBEncType
+from hermax.internal import _encoding_policy as policy
 from ._integer_views import binary_view_ready
+from hermax.utils import _unary_merge_comparator_count
 from .expressions import ClauseGroup
 
 if TYPE_CHECKING:
@@ -13,14 +15,8 @@ if TYPE_CHECKING:
     from .variables import IntVar
 
 
-UNARY_CLAUSE_LIMIT = 50_000
-
-
 def _merge_clause_upper(left: int, right: int, *, equality: bool) -> int:
-    comparisons = 0
-    if left and right:
-        padded = 1 << (max(left, right) - 1).bit_length()
-        comparisons = padded * (padded.bit_length() - 1) + 1
+    comparisons = _unary_merge_comparator_count(left, right)
     links = 2 * (left + right + 2) if equality else left + right + 1
     return 6 * comparisons + links
 
@@ -33,7 +29,7 @@ def sum_tree_exceeds_limit(widths) -> bool:
         left, right = heappop(heap), heappop(heap)
         if left:
             clauses += _merge_clause_upper(left, right, equality=True) + left + right - 1
-            if clauses > UNARY_CLAUSE_LIMIT:
+            if policy.exceeds_limits(clauses=clauses):
                 return True
         heappush(heap, left + right)
     return False
@@ -57,9 +53,9 @@ def addition_encoding(left: int, right: int, result: int, delta: int, *, equalit
     last = min(left + right, max(0, delta + result + 1))
     merge = _merge_clause_upper(min(left, last), min(right, last), equality=equality)
     if equality:
-        return 'general' if merge > UNARY_CLAUSE_LIMIT else 'merge'
+        return 'general' if policy.exceeds_limits(clauses=merge) else 'merge'
     direct = direct_addition_clause_count(left, right, result, delta + result)
-    if min(direct, merge) > UNARY_CLAUSE_LIMIT:
+    if policy.exceeds_limits(clauses=min(direct, merge)):
         return 'general'
     return 'direct' if direct <= merge else 'merge'
 
@@ -161,7 +157,7 @@ def compile_sum(
     plans = [_plan_order_sum(widths, coefficients, bound, op, cached) for op in comparisons]
     if (
         all(plan.kind == BINARY for plan in plans)
-        or sum(plan.clauses for plan in plans) > UNARY_CLAUSE_LIMIT
+        or policy.exceeds_limits(clauses=sum(plan.clauses for plan in plans))
     ):
         return compile_binary_sum(model, items, bound, comparator)
     groups = [_encode_order_plan(model, items, bound, op, plan)

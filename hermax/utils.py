@@ -99,6 +99,13 @@ def batcher_odd_even_sorting_network_layers(n: int) -> SortingNetworkLayers:
     return SortingNetworkLayers(n, _greedy_layers(net))
 
 
+def _unary_merge_comparator_count(left: int, right: int) -> int:
+    if not left or not right:
+        return 0
+    width = _next_power_of_two(max(left, right))
+    return width * (width.bit_length() - 1) + 1
+
+
 def batcher_odd_even_unary_add_network(n_left: int, n_right: int) -> SortingNetwork:
     """Return a compare-swap network for unary addition via sorting/merging.
 

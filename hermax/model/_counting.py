@@ -1,6 +1,6 @@
 """Requested thresholds of Boolean counts and order-encoded sums."""
 
-from hermax.utils import batcher_odd_even_unary_add_network
+from hermax.utils import batcher_odd_even_unary_add_network, _unary_merge_comparator_count
 from .expressions import Clause
 
 
@@ -13,6 +13,23 @@ def _append_implication(clauses, model, antecedent, consequent):
     if consequent is not False:
         literals.append(consequent)
     clauses.append(Clause(model, literals))
+
+
+def count_clause_upper(count, thresholds):
+    if not thresholds:
+        return 0
+    forward, backward = max(thresholds), count - min(thresholds) + 1
+    limit = min(forward, backward)
+    clauses = max(0, len(thresholds) - 1) if backward < forward else 0
+    if limit == 1:
+        return clauses + 3 * (count - 1)
+    rows, width = count, 1
+    while rows > 1:
+        size = min(width, limit)
+        clauses += (rows // 2) * 6 * _unary_merge_comparator_count(size, size)
+        rows = (rows + 1) // 2
+        width *= 2
+    return clauses
 
 
 def count_thresholds(model, literals, thresholds, and_gate, or_gate):

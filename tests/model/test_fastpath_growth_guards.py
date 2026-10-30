@@ -1,3 +1,4 @@
+from hermax.internal import _encoding_policy as policy
 import itertools
 from unittest.mock import patch
 
@@ -45,8 +46,8 @@ def test_sparse_large_weights_keep_the_cheap_specialized_construction():
 
 @pytest.mark.parametrize("warm", [False, True])
 def test_weighted_growth_fallback_preserves_gating_and_reification(warm, monkeypatch):
-    monkeypatch.setattr(_weighted_sum, "STATE_LIMIT", 1)
-    monkeypatch.setattr(_weighted_sum, "CLAUSE_LIMIT", 1)
+    monkeypatch.setattr(policy, "STATE_LIMIT", 1)
+    monkeypatch.setattr(policy, "CLAUSE_LIMIT", 1)
     model = Model()
     bits = model.bool_vector("b", 3)
     total = model.int("total", 0, 10)

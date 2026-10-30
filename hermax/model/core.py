@@ -2026,7 +2026,7 @@ class Model:
 
         countable = all(item.ub - item.lb == 1 for item in items_list)
         if countable:
-            expression = sum(items_list)
+            expression = sum_expr(items_list)
             count = _EncoderDispatch._extract_unit_bool_sum_affine(self, expression)
             countable = count is not None and len(count[0]) == len(items_list)
         compact = not countable and sum_tree_exceeds_limit(

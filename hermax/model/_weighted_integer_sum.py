@@ -38,6 +38,7 @@ def compile_weighted_sum(
         [model._lit_to_dimacs(lit) for lit in owner._threshold_lits]
         for owner, _ in items
     ]
+    reason = None
     if model._known_amo_groups or model._known_eo_groups:
         literals = {
             lit if c > 0 else -lit
@@ -48,27 +49,24 @@ def compile_weighted_sum(
             model._known_amo_groups.values(), model._known_eo_groups.values()
         )
         if any(len(literals.intersection(group)) > 1 for group in groups):
-            normalized = [(x, c) for (x, _), c in zip(items, coefficients)]
-            result = compile_binary_sum(model, normalized, bound, comparator)
+            reason = "amo"
+
+    if reason is None:
+        if model._inc_state.bound:
+            model._reserve_literal_ids_up_to(int(model._inc_state.ip_next_vid))
+        try:
+            cnf = weighted.encode_thresholds(
+                chains, coefficients, bound, comparator, model._top_id(), _packed=True
+            )
+        except weighted.BudgetExceeded as error:
+            reason = f"budget={error}"
+        else:
             model._debug(
                 model.DEBUG_COMPILE,
-                f"encode path=weighted_integer_binary_amo op={comparator} clauses={len(result)}",
+                f"encode path=weighted_integer_thresholds op={comparator} clauses={len(cnf.clauses)}",
             )
-            return result
+            return model._cnfplus_to_clausegroup(cnf)
 
-    if model._inc_state.bound:
-        model._reserve_literal_ids_up_to(int(model._inc_state.ip_next_vid))
-    try:
-        cnf = weighted.encode_thresholds(
-            chains, coefficients, bound, comparator, model._top_id(), _packed=True
-        )
-        path = "thresholds"
-    except weighted.BudgetExceeded as error:
-        model._debug(model.DEBUG_COMPILE, f"encode path=weighted_integer_binary budget={error}")
-        normalized = [(x, c) for (x, _), c in zip(items, coefficients)]
-        return compile_binary_sum(model, normalized, bound, comparator)
-    model._debug(
-        model.DEBUG_COMPILE,
-        f"encode path=weighted_integer_{path} op={comparator} clauses={len(cnf.clauses)}",
-    )
-    return model._cnfplus_to_clausegroup(cnf)
+    model._debug(model.DEBUG_COMPILE, f"encode path=weighted_integer_binary reason={reason}")
+    normalized = [(x, c) for (x, _), c in zip(items, coefficients)]
+    return compile_binary_sum(model, normalized, bound, comparator)

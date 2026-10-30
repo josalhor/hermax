@@ -1,3 +1,4 @@
+from hermax.internal import _encoding_policy as policy
 """Weighted integer sums retain the original encoder until its budget is hit."""
 import itertools
 import operator
@@ -74,7 +75,7 @@ def test_aborted_attempt_is_atomic_and_fallback_is_sound(reason, op):
     def bounded(**kwargs):
         if kwargs.get("state_limit") or kwargs.get("clause_limit"):
             seen.append(kwargs)
-            assert kwargs["state_limit"] == 20_000 and kwargs["clause_limit"] == 50_000
+            assert kwargs["state_limit"] == 20_000 and kwargs["clause_limit"] == 40_000
             raise integer_native.EncodingBudgetExceeded(reason)
         return original(**kwargs)
 
@@ -103,9 +104,9 @@ def test_aborted_attempt_is_atomic_and_fallback_is_sound(reason, op):
 def budget_route(request, monkeypatch):
     from hermax.encoder._integer_sum import weighted
 
-    monkeypatch.setattr(weighted, "STATE_LIMIT", 1 if request.param == "states" else 0)
+    monkeypatch.setattr(policy, "STATE_LIMIT", 1 if request.param == "states" else 0)
     monkeypatch.setattr(
-        weighted, "CLAUSE_LIMIT", 1 if request.param == "clauses" else 0
+        policy, "CLAUSE_LIMIT", 1 if request.param == "clauses" else 0
     )
     return request.param
 
@@ -164,7 +165,7 @@ def test_binary_view_is_shared_with_unit_sum_path_and_defined_once(monkeypatch):
     from collections import Counter
     from hermax.encoder._integer_sum import weighted, selection, BINARY
 
-    monkeypatch.setattr(weighted, "STATE_LIMIT", 1)
+    monkeypatch.setattr(policy, "STATE_LIMIT", 1)
     model = Model()
     xs = [model.int(f"x{i}", 0, 5) for i in range(4)]
     model &= 2 * xs[0] + 3 * xs[1] + 5 * xs[2] + 7 * xs[3] <= 30
@@ -190,7 +191,7 @@ def test_budget_fallback_can_be_added_after_incremental_solver_binding(monkeypat
     model &= 2 * xs[0] + 3 * xs[1] + 5 * xs[2] >= 10
     assert model.solve(incremental=True, backend="sat").ok
     assert all(x._binary_view is None for x in xs)
-    monkeypatch.setattr(weighted, "STATE_LIMIT", 1)
+    monkeypatch.setattr(policy, "STATE_LIMIT", 1)
     model &= 2 * xs[0] + 3 * xs[1] + 5 * xs[2] <= 9
     assert model.solve(incremental=True, backend="sat").status == "unsat"
     assert all(x._binary_view is not None for x in xs)
@@ -261,7 +262,7 @@ def test_private_fallback_ids_clear_incremental_backend_reserved_range(monkeypat
     model.obj += model.bool("soft")
     assert model.solve(incremental=True, backend="maxsat", solver=FakeIPSolver()).ok
     model._inc_state.ip_next_vid = 500
-    monkeypatch.setattr(weighted, "STATE_LIMIT", 1)
+    monkeypatch.setattr(policy, "STATE_LIMIT", 1)
     model &= 2 * xs[0] + 3 * xs[1] + 5 * xs[2] <= 12
     model.to_wcnf()
     assert (

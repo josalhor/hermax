@@ -1,3 +1,4 @@
+from hermax.internal import _encoding_policy as policy
 import itertools
 import operator
 
@@ -32,8 +33,8 @@ def fixed(xs, values):
 def test_threshold_residual_budget_fallback_is_exact(
     limit, op, same_owner, monkeypatch
 ):
-    monkeypatch.setattr(weighted, "STATE_LIMIT", 1 if limit == "states" else 0)
-    monkeypatch.setattr(weighted, "CLAUSE_LIMIT", 1 if limit == "clauses" else 0)
+    monkeypatch.setattr(policy, "STATE_LIMIT", 1 if limit == "states" else 0)
+    monkeypatch.setattr(policy, "CLAUSE_LIMIT", 1 if limit == "clauses" else 0)
     m = Model()
     xs = [m.int("x", -1, 2), m.int("y", 0, 3), m.int("z", 1, 4)]
     extra = xs[0] if same_owner else m.int("extra", -1, 2)
@@ -61,7 +62,7 @@ def test_threshold_residual_budget_fallback_is_exact(
 
 @pytest.mark.parametrize("kind", ["added", "cancelled"])
 def test_unit_coefficient_aliases_use_bounded_weighted_adapter(kind, monkeypatch):
-    monkeypatch.setattr(weighted, "STATE_LIMIT", 1)
+    monkeypatch.setattr(policy, "STATE_LIMIT", 1)
     m = Model()
     xs = [m.int(f"x{i}", 0, 3) for i in range(3)]
     expression = sum(xs) + (1 if kind == "added" else -1) * (xs[0] >= 2)

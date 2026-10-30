@@ -1,3 +1,4 @@
+from hermax.internal import _encoding_policy as policy
 import itertools
 import operator
 
@@ -24,8 +25,8 @@ from hermax.encoder._integer_sum import weighted
 def test_aliases_and_complements_preserve_weighted_truth_table(
     chains, coefficients, comparator, compare, monkeypatch
 ):
-    monkeypatch.setattr(weighted, "STATE_LIMIT", 0)
-    monkeypatch.setattr(weighted, "CLAUSE_LIMIT", 0)
+    monkeypatch.setattr(policy, "STATE_LIMIT", 0)
+    monkeypatch.setattr(policy, "CLAUSE_LIMIT", 0)
     for bound in (-3, 0, 2, 5):
         cnf = weighted.encode_thresholds(chains, coefficients, bound, comparator, 3)
         with Solver(bootstrap_with=cnf.clauses) as solver:

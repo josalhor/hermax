@@ -1,3 +1,4 @@
+from hermax.internal import _encoding_policy as policy
 import itertools
 import operator
 
@@ -29,7 +30,7 @@ def fixed(xs, values):
 @pytest.mark.parametrize("op", OPS)
 @pytest.mark.parametrize("negated_bool", [False, True])
 def test_mixed_weighted_budget_fallback_is_exact(op, negated_bool, monkeypatch):
-    monkeypatch.setattr(weighted, "STATE_LIMIT", 1)
+    monkeypatch.setattr(policy, "STATE_LIMIT", 1)
     m = Model()
     xs = [m.int("x", -2, 0), m.int("y", 1, 3), m.int("z", 0, 2)]
     b = m.bool("b")
@@ -94,7 +95,7 @@ def test_large_adder_budget_uses_general_selector_with_correct_offsets(op, monke
         selected.append(True)
         return original(*args, **kwargs)
     monkeypatch.setattr(_integer_sum.selection, "choose", record)
-    monkeypatch.setattr(_integer_sum, "UNARY_CLAUSE_LIMIT", 1)
+    monkeypatch.setattr(policy, "CLAUSE_LIMIT", 1)
     m = Model()
     xs = [m.int("x", -2, 0), m.int("y", 1, 3), m.int("z", -1, 3)]
     g = m.bool("g")
@@ -163,7 +164,7 @@ def test_uniform_sum_with_raw_boolean_reaches_selector(op, monkeypatch):
 
 
 def test_complemented_complete_threshold_chain_uses_binary_safely(monkeypatch):
-    monkeypatch.setattr(weighted, "STATE_LIMIT", 1)
+    monkeypatch.setattr(policy, "STATE_LIMIT", 1)
     m = Model()
     xs = [m.int("x", -2, 1), m.int("y", 1, 4), m.int("z", 0, 3)]
     b = m.bool("b")
@@ -186,9 +187,9 @@ def test_unary_guard_matches_network_upper_count_and_is_inclusive(monkeypatch):
     for left, right in [(1, 1), (2, 7), (31, 32), (128, 128)]:
         comparisons = len(batcher_odd_even_unary_add_network(left, right))
         cost = 6 * comparisons + 2 * (left + right + 2)
-        monkeypatch.setattr(_integer_sum, "UNARY_CLAUSE_LIMIT", cost)
+        monkeypatch.setattr(policy, "CLAUSE_LIMIT", cost)
         assert _integer_sum.addition_encoding(left, right, left + right, 0, equality=True) == "merge"
-        monkeypatch.setattr(_integer_sum, "UNARY_CLAUSE_LIMIT", cost - 1)
+        monkeypatch.setattr(policy, "CLAUSE_LIMIT", cost - 1)
         assert _integer_sum.addition_encoding(left, right, left + right, 0, equality=True) == "general"
 
 

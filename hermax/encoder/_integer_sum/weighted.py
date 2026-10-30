@@ -4,11 +4,10 @@ from collections.abc import Sequence
 from pysat.formula import CNFPlus
 
 from hermax.internal import _integer_sum_native as native
+from hermax.internal import _encoding_policy as policy
 from hermax.internal._clause_storage import ClauseStorage
 from hermax.encoder._packed import _EncodedCNF
 
-STATE_LIMIT = 20_000
-CLAUSE_LIMIT = 50_000
 BudgetExceeded = native.EncodingBudgetExceeded
 
 
@@ -47,8 +46,8 @@ def encode_thresholds(
         top_id=top_id,
         pb_encoder=native.PB_BEST,
         conditionals=[],
-        state_limit=STATE_LIMIT,
-        clause_limit=CLAUSE_LIMIT,
+        state_limit=policy.STATE_LIMIT,
+        clause_limit=policy.CLAUSE_LIMIT,
     )
     result = _EncodedCNF() if _packed else CNFPlus()
     result.clauses = ClauseStorage._wrap(clauses) if _packed else clauses
