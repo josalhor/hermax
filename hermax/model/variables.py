@@ -196,24 +196,14 @@ class IntSetVar:
         if n == 0:
             return out
 
-        from hermax.utils import batcher_odd_even_sorting_network
         from .encoders import _EncoderDispatch
 
-        bools = [self._lit_for_value(v) for v in self.universe]
-        net = batcher_odd_even_sorting_network(n)
-        wires: list[bool | Literal] = list(bools)
-        clauses: list[Clause] = []
-
-        for i, j in net:
-            a = wires[i]
-            b = wires[j]
-            lo = _EncoderDispatch._lit_and(clauses, self._model, a, b)
-            hi = _EncoderDispatch._lit_or(clauses, self._model, a, b)
-            wires[i] = lo
-            wires[j] = hi
+        clauses, wires = _EncoderDispatch._build_sequential_ge_counter(
+            self._model, list(self._member_lits.values())
+        )
 
         for k, t_k in enumerate(out._threshold_lits):
-            w = wires[n - 1 - k]
+            w = wires[k + 1]
             _EncoderDispatch._lit_implies(clauses, self._model, w, t_k)
             _EncoderDispatch._lit_implies(clauses, self._model, t_k, w)
 
