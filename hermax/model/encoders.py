@@ -1019,6 +1019,9 @@ class _EncoderDispatch:
                 for _, cut in _EncoderDispatch._int_boolsum_cuts(x, a, bound, cmp_op, len(bool_lits)):
                     if not direct(len(bool_lits), cut):
                         thresholds.add(cut + 1 if cmp_op == "<=" else cut)
+            cost = count_clause_upper(len(bool_lits), thresholds)
+            if policy.exceeds_limits(clauses=cost):
+                return None
             clauses, ge_cache = _EncoderDispatch._build_sequential_ge_counter(
                 model, bool_lits, thresholds=thresholds
             )

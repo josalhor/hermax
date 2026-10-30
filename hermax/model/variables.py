@@ -196,25 +196,10 @@ class IntSetVar:
         if n == 0:
             return out
 
-        from .encoders import _EncoderDispatch
-
-        clauses, wires = _EncoderDispatch._build_sequential_ge_counter(
-            self._model, list(self._member_lits.values())
+        definition = self._model._compile_pb_compare(
+            PBExpr.from_item(out), "==", self.cardinality()
         )
-
-        for k, t_k in enumerate(out._threshold_lits):
-            w = wires[k + 1]
-            _EncoderDispatch._lit_implies(clauses, self._model, w, t_k)
-            _EncoderDispatch._lit_implies(clauses, self._model, t_k, w)
-
-        if clauses and out._threshold_lits:
-            # Register lazily: trigger on the first threshold literal of `out`.
-            # When any clause referencing out._threshold_lits is committed to
-            # the model, _ensure_deferred_defs_in_group will realize this group.
-            self._model._register_literal_definition(
-                out._threshold_lits[0],
-                ClauseGroup(self._model, clauses),
-            )
+        self._model._register_literal_definition(out._threshold_lits[0], definition)
 
         return out
 

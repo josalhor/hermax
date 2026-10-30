@@ -233,3 +233,64 @@ def test_compact_boolean_count_preserves_shifted_comparisons(monkeypatch, contex
             assumptions.extend(m._lit_to_dimacs(atom) for atom in total._exact_value_atoms(value))
             assumptions.append(m._lit_to_dimacs(gate if enabled else ~gate))
             assert solver.solve(assumptions=assumptions) == expected
+
+
+def test_large_set_cardinality_uses_guarded_compiler():
+    m = Model()
+    s = m.int_set("s", lb=0, ub=2047)
+    before = len(m._hard)
+    total = s.card()
+    assert len(m._hard) - before == 2047
+    m &= total >= 1024
+    cnf = m.to_cnf()
+    assert cnf.nv < 10_000
+    assert len(cnf.clauses) < 60_000
+
+
+def test_compact_set_cardinality_is_lazy_and_exact(monkeypatch):
+    monkeypatch.setattr(policy, "CLAUSE_LIMIT", 1)
+    m = Model()
+    s = m.int_set("s", values=[1, 2, 3, 4])
+    total = s.card()
+    assert len(m._hard) == 3
+    assert total._binary_view is not None
+    # A higher threshold must realize the entire deferred definition.
+    m &= total >= 2
+    with Solver(bootstrap_with=m.to_cnf().clauses) as solver:
+        for bits in itertools.product([False, True], repeat=4):
+            members = [s.contains(i + 1) if bit else ~s.contains(i + 1)
+                       for i, bit in enumerate(bits)]
+            for value in range(5):
+                atoms = members + list(total._exact_value_atoms(value))
+                assert solver.solve(assumptions=[m._lit_to_dimacs(a) for a in atoms]) == (
+                    value == sum(bits) and value >= 2
+                )
+
+
+@pytest.mark.parametrize("op", [operator.le, operator.lt, operator.ge, operator.gt])
+@pytest.mark.parametrize("coefficient", [-2, 2])
+def test_oversized_mixed_count_falls_through_and_is_exact(monkeypatch, op, coefficient):
+    from hermax.model.encoders import _EncoderDispatch
+
+    monkeypatch.setattr(policy, "CLAUSE_LIMIT", 1)
+    original = _EncoderDispatch._build_sequential_ge_counter
+
+    def reject_large_counter(model, lits, **kwargs):
+        assert len(lits) != 4, "mixed count bypassed the shared size guard"
+        return original(model, lits, **kwargs)
+
+    monkeypatch.setattr(_EncoderDispatch, "_build_sequential_ge_counter", reject_large_counter)
+    m = Model()
+    bits = m.bool_vector("b", 4)
+    x = m.int("x", -1, 3)
+    flag = m.bool("flag")
+    m &= op(x + sum(bits), 2 + coefficient * flag)
+    with Solver(bootstrap_with=m.to_cnf().clauses) as solver:
+        for values in itertools.product([False, True], repeat=5):
+            bs, enabled = values[:4], values[4]
+            for value in range(-1, 4):
+                atoms = [b if bit else ~b for b, bit in zip(bits, bs)]
+                atoms += [flag if enabled else ~flag, *x._exact_value_atoms(value)]
+                assert solver.solve(assumptions=[m._lit_to_dimacs(a) for a in atoms]) == op(
+                    value + sum(bs), 2 + coefficient * enabled
+                )
