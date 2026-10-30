@@ -217,3 +217,41 @@ def test_intvector_bipartite_rejects_duplicate_fixed_assignments_across_random_c
             m &= (x == value)
 
         _solve_unsat(m)
+
+
+@pytest.mark.parametrize("reified", [False, True])
+def test_large_nullable_enum_all_different_avoids_pairwise_growth(reified):
+    m = Model()
+    xs = m.enum_vector("x", 64, choices=[str(i) for i in range(64)], nullable=True)
+    condition = xs.all_different()
+    m &= condition.iff(m.bool("flag")) if reified else condition
+    assert len(m.to_cnf().clauses) < (80_000 if reified else 40_000)
+
+
+@pytest.mark.parametrize("mode", ["plain", "iff", "implies", "only_if"])
+@pytest.mark.parametrize("nullable", [False, True])
+def test_large_enum_all_different_collision_semantics(mode, nullable):
+    import itertools
+    from pysat.solvers import Solver
+    from hermax.model import EnumVector
+
+    m = Model()
+    labels = ["a", "b", "c"] + [f"fixed{i}" for i in range(29)]
+    items = [m.enum(f"x{i}", labels, nullable=nullable and i < 3) for i in range(32)]
+    xs = EnumVector(m, "xs", items)
+    for i, item in enumerate(items[3:]):
+        m &= item == f"fixed{i}"
+    flag = m.bool("flag")
+    condition = xs.all_different()
+    m &= condition if mode == "plain" else getattr(condition, mode)(flag)
+    domain = ["a", "b", "c"] + ([None] if nullable else [])
+    with Solver(bootstrap_with=m.to_cnf().clauses) as solver:
+        for values in itertools.product(domain, repeat=3):
+            truth = len(set(values)) == 3
+            for enabled in (False, True):
+                atoms = [item._none_indicator() if value is None else item == value
+                         for item, value in zip(items, values)]
+                atoms.append(flag if enabled else ~flag)
+                expected = (truth if mode == "plain" else enabled == truth if mode == "iff"
+                            else not truth or enabled if mode == "implies" else not enabled or truth)
+                assert solver.solve(assumptions=[m._lit_to_dimacs(atom) for atom in atoms]) == expected

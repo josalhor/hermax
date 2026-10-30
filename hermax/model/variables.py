@@ -1549,6 +1549,27 @@ class _BaseVector:
         clauses.append(tuple(self._model._lit_to_dimacs(w) for w in witnesses))
         return ClauseGroup._from_dimacs_trusted(self._model, clauses)
 
+    def _not_all_different_columns(self, columns) -> ClauseGroup:
+        from .encoders import _EncoderDispatch
+
+        if len(self) < 32:
+            return self._not_all_different()
+        clauses, collisions = [], []
+        for column in columns:
+            if len(column) < 2:
+                continue
+            definitions, outputs = _EncoderDispatch._build_sequential_ge_counter(
+                self._model, column, thresholds=[2]
+            )
+            clauses.extend(definitions)
+            collision = outputs[2]
+            if collision is True:
+                return ClauseGroup(self._model, [])
+            if collision is not False:
+                collisions.append(collision)
+        clauses.append(Clause(self._model, collisions))
+        return ClauseGroup(self._model, clauses)
+
 
 class _BaseDict:
     """Base class for typed immutable keyed containers."""
@@ -1668,34 +1689,37 @@ class EnumVector(_BaseVector):
             return
         item._choice_literal(value)
 
+    def _all_different_columns(self):
+        if not self._items:
+            return
+        for label in self._items[0].choices:
+            yield [item._choice_lits[label] for item in self._items]
+        nullable = [item for item in self._items if item.nullable]
+        if len(nullable) > 1:
+            yield [item._none_indicator() for item in nullable]
+
     def _all_different_bipartite(self) -> ClauseGroup:
         clauses: list[Clause] = []
         amo_groups: list[list[int]] = []
-        if not self._items:
-            return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
-        def columns():
-            for label in self._items[0].choices:
-                yield [item._choice_lits[label] for item in self._items]
-            nullable = [item for item in self._items if item.nullable]
-            if len(nullable) > 1:
-                yield [item._none_indicator() for item in nullable]
-
-        for col_lits in columns():
+        for col_lits in self._all_different_columns():
             col = BoolVector(self._model, f"{self.name}.column", col_lits)
             clauses.extend(self._model._as_clausegroup(col.at_most_one()))
             amo_groups.append([self._model._lit_to_dimacs(lit) for lit in col_lits])
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
+    def _not_all_different_bipartite(self) -> ClauseGroup:
+        return self._not_all_different_columns(self._all_different_columns())
+
     def all_different(self, backend: str = "auto") -> ClauseGroup:
         """Return an all-different constraint supporting ``.iff()`` and ``.implies()``.
 
         Backends:
-            ``auto`` (default): pairwise for nullable enums, otherwise column-wise AMO.
+            ``auto`` (default): column-wise AMO; small nullable vectors use pairwise comparisons.
             ``bipartite``: column-wise AMO, including the nullable ``None`` value.
             ``pairwise``: pairwise enum inequality constraints.
         """
         if backend == "auto":
-            backend = "pairwise" if any(item.nullable for item in self._items) else "bipartite"
+            backend = "pairwise" if len(self) < 32 and any(item.nullable for item in self._items) else "bipartite"
         if backend == "pairwise":
             builder = self._all_different_pairwise
         elif backend == "bipartite":
@@ -1706,7 +1730,8 @@ class EnumVector(_BaseVector):
             raise ValueError("Unknown all_different backend.")
         if self._items and any(ev.choices != self._items[0].choices for ev in self._items[1:]):
             raise ValueError("EnumVector.all_different() requires matching enum choices.")
-        return _ReifiableClauseGroup(self._model, builder, self._not_all_different)
+        opposite = self._not_all_different_bipartite if backend == "bipartite" else self._not_all_different
+        return _ReifiableClauseGroup(self._model, builder, opposite)
 
 
 class IntSetVector(_BaseVector):
@@ -1909,24 +1934,10 @@ class IntVector(_BaseVector):
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
     def _not_all_different_bipartite(self) -> ClauseGroup:
-        from .encoders import _EncoderDispatch
-
-        if len(self) < 32:
-            return self._not_all_different()
         lb, ub = self._all_different_bipartite_domain()
-        clauses, collisions = [], []
-        for value in range(lb, ub + 1):
-            definitions, outputs = _EncoderDispatch._build_sequential_ge_counter(
-                self._model, [x == value for x in self], thresholds=[2]
-            )
-            clauses.extend(definitions)
-            collision = outputs[2]
-            if collision is True:
-                return ClauseGroup(self._model, [])
-            if collision is not False:
-                collisions.append(collision)
-        clauses.append(Clause(self._model, collisions))
-        return ClauseGroup(self._model, clauses)
+        return self._not_all_different_columns(
+            ([x == value for x in self] for value in range(lb, ub + 1))
+        )
 
     def all_different(self, backend: str = "auto") -> ClauseGroup:
         """Return an all-different constraint supporting ``.iff()`` and ``.implies()``.
