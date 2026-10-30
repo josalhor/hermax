@@ -148,3 +148,60 @@ def test_flat_amo_selects_ladder_without_changing_general_counts(backend, method
             count = sum(bits)
             truth = count <= bound if method == "auto_leq" else count == bound
             assert solver.solve(assumptions=[lit if bit else -lit for lit, bit in zip(lits, bits)]) == truth
+
+
+@pytest.mark.parametrize("backend", [pbamo.PBAMOEnc, PackedPBAMOEnc])
+@pytest.mark.parametrize("method", ["auto_leq", "auto_eq", "_auto_atmost"])
+def test_amo_routing_precedes_overlap_partitioning(monkeypatch, backend, method):
+    def reject(*args, **kwargs):
+        raise AssertionError("AMO/EO entered overlap partitioning")
+
+    monkeypatch.setattr(pbamo, "choose_overlap_partition", reject)
+    lits = [1, -2, 3, -4, 5, -6]
+    kwargs = dict(lits=lits, bound=1, amo_groups=[lits[:4], lits[2:]], eo_groups=[lits[:3], lits[1:4]], top_id=20)
+    if method != "_auto_atmost":
+        kwargs["weights"] = [1] * len(lits)
+    cnf = getattr(backend, method)(**kwargs)
+    with Solver(bootstrap_with=cnf.clauses) as solver:
+        for bits in itertools.product([False, True], repeat=6):
+            count = sum(bits)
+            expected = (count == 1 if method == "auto_eq" else count <= 1) and sum(bits[:3]) == 1 and sum(bits[1:4]) == 1
+            assert solver.solve(assumptions=[lit if bit else -lit for lit, bit in zip(lits, bits)]) == expected
+
+
+def test_nested_model_amos_never_partition(monkeypatch):
+    def reject(*args, **kwargs):
+        raise AssertionError("nested AMOs entered overlap partitioning")
+
+    monkeypatch.setattr(pbamo, "choose_overlap_partition", reject)
+    m = Model()
+    bits = m.bool_vector("b", 1024)
+    m &= bits.at_most_one()
+    m &= bits[0] + bits[1] <= 1
+    assert len(m.to_cnf().clauses) < 4200
+
+
+def test_dynamic_bitsets_match_full_compatibility_checks(monkeypatch):
+    original_priority = pbamo._DynamicOverlapPartition._priority
+    original_future = pbamo._DynamicOverlapPartition._future_compatibility
+
+    def priority(self, lit):
+        expected = sum(pbamo._group_is_compatible(self.neighbors, lit, group) for group in self.groups)
+        assert self.compatible_counts[lit] == expected
+        return original_priority(self, lit)
+
+    def future(self, lit, group):
+        expected = sum(pbamo._group_is_compatible(self.neighbors, other, [*group, lit])
+                       for other in self.remaining if other != lit and self.neighbors[other])
+        actual = original_future(self, lit, group)
+        assert actual == expected
+        return actual
+
+    monkeypatch.setattr(pbamo._DynamicOverlapPartition, "_priority", priority)
+    monkeypatch.setattr(pbamo._DynamicOverlapPartition, "_future_compatibility", future)
+    rng = random.Random(963)
+    for _ in range(60):
+        lits = [i * rng.choice([-1, 1]) for i in range(1, 21)]
+        weights = [rng.randint(1, 20) for _ in lits]
+        groups = [rng.sample(lits, 6) for _ in range(12)]
+        pbamo.choose_overlap_partition(lits, weights, amo_groups=groups[:8], eo_groups=groups[8:])

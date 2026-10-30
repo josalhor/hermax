@@ -101,12 +101,11 @@ def test_card_cache_equals_reused(monkeypatch):
     m &= (a + b == 1)
     m._commit_pb()
     assert calls["structured_auto_eq"] == 1
-    # The upper side reuses prepared structure; only the lower side enters
-    # auto_leq. Both cardinality inequalities must still be encoded once.
-    assert calls["structured_auto_leq"] == 1
-    assert calls["card_equals"] == 0
-    assert calls["card_atleast"] == 0
-    assert calls["card_atmost"] == 2
+    # Exactly-one goes directly to CardEnc, and the repeated constraint is cached.
+    assert calls["structured_auto_leq"] == 0
+    assert calls["card_equals"] == 1
+    assert calls["card_atleast"] == 1
+    assert calls["card_atmost"] == 1
 
 
 def test_card_cache_atleast_reused(monkeypatch):
