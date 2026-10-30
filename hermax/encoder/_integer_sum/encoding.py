@@ -7,6 +7,7 @@ from pysat.formula import CNFPlus
 from hermax.internal import _integer_sum_native as native
 from hermax.internal._clause_storage import ClauseStorage
 from hermax.encoder._packed import PBEnc, _EncodedCNF
+from hermax.encoder.pb_enc import EncType as PBEncType
 
 LEAF = "leaf"
 WHOLE = "whole"
@@ -89,6 +90,8 @@ def binary_pb(
     bound: int,
     comparator: str,
     top_id: int,
+    *,
+    encoding: int = PBEncType.best,
 ) -> CNFPlus:
     """Encode arithmetic over cached views; definitions are owned by callers."""
     if len(views) != len(coefficients):
@@ -124,7 +127,7 @@ def binary_pb(
             cnf.clauses.append([])
         return cnf
     fn = {"<=": PBEnc.leq, ">=": PBEnc.geq, "==": PBEnc.equals}[comparator]
-    return fn(lits, weights=weights, bound=bound, top_id=top_id)
+    return fn(lits, weights=weights, bound=bound, top_id=top_id, encoding=encoding)
 
 
 def encode_binary(

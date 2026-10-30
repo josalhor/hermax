@@ -10,9 +10,9 @@ def test_equality_shares_only_two_binary_selections(monkeypatch,choices,expected
     calls=[];iterator=iter(choices)
     monkeypatch.setattr(sums.selection,'choose',lambda *a,**kw:next(iterator))
     original=sums.binary_pb
-    def record(views,coefficients,bound,comparator,top_id):
+    def record(views,coefficients,bound,comparator,top_id,**kwargs):
         calls.append(comparator)
-        return original(views,coefficients,bound,comparator,top_id)
+        return original(views,coefficients,bound,comparator,top_id,**kwargs)
     monkeypatch.setattr(sums,'binary_pb',record)
     m=Model();xs=[m.int(f'x{i}',0,3) for i in range(4)]
     m &= sums.compile_sum(m,list(zip(xs,[1,-1,1,-1])),-1,'==')

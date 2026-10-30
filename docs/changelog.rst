@@ -41,6 +41,7 @@ Other Highlights
 * Improved native encoding performance, including MDD, and automatic PBAMO encoder selection.
 * Added a grouped weighted sum equality encoder to PBAMO.
 * Avoided excessive encoding growth in weighted and mixed integer constraints, including AMO cases.
+* Limited encoding growth in large integer sums and improved large all-different constraints.
 * Improved integer-sum encodings, especially for narrow result domains.
 * Improved encoding when comparing integers with different domains.
 * Improved encoding of Interval variables and clauses with fixed duration.

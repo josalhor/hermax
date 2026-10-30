@@ -30,6 +30,7 @@ from .variables import *
 from .variables import _BaseVector, _BaseDict, _BaseMatrixView, _MultiplexerInt, _VectorElementInt, _validate_enum_choices
 from .encoders import *
 from .encoders import _DeferredPBEntry, _EncoderDispatch
+from ._integer_sum import compile_binary_sum, sum_tree_exceeds_limit
 from .encoders import _canonical_pb_cache_key
 from hermax.encoder.pb import PBItem
 from hermax.encoder._packed import PBCompiler
@@ -2023,18 +2024,27 @@ class Model:
         if name is not None:
             self._assert_names_available(*(f"{name}_step{i}" for i in range(len(items_list) - 1)))
 
-        if all(item.ub - item.lb == 1 for item in items_list):
+        countable = all(item.ub - item.lb == 1 for item in items_list)
+        if countable:
             expression = sum(items_list)
             count = _EncoderDispatch._extract_unit_bool_sum_affine(self, expression)
-            if count is not None and len(count[0]) == len(items_list):
-                out_name = f"{name}_step{len(items_list) - 2}" if name is not None else None
-                out = self.int(
-                    self._reserve_name(out_name),
-                    lb=sum(item.lb for item in items_list),
-                    ub=sum(item.ub for item in items_list),
-                )
+            countable = count is not None and len(count[0]) == len(items_list)
+        compact = not countable and sum_tree_exceeds_limit(
+            item.ub - item.lb for item in items_list
+        )
+        if countable or compact:
+            out_name = f"{name}_step{len(items_list) - 2}" if name is not None else None
+            out = self.int(
+                self._reserve_name(out_name),
+                lb=sum(item.lb for item in items_list),
+                ub=sum(item.ub for item in items_list),
+            )
+            if compact:
+                terms = [(item, 1) for item in items_list] + [(out, -1)]
+                self &= compile_binary_sum(self, terms, 0, "==")
+            else:
                 self &= out == expression
-                return out
+            return out
 
         from heapq import heapify, heappop, heappush
 

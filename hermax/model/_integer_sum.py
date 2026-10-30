@@ -1,8 +1,10 @@
 from dataclasses import dataclass
+from heapq import heapify, heappop, heappush
 from typing import TYPE_CHECKING
 
 from hermax.encoder._integer_sum import BINARY, LEAF, assess, encode_order, selection
-from hermax.encoder._integer_sum.encoding import binary_pb
+from hermax.encoder._integer_sum.encoding import binary_pb, channel_cost
+from hermax.encoder.pb_enc import EncType as PBEncType
 from ._integer_views import binary_view_ready
 from .expressions import ClauseGroup
 
@@ -21,6 +23,20 @@ def _merge_clause_upper(left: int, right: int, *, equality: bool) -> int:
         comparisons = padded * (padded.bit_length() - 1) + 1
     links = 2 * (left + right + 2) if equality else left + right + 1
     return 6 * comparisons + links
+
+
+def sum_tree_exceeds_limit(widths) -> bool:
+    heap = list(widths)
+    heapify(heap)
+    clauses = 0
+    while len(heap) > 1:
+        left, right = heappop(heap), heappop(heap)
+        if left:
+            clauses += _merge_clause_upper(left, right, equality=True) + left + right - 1
+            if clauses > UNARY_CLAUSE_LIMIT:
+                return True
+        heappush(heap, left + right)
+    return False
 
 
 def direct_addition_clause_count(left: int, right: int, result: int, bound: int) -> int:
@@ -54,7 +70,10 @@ def compile_binary_sum(
     if model._inc_state.bound:
         model._reserve_literal_ids_up_to(int(model._inc_state.ip_next_vid))
     views = [owner._get_binary_view() for owner, _ in items]
-    cnf = binary_pb(views, [c for _, c in items], bound, comparator, model._top_id())
+    cnf = binary_pb(
+        views, [c for _, c in items], bound, comparator, model._top_id(),
+        encoding=PBEncType.adder,
+    )
     model._debug(
         model.DEBUG_COMPILE,
         f"encode path=integer_sum_binary op={comparator} clauses={len(cnf.clauses)}",
@@ -68,6 +87,7 @@ class _OrderPlan:
     bound: int
     orientations: list[int]
     modulus: int
+    clauses: int
 
 
 def _plan_order_sum(widths, coefficients, bound, comparator, cached):
@@ -79,7 +99,15 @@ def _plan_order_sum(widths, coefficients, bound, comparator, cached):
         orientations = [-c for c in coefficients]
     costs = assess(widths, order_bound)
     kind = selection.choose(widths, order_bound, costs, cached, orientations=orientations)
-    return _OrderPlan(kind, order_bound, orientations, costs.modulus)
+    if kind == BINARY:
+        bits = [w.bit_length() for w in widths]
+        carry_bits = sum((1 << b) - 1 for b in bits).bit_length()
+        # At most one full adder per input bit and one half adder per column.
+        clauses = 20 * sum(bits) + 8 * carry_bits
+        clauses += sum(channel_cost(w) for w, ready in zip(widths, cached) if not ready)
+    else:
+        clauses = getattr(costs, kind).clauses
+    return _OrderPlan(kind, order_bound, orientations, costs.modulus, clauses)
 
 
 def _encode_order_plan(model, items, bound, comparator, plan):
@@ -129,13 +157,13 @@ def compile_sum(
     if comparator not in ("<=", ">=", "=="):
         raise ValueError("unsupported integer-sum comparison")
     cached = [binary_view_ready(owner) for owner, _ in items]
-    if comparator == "==":
-        upper_plan = _plan_order_sum(widths, coefficients, bound, "<=", cached)
-        lower_plan = _plan_order_sum(widths, coefficients, bound, ">=", cached)
-        if upper_plan.kind == lower_plan.kind == BINARY:
-            return compile_binary_sum(model, items, bound, "==")
-        return _encode_order_plan(model, items, bound, "<=", upper_plan) & _encode_order_plan(
-            model, items, bound, ">=", lower_plan
-        )
-    plan = _plan_order_sum(widths, coefficients, bound, comparator, cached)
-    return _encode_order_plan(model, items, bound, comparator, plan)
+    comparisons = ("<=", ">=") if comparator == "==" else (comparator,)
+    plans = [_plan_order_sum(widths, coefficients, bound, op, cached) for op in comparisons]
+    if (
+        all(plan.kind == BINARY for plan in plans)
+        or sum(plan.clauses for plan in plans) > UNARY_CLAUSE_LIMIT
+    ):
+        return compile_binary_sum(model, items, bound, comparator)
+    groups = [_encode_order_plan(model, items, bound, op, plan)
+              for op, plan in zip(comparisons, plans)]
+    return groups[0] if len(groups) == 1 else groups[0] & groups[1]

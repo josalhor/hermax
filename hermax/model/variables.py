@@ -1914,25 +1914,29 @@ class IntVector(_BaseVector):
         lb, ub = self._all_different_bipartite_domain()
         clauses: list[Clause] = []
         amo_groups: list[list[int]] = []
+        if self._model._inc_state.bound:
+            self._model._reserve_literal_ids_up_to(int(self._model._inc_state.ip_next_vid))
         for v in range(lb, ub + 1):
-            col_lits = [x == v for x in self._items]
-            col = BoolVector(self._model, f"{self.name}.eq_col[{v}]", col_lits)
-            clauses.extend(self._model._as_clausegroup(col.at_most_one()))
-            amo_groups.append([self._model._lit_to_dimacs(lit) for lit in col_lits])
+            col = [self._model._lit_to_dimacs(x == v) for x in self._items]
+            cnf = CardEnc.atmost(lits=col, bound=1, top_id=self._model._top_id(), encoding=CardEncType.seqcounter)
+            clauses.extend(self._model._cnfplus_to_clausegroup(cnf))
+            amo_groups.append(col)
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
     def all_different(self, backend: str = "auto") -> ClauseGroup:
         """Return an all-different constraint supporting ``.iff()`` and ``.implies()``.
 
         Backends:
-            ``auto`` (default): currently aliases to ``pairwise``.
+            ``auto`` (default): bipartite for 32+ inputs sharing a supported domain; otherwise pairwise.
             ``pairwise``: pairwise integer inequality constraints.
             ``bipartite``: channel to exact-value indicators + column AMOs.
         """
-        # Keep auto on pairwise: it uses far fewer helper vars, and the
-        # alternatives have not shown a clear enough win to justify switching.
         if backend == "auto":
-            backend = "pairwise"
+            common_domain = len(self) >= 32 and all(
+                (x.lb, x.ub) == (self[0].lb, self[0].ub) for x in self
+            )
+            backend = ("bipartite" if common_domain and self[0].ub - self[0].lb + 1 >= len(self)
+                       else "pairwise")
         if backend == "pairwise":
             builder = self._all_different_pairwise
         elif backend == "bipartite":

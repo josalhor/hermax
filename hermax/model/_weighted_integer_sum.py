@@ -5,7 +5,6 @@ from itertools import chain
 from typing import TYPE_CHECKING
 
 from hermax.encoder._integer_sum import weighted
-from hermax.encoder._integer_sum.encoding import binary_pb
 from .expressions import ClauseGroup
 from ._integer_sum import compile_binary_sum
 
@@ -65,9 +64,9 @@ def compile_weighted_sum(
         )
         path = "thresholds"
     except weighted.BudgetExceeded as error:
-        views = [owner._get_binary_view() for owner, _ in items]
-        cnf = binary_pb(views, coefficients, bound, comparator, model._top_id())
-        path = f"binary budget={error}"
+        model._debug(model.DEBUG_COMPILE, f"encode path=weighted_integer_binary budget={error}")
+        normalized = [(x, c) for (x, _), c in zip(items, coefficients)]
+        return compile_binary_sum(model, normalized, bound, comparator)
     model._debug(
         model.DEBUG_COMPILE,
         f"encode path=weighted_integer_{path} op={comparator} clauses={len(cnf.clauses)}",
