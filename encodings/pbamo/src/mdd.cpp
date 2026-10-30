@@ -1,3 +1,4 @@
+#include "amo.hpp"
 #include "structuredpb/mdd.hpp"
 
 #include <algorithm>
@@ -73,16 +74,6 @@ std::vector<Group> make_ordered_groups(const GroupedLeqConstraint& constraint) {
     return groups;
 }
 
-void add_pairwise_amo(const GroupedLeqConstraint& constraint, CnfFormula& cnf) {
-    if (!constraint.emit_amo) return;
-    for (const auto& group : constraint.groups) {
-        for (std::size_t i = 0; i < group.size(); ++i) {
-            for (std::size_t j = i + 1; j < group.size(); ++j) {
-                cnf.add_clause({-group[i], -group[j]});
-            }
-        }
-    }
-}
 
 struct SuffixMaximum {
     Weight value = 0;
@@ -187,7 +178,7 @@ EncodeResult MddEncoder::encode(const GroupedLeqConstraint& constraint,
     EncodeResult result(options.clause_memory);
     result.cnf.num_vars = options.top_id;
     VariableManager variables(options.top_id);
-    add_pairwise_amo(constraint, result.cnf);
+    add_amo_groups(constraint, result.cnf, variables);
     const auto groups = make_ordered_groups(constraint);
     Diagram(groups, variables).encode(constraint.bound, result.cnf);
     result.cnf.num_vars = std::max(result.cnf.num_vars, variables.max_var());

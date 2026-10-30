@@ -1701,10 +1701,17 @@ class EnumVector(_BaseVector):
     def _all_different_bipartite(self) -> ClauseGroup:
         clauses: list[Clause] = []
         amo_groups: list[list[int]] = []
+        if self._model._inc_state.bound:
+            self._model._reserve_literal_ids_up_to(int(self._model._inc_state.ip_next_vid))
         for col_lits in self._all_different_columns():
-            col = BoolVector(self._model, f"{self.name}.column", col_lits)
-            clauses.extend(self._model._as_clausegroup(col.at_most_one()))
-            amo_groups.append([self._model._lit_to_dimacs(lit) for lit in col_lits])
+            col = [self._model._lit_to_dimacs(lit) for lit in col_lits]
+            if len(self) < 32:
+                group = BoolVector(self._model, f"{self.name}.column", col_lits).at_most_one()
+                clauses.extend(self._model._as_clausegroup(group))
+            else:
+                cnf = CardEnc.atmost(lits=col, bound=1, top_id=self._model._top_id(), encoding=CardEncType.ladder)
+                clauses.extend(self._model._cnfplus_to_clausegroup(cnf))
+            amo_groups.append(col)
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
     def _not_all_different_bipartite(self) -> ClauseGroup:
@@ -1910,49 +1917,49 @@ class IntVector(_BaseVector):
     def _all_different_bipartite_domain(self) -> tuple[int, int]:
         if not self._items:
             return (0, -1)
-        # Require a common domain for the current implementation.
-        lb = self._items[0].lb
-        ub = self._items[0].ub
-        for x in self._items[1:]:
-            if x.lb != lb or x.ub != ub:
-                raise ValueError("IntVector.bipartite all_different currently requires a common domain.")
+        lb = min(x.lb for x in self)
+        ub = max(x.ub for x in self)
         if (ub - lb + 1) < len(self._items):
             raise ValueError("IntVector.bipartite all_different requires domain size >= vector length.")
         return lb, ub
 
+    def _all_different_columns(self):
+        owners = {}
+        for x in self:
+            for value in range(x.lb, x.ub + 1):
+                owners.setdefault(value, []).append(x)
+        for value, column in owners.items():
+            if len(column) > 1:
+                yield [x == value for x in column]
+
     def _all_different_bipartite(self) -> ClauseGroup:
-        lb, ub = self._all_different_bipartite_domain()
         clauses: list[Clause] = []
         amo_groups: list[list[int]] = []
         if self._model._inc_state.bound:
             self._model._reserve_literal_ids_up_to(int(self._model._inc_state.ip_next_vid))
-        for v in range(lb, ub + 1):
-            col = [self._model._lit_to_dimacs(x == v) for x in self._items]
+        for column in self._all_different_columns():
+            col = [self._model._lit_to_dimacs(lit) for lit in column]
             cnf = CardEnc.atmost(lits=col, bound=1, top_id=self._model._top_id(), encoding=CardEncType.seqcounter)
             clauses.extend(self._model._cnfplus_to_clausegroup(cnf))
             amo_groups.append(col)
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
     def _not_all_different_bipartite(self) -> ClauseGroup:
-        lb, ub = self._all_different_bipartite_domain()
-        return self._not_all_different_columns(
-            ([x == value for x in self] for value in range(lb, ub + 1))
-        )
+        return self._not_all_different_columns(self._all_different_columns())
 
     def all_different(self, backend: str = "auto") -> ClauseGroup:
         """Return an all-different constraint supporting ``.iff()`` and ``.implies()``.
 
         Backends:
-            ``auto`` (default): bipartite for 32+ inputs sharing a supported domain; otherwise pairwise.
+            ``auto`` (default): bipartite for 32+ inputs with a sufficient domain span; otherwise pairwise.
             ``pairwise``: pairwise integer inequality constraints.
             ``bipartite``: channel to exact-value indicators + column AMOs.
         """
         if backend == "auto":
-            common_domain = len(self) >= 32 and all(
-                (x.lb, x.ub) == (self[0].lb, self[0].ub) for x in self
+            supported = len(self) >= 32 and (
+                max(x.ub for x in self) - min(x.lb for x in self) + 1 >= len(self)
             )
-            backend = ("bipartite" if common_domain and self[0].ub - self[0].lb + 1 >= len(self)
-                       else "pairwise")
+            backend = "bipartite" if supported else "pairwise"
         if backend == "pairwise":
             builder = self._all_different_pairwise
         elif backend == "bipartite":

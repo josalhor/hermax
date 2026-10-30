@@ -1,3 +1,4 @@
+#include "amo.hpp"
 #include "structuredpb/rggt.hpp"
 
 #include "min_ratio_tree.hpp"
@@ -50,18 +51,6 @@ void sort_unique(std::vector<Weight>& vals) {
     vals.erase(std::unique(vals.begin(), vals.end()), vals.end());
 }
 
-void add_pairwise_amo(const GroupedLeqConstraint& constraint, CnfFormula& cnf) {
-    if (!constraint.emit_amo) {
-        return;
-    }
-    for (const auto& group : constraint.groups) {
-        for (std::size_t i = 0; i < group.size(); ++i) {
-            for (std::size_t j = i + 1; j < group.size(); ++j) {
-                cnf.add_clause({-group[i], -group[j]});
-            }
-        }
-    }
-}
 
 std::vector<Weight> combine_vals(const std::vector<Weight>& left, const std::vector<Weight>& right, Weight cap) {
     std::vector<Weight> out;
@@ -404,7 +393,7 @@ EncodeResult RggtEncoder::encode(const GroupedLeqConstraint& constraint,
     EncodeResult result(options.clause_memory);
     VariableManager vm(options.top_id);
     result.cnf.num_vars = options.top_id;
-    add_pairwise_amo(constraint, result.cnf);
+    add_amo_groups(constraint, result.cnf, vm);
 
     const Weight cap = constraint.bound + 1;
     const auto built = build_reduced_tree(constraint, cap);

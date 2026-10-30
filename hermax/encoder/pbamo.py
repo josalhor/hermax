@@ -98,6 +98,38 @@ def _partition_score(grouping):
     return tuple(normalized)
 
 
+def _disjoint_candidate_partition(lits, weights, amo_groups, eo_groups, policy):
+    """Reuse disjoint cliques without changing the existing partition order."""
+    positions = {lit: i for i, lit in enumerate(lits)}
+    if len(positions) != len(lits):
+        return None
+    owners, counts = {}, {}
+    for is_eo, candidates in ((False, amo_groups), (True, eo_groups)):
+        for group in candidates:
+            members = frozenset(group)
+            if len(members) < 2:
+                continue
+            if members not in counts:
+                if not members <= positions.keys() or any(lit in owners for lit in members):
+                    return None
+                counts[members] = [0, 0]
+                owners.update((lit, members) for lit in members)
+            counts[members][0] += 1
+            counts[members][1] += is_eo
+    counts.update((frozenset([lit]), [0, 0]) for lit in lits if lit not in owners)
+
+    def priority(members):
+        if policy == OverlapPolicy.baseline_paper:
+            return min(positions[lit] for lit in members)
+        # Each clique starts before the greedy algorithm fills existing cliques.
+        degree = len(members) - 1
+        pair_count, eo_count = counts[members]
+        first = min(members, key=lambda lit: (-weights[lit], lit))
+        return (-eo_count * degree, -pair_count * degree, -degree, -weights[first], first)
+
+    return [sorted(group) for group in sorted(counts, key=priority)]
+
+
 def choose_overlap_partition(
     lits,
     weights,
@@ -110,10 +142,12 @@ def choose_overlap_partition(
     weight_by_lit = {int(lit): int(weight) for lit, weight in zip(lits, weights)}
     amo_groups = _normalize_candidate_groups(amo_groups)
     eo_groups = _normalize_candidate_groups(eo_groups)
-    pair_support, eo_pair_support, mutex_neighbors = _pair_support_maps(lits, amo_groups, eo_groups)
-
     if policy not in {OverlapPolicy.baseline_paper, OverlapPolicy.paper_best_fit_dynamic_future}:
         raise ValueError(f"Unknown overlap policy: {policy!r}")
+    partition = _disjoint_candidate_partition(lits, weight_by_lit, amo_groups, eo_groups, policy)
+    if partition is not None:
+        return partition
+    pair_support, eo_pair_support, mutex_neighbors = _pair_support_maps(lits, amo_groups, eo_groups)
     if policy == OverlapPolicy.baseline_paper:
         return _baseline_overlap_partition(lits, mutex_neighbors)
     return _DynamicOverlapPartition(
@@ -328,10 +362,18 @@ class _PreparedStructure:
     amo_groups: tuple[tuple[int, ...], ...]
     eo_groups: tuple[tuple[int, ...], ...]
 
-    def append_candidate_clauses(self, cnf: CNFPlus) -> None:
+    def append_candidate_clauses(self, cnf: CNFPlus, card_encoder) -> None:
         for group in self.amo_groups + self.eo_groups:
-            for lit, other in combinations(sorted(set(group)), 2):
-                cnf.clauses.append([-lit, -other])
+            ordered = sorted(set(group))
+            if len(ordered) < 32:
+                for lit, other in combinations(ordered, 2):
+                    cnf.clauses.append([-lit, -other])
+            else:
+                encoded = card_encoder.atmost(
+                    lits=ordered, bound=1, top_id=cnf.nv, encoding=CardEncType.ladder,
+                )
+                cnf.clauses.extend(encoded.clauses)
+                cnf.nv = max(cnf.nv, encoded.nv)
         for group in self.eo_groups:
             ordered = sorted(set(group))
             if ordered:
@@ -673,7 +715,7 @@ class PBAMOEnc:
                 lits=lits, weights=weights, groups=structure.groups, bound=bound,
                 top_id=top_id, encoding=enc, emit_amo=False,
             )
-        structure.append_candidate_clauses(cnf)
+        structure.append_candidate_clauses(cnf, cls._card_encoder)
         cnf.nv = max(int(cnf.nv), top_id)
         return cnf
 
@@ -708,7 +750,8 @@ class PBAMOEnc:
         has_structure = any(len(group) > 1 for group in structure.groups)
         if not has_structure and not structure.amo_groups and not structure.eo_groups:
             if all(weight == 1 for weight in weights):
-                return cls._card_encoder.equals(lits=lits, bound=bound, top_id=top_id, encoding=CardEncType.kmtotalizer)
+                encoding = CardEncType.ladder if bound in (1, len(lits) - 1) else CARD_FLAT_ENCODING
+                return cls._card_encoder.equals(lits=lits, bound=bound, top_id=top_id, encoding=encoding)
 
             return cls._pb_encoder.equals(lits=lits, weights=weights, bound=bound, top_id=top_id, encoding=PBEncType.best)
 
@@ -754,6 +797,8 @@ class PBAMOEnc:
     @classmethod
     def _encode_atmost_prepared(cls, lits, bound, top_id, structure, structured_encoding, flat_encoding):
         if choose_cardinality_portfolio(lits, structure.groups, bound) == "card":
+            if bound == 1 and flat_encoding == CardEncType.kmtotalizer:
+                flat_encoding = CardEncType.ladder
             cnf = cls._card_encoder.atmost(lits=lits, bound=bound, top_id=top_id, encoding=flat_encoding)
         else:
             enc = structured_encoding
@@ -763,7 +808,7 @@ class PBAMOEnc:
                 lits=lits, weights=[1] * len(lits), groups=structure.groups,
                 bound=bound, top_id=top_id, encoding=enc, emit_amo=False,
             )
-        structure.append_candidate_clauses(cnf)
+        structure.append_candidate_clauses(cnf, cls._card_encoder)
         cnf.nv = max(int(cnf.nv), top_id)
         return cnf
 

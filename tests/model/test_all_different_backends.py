@@ -225,7 +225,9 @@ def test_large_nullable_enum_all_different_avoids_pairwise_growth(reified):
     xs = m.enum_vector("x", 64, choices=[str(i) for i in range(64)], nullable=True)
     condition = xs.all_different()
     m &= condition.iff(m.bool("flag")) if reified else condition
-    assert len(m.to_cnf().clauses) < (80_000 if reified else 40_000)
+    cnf = m.to_cnf()
+    assert len(cnf.clauses) < (80_000 if reified else 40_000)
+    assert cnf.nv < (25_000 if reified else 13_000)
 
 
 @pytest.mark.parametrize("mode", ["plain", "iff", "implies", "only_if"])
@@ -255,3 +257,60 @@ def test_large_enum_all_different_collision_semantics(mode, nullable):
                 expected = (truth if mode == "plain" else enabled == truth if mode == "iff"
                             else not truth or enabled if mode == "implies" else not enabled or truth)
                 assert solver.solve(assumptions=[m._lit_to_dimacs(atom) for atom in atoms]) == expected
+
+
+@pytest.mark.parametrize("mode", ["plain", "iff", "implies", "only_if"])
+def test_mixed_integer_all_different_truth_table(mode):
+    import itertools
+    from pysat.solvers import Solver
+    from hermax.model import IntVector
+
+    m = Model()
+    fixed = [m.int(f"fixed{i}", i, i) for i in range(29)]
+    varying = [m.int("a", 29, 31), m.int("b", 30, 32), m.int("c", 29, 32)]
+    xs = IntVector(m, "xs", fixed + varying)
+    flag = m.bool("flag")
+    condition = xs.all_different()
+    m &= condition if mode == "plain" else getattr(condition, mode)(flag)
+    with Solver(bootstrap_with=m.to_cnf().clauses) as solver:
+        for values in itertools.product(range(29, 32), range(30, 33), range(29, 33)):
+            truth = len(set(values)) == 3
+            for enabled in (False, True):
+                atoms = [atom for x, value in zip(varying, values)
+                         for atom in x._exact_value_atoms(value)]
+                atoms.append(flag if enabled else ~flag)
+                expected = (truth if mode == "plain" else truth == enabled if mode == "iff"
+                            else not truth or enabled if mode == "implies" else not enabled or truth)
+                assert solver.solve(assumptions=[m._lit_to_dimacs(atom) for atom in atoms]) == expected
+
+
+def test_mixed_integer_all_different_skips_domain_gaps(monkeypatch):
+    from hermax.model import IntVector
+    from hermax.model import variables
+
+    m = Model()
+    xs = IntVector(m, "xs", [m.int(f"x{i}", (i // 2) * 10**9, (i // 2) * 10**9 + 1)
+                             for i in range(32)])
+
+    def short_range(*args):
+        values = range(*args)
+        assert len(values) <= 64, "all_different enumerated gaps between domains"
+        return values
+
+    monkeypatch.setattr(variables, "range", short_range, raising=False)
+    flag = m.bool("flag")
+    m &= xs.all_different().iff(flag)
+    assert len(m.to_cnf().clauses) < 1000
+    assert m.solve(assumptions=[flag]).ok
+    assert m.solve(assumptions=[~flag]).ok
+
+
+@pytest.mark.parametrize("reified", [False, True])
+def test_mixed_integer_all_different_avoids_pairwise_growth(reified):
+    from hermax.model import IntVector
+
+    m = Model()
+    xs = IntVector(m, "xs", [m.int(f"x{i}", 0, 100 + (i == 0)) for i in range(64)])
+    condition = xs.all_different()
+    m &= condition.iff(m.bool("flag")) if reified else condition
+    assert len(m.to_cnf().clauses) < (120_000 if reified else 50_000)

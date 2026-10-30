@@ -1,3 +1,4 @@
+#include "amo.hpp"
 #include "structuredpb/ggpw.hpp"
 
 #include <algorithm>
@@ -9,18 +10,6 @@
 namespace structuredpb {
 namespace {
 
-void add_pairwise_amo(const GroupedLeqConstraint& constraint, CnfFormula& cnf) {
-    if (!constraint.emit_amo) {
-        return;
-    }
-    for (const auto& group : constraint.groups) {
-        for (std::size_t i = 0; i < group.size(); ++i) {
-            for (std::size_t j = i + 1; j < group.size(); ++j) {
-                cnf.add_clause({-group[i], -group[j]});
-            }
-        }
-    }
-}
 
 std::unordered_map<int, Weight> make_weight_map(const GroupedLeqConstraint& constraint) {
     std::unordered_map<int, Weight> out;
@@ -119,7 +108,7 @@ EncodeResult GgpwEncoder::encode(const GroupedLeqConstraint& constraint,
     EncodeResult result(options.clause_memory);
     VariableManager vm(options.top_id);
     result.cnf.num_vars = options.top_id;
-    add_pairwise_amo(constraint, result.cnf);
+    add_amo_groups(constraint, result.cnf, vm);
     const auto weights = make_weight_map(constraint);
 
     Weight qmax = 0;

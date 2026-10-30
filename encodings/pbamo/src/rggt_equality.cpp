@@ -1,3 +1,4 @@
+#include "amo.hpp"
 #include "structuredpb/rggt_equality.hpp"
 
 #include "min_ratio_tree.hpp"
@@ -254,15 +255,7 @@ EncodeResult encode_rggt_equality(const GroupedLeqConstraint& sum, const EncodeO
     EncodeResult result(options.clause_memory);
     result.cnf.num_vars = options.top_id;
     VariableManager vm(options.top_id);
-    if (sum.emit_amo) {
-        for (const auto& group : sum.groups) {
-            for (std::size_t i = 0; i < group.size(); ++i) {
-                for (std::size_t j = i + 1; j < group.size(); ++j) {
-                    result.cnf.add_clause({-group[i], -group[j]});
-                }
-            }
-        }
-    }
+    add_amo_groups(sum, result.cnf, vm);
     auto tree = build_tree(sum);
     if (!tree.root) {
         if (sum.bound != 0) result.cnf.add_clause({});

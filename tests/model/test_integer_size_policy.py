@@ -70,7 +70,7 @@ def test_sum_var_total_tree_limit_preserves_name_and_semantics(monkeypatch):
                 assert solver.solve(assumptions=[m._lit_to_dimacs(atom) for atom in atoms]) == (candidate == sum(values))
 
 
-@pytest.mark.parametrize("n,width,mixed,backend", [(31, 40, False, "pairwise"), (32, 40, False, "bipartite"), (32, 40, True, "pairwise"), (32, 20, False, "pairwise")])
+@pytest.mark.parametrize("n,width,mixed,backend", [(31, 40, False, "pairwise"), (32, 40, False, "bipartite"), (32, 40, True, "bipartite"), (32, 20, False, "pairwise")])
 def test_all_different_auto_boundary(monkeypatch, n, width, mixed, backend):
     selected = []
     for name in ["pairwise", "bipartite"]:
