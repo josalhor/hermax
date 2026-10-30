@@ -48,3 +48,27 @@ def test_sum_var_width_aware_merge_is_order_robust_for_mixed_domains():
 
     widths = [1, 2, 4, 8, 16, 32]
     assert stats(widths) == stats(list(reversed(widths)))
+
+
+@pytest.mark.parametrize("kind", ["bool", "integer", "shifted", "negated"])
+def test_sum_var_two_value_inputs_use_one_count_encoding(kind):
+    def stats(via_sum_var):
+        m = Model()
+        if kind in ("bool", "negated"):
+            inputs = list(m.bool_vector("x", 32))
+            if kind == "negated":
+                inputs = [~item if i % 2 else item for i, item in enumerate(inputs)]
+            lower = 0
+        else:
+            lower = -3 if kind == "shifted" else 0
+            inputs = list(m.int_vector("x", 32, lower, lower + 1))
+        if via_sum_var:
+            result = m.sum_var(inputs, name="total")
+            assert result.name == "total_step30"
+        else:
+            result = m.int("total", 32 * lower, 32 * (lower + 1))
+            m &= result == sum(inputs)
+        cnf = m.to_cnf()
+        return cnf.nv, len(cnf.clauses)
+
+    assert stats(True) == stats(False)

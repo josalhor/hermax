@@ -2007,8 +2007,8 @@ class Model:
     def sum_var(self, items: Sequence[IntVar | Literal], name: Optional[str] = None) -> IntVar:
         """Return one ``IntVar`` equal to the sum of integers and Boolean literals.
 
-        The implementation merges the narrowest partial sums first to keep
-        intermediate domains small.
+        Boolean counts are encoded directly. Wider integers are merged in
+        order of increasing domain width.
         """
         items_list = list(items)
         if not items_list:
@@ -2022,6 +2022,19 @@ class Model:
 
         if name is not None:
             self._assert_names_available(*(f"{name}_step{i}" for i in range(len(items_list) - 1)))
+
+        if all(item.ub - item.lb == 1 for item in items_list):
+            expression = sum(items_list)
+            count = _EncoderDispatch._extract_unit_bool_sum_affine(self, expression)
+            if count is not None and len(count[0]) == len(items_list):
+                out_name = f"{name}_step{len(items_list) - 2}" if name is not None else None
+                out = self.int(
+                    self._reserve_name(out_name),
+                    lb=sum(item.lb for item in items_list),
+                    ub=sum(item.ub for item in items_list),
+                )
+                self &= out == expression
+                return out
 
         from heapq import heapify, heappop, heappush
 
