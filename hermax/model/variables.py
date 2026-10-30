@@ -13,7 +13,6 @@ from hermax.internal.operation_cache import _Identity, cached_operation
 from hermax.encoder.card import EncType as CardEncType
 from hermax.encoder._packed import CardEnc
 from hermax.encoder.pb_enc import PBEnc
-from hermax.encoder.pbamo import PBAMOEnc
 from hermax.utils import batcher_odd_even_unary_add_network
 from pysat.solvers import Solver as PySATSolver
 from hermax.non_incremental import RC2 as HermaxRC2

@@ -71,3 +71,13 @@ class PBAMOEnc(_PBAMOEnc):
 
 class PBCompiler(_PBCompiler):
     _encoder = PBAMOEnc
+
+
+class _ModelPBAMOEnc(PBAMOEnc):
+    """Model owns the AMO/EO facts, including pending unconditional constraints."""
+
+    _emit_candidate_facts = False
+
+
+class _ModelPBCompiler(PBCompiler):
+    _encoder = _ModelPBAMOEnc

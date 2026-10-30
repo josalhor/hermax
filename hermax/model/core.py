@@ -33,7 +33,7 @@ from .encoders import _DeferredPBEntry, _EncoderDispatch
 from ._integer_sum import compile_binary_sum, sum_tree_exceeds_limit
 from .encoders import _canonical_pb_cache_key
 from hermax.encoder.pb import PBItem
-from hermax.encoder._packed import PBCompiler
+from hermax.encoder._packed import _ModelPBCompiler as PBCompiler
 from ._int_thresholds import ThresholdOwners
 from hermax.internal._clause_storage import (
     ClauseStorage as _ClauseStorage,

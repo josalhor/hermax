@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
-from hermax.encoder._packed import PBAMOEnc
+from hermax.encoder._packed import _ModelPBAMOEnc
 from hermax.encoder import _weighted_sum
 from ._integer_sum import compile_sum, compile_binary_sum, addition_encoding
 from hermax.internal import _encoding_policy as policy
@@ -206,7 +206,7 @@ class _EncoderDispatch:
         pb_weights = [int(w) for w in weights]
         pb_amo_groups, pb_eo_groups = _EncoderDispatch._structured_overlap_for(model, pb_lit_ids)
         return model._cnfplus_to_clausegroup(
-            PBAMOEnc.auto_leq(
+            _ModelPBAMOEnc.auto_leq(
                 lits=pb_lit_ids,
                 weights=pb_weights,
                 bound=int(bound),
@@ -222,7 +222,7 @@ class _EncoderDispatch:
         pb_weights = [int(w) for w in weights]
         pb_amo_groups, pb_eo_groups = _EncoderDispatch._structured_overlap_for(model, pb_lit_ids)
         return model._cnfplus_to_clausegroup(
-            PBAMOEnc.auto_eq(
+            _ModelPBAMOEnc.auto_eq(
                 lits=pb_lit_ids,
                 weights=pb_weights,
                 bound=int(bound),

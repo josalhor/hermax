@@ -368,11 +368,7 @@ def choose_encoding(lits, weights, groups, bound):
 
 @dataclass(frozen=True)
 class _PreparedStructure:
-    """Owned, immutable grouping data reused only within one encoding call.
-
-    The selected partition is an encoding aid. The original overlapping
-    candidates must still be emitted, even when absent from that partition.
-    """
+    """Selected partition and original candidate facts for one encoding call."""
 
     groups: tuple[tuple[int, ...], ...]
     amo_groups: tuple[tuple[int, ...], ...]
@@ -404,6 +400,7 @@ class PBAMOEnc:
     _pb_encoder = PBEnc
     _card_encoder = CardEnc
     _totalizer = ITotalizer
+    _emit_candidate_facts = True
 
     @staticmethod
     def _encode_leq_native(**kwargs):
@@ -708,7 +705,8 @@ class PBAMOEnc:
         encode = cls._card_encoder.equals if equality else cls._card_encoder.atmost
         cnf = encode(lits=lits, bound=1, top_id=top_id, encoding=CardEncType.ladder)
         # Global AMO implies all candidate AMOs; EO candidates still require a choice.
-        structure.append_eo_clauses(cnf)
+        if cls._emit_candidate_facts:
+            structure.append_eo_clauses(cnf)
         cnf.nv = max(cnf.nv, top_id)
         return cnf
 
@@ -754,7 +752,8 @@ class PBAMOEnc:
                 lits=lits, weights=weights, groups=structure.groups, bound=bound,
                 top_id=top_id, encoding=enc, emit_amo=False,
             )
-        structure.append_candidate_clauses(cnf, cls._card_encoder)
+        if cls._emit_candidate_facts:
+            structure.append_candidate_clauses(cnf, cls._card_encoder)
         cnf.nv = max(int(cnf.nv), top_id)
         return cnf
 
@@ -853,7 +852,8 @@ class PBAMOEnc:
                 lits=lits, weights=[1] * len(lits), groups=structure.groups,
                 bound=bound, top_id=top_id, encoding=enc, emit_amo=False,
             )
-        structure.append_candidate_clauses(cnf, cls._card_encoder)
+        if cls._emit_candidate_facts:
+            structure.append_candidate_clauses(cnf, cls._card_encoder)
         cnf.nv = max(int(cnf.nv), top_id)
         return cnf
 
