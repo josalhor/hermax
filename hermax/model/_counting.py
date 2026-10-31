@@ -36,6 +36,32 @@ def count_thresholds(model, literals, thresholds, and_gate, or_gate):
     return merge_thresholds(model, [[lit] for lit in literals], thresholds, and_gate, or_gate)
 
 
+def _second_threshold(clauses, model, a, b, c, d, and_gate, or_gate):
+    # Each child has b => a or d => c. The result is b | d | (a & c).
+    if b is False and d is False:
+        return and_gate(clauses, model, a, c)
+    if b is True or d is True:
+        return True
+    if a is False:
+        return d
+    if c is False:
+        return b
+    if a is True:
+        return or_gate(clauses, model, b, c)
+    if c is True:
+        return or_gate(clauses, model, a, d)
+    if a is c:
+        return a
+    result = model.bool()
+    for child in (b, d):
+        _append_implication(clauses, model, child, result)
+    clauses.append(Clause(model, [~a, ~c, result]))
+    for left, right in ((a, d), (b, c)):
+        literals = [~result] + [lit for lit in (left, right) if lit is not False]
+        clauses.append(Clause(model, literals))
+    return result
+
+
 def merge_thresholds(model, chains, thresholds, and_gate, or_gate):
     thresholds = sorted(set(thresholds))
     if not thresholds:
@@ -86,6 +112,14 @@ def merge_thresholds(model, chains, thresholds, and_gate, or_gate):
                 merged.append(rows[index])
                 continue
             left, right = rows[index:index + 2]
+            if limit == 2:
+                a, b = (left + [False])[:2]
+                c, d = (right + [False])[:2]
+                second = next_id
+                next_id += 1
+                nodes[second] = 'second', a, b, c, d
+                merged.append([gate('or', a, c), second])
+                continue
             network = batcher_odd_even_unary_add_network(len(left), len(right))
             half = network.n // 2
             wires = ([False] * (half - len(left)) + list(reversed(left))
@@ -105,9 +139,15 @@ def merge_thresholds(model, chains, thresholds, and_gate, or_gate):
         if value not in nodes:
             return model._dimacs_to_lit(value)
         if value not in realized:
-            operation, left, right = nodes[value]
-            build = and_gate if operation == 'and' else or_gate
-            realized[value] = build(clauses, model, realize(left), realize(right))
+            operation, *operands = nodes[value]
+            inputs = [realize(operand) for operand in operands]
+            if operation == 'second':
+                realized[value] = _second_threshold(
+                    clauses, model, *inputs, and_gate, or_gate,
+                )
+            else:
+                build = and_gate if operation == 'and' else or_gate
+                realized[value] = build(clauses, model, *inputs)
         return realized[value]
 
     outputs = {threshold: realize(rows[0][threshold - 1]) for threshold in thresholds}

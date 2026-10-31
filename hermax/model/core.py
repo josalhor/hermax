@@ -2720,12 +2720,7 @@ class Model:
                 _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath,
                 _EncoderDispatch._try_boolsum_bigm_fastpath,
                 _EncoderDispatch._try_mixed_int_boolsum_bigm_fastpath,
-                _EncoderDispatch._try_univariate_int_fastpath,
-                _EncoderDispatch._try_univariate_with_bool_fastpath,
-                _EncoderDispatch._try_nonnegative_zero_leq_fastpath,
-                _EncoderDispatch._try_bivariate_with_bool_fastpath,
-                _EncoderDispatch._try_trivariate_int_fastpath,
-                _EncoderDispatch._try_bivariate_int_fastpath,
+                _EncoderDispatch._try_small_integer_fastpath,
             ):
                 out = fast_try(self, lhs_r, constraint._op, rhs_r)
                 if out is not None:

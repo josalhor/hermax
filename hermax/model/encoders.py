@@ -476,18 +476,25 @@ class _EncoderDispatch:
         return clauses
 
     @staticmethod
-    def _extract_addition(model, lhs, op, rhs):
+    def _extract_integer_comparison(model, lhs, rhs):
         left = _EncoderDispatch._extract_multi_int_affine(model, lhs)
         right = _EncoderDispatch._extract_multi_int_affine(model, rhs)
         if left is None or right is None:
             return None
         coefficients = {}
-        for items, sign in ((left[0], 1), (right[0], -1)):
-            for variable, coefficient in items:
+        for side, sign in ((left, 1), (right, -1)):
+            for variable, coefficient in side[0]:
                 previous = coefficients.get(id(variable), (variable, 0))[1]
                 coefficients[id(variable)] = variable, previous + sign * coefficient
         items = [(v, c) for v, c in coefficients.values() if c]
-        target = right[1] - left[1]
+        return items, right[1] - left[1]
+
+    @staticmethod
+    def _extract_addition(model, lhs, op, rhs):
+        extracted = _EncoderDispatch._extract_integer_comparison(model, lhs, rhs)
+        if extracted is None:
+            return None
+        items, target = extracted
         if op in (">=", ">") or (op == "==" and sum(c == -1 for _, c in items) == 2):
             items = [(v, -c) for v, c in items]
             target = -target
@@ -1257,33 +1264,15 @@ class _EncoderDispatch:
         ``IntVar`` operands in the affine difference ``lhs - rhs`` (no extra
         boolean literals). Supported comparators: ``<=, <, >=, >, ==``.
         """
-        left = _EncoderDispatch._extract_multi_int_affine(model, lhs)
-        right = _EncoderDispatch._extract_multi_int_affine(model, rhs)
-        if left is None or right is None:
+        extracted = _EncoderDispatch._extract_integer_comparison(model, lhs, rhs)
+        if extracted is None:
             return None
-        litems, loff = left
-        ritems, roff = right
-
-        coeffs_by_id: dict[int, tuple[IntVar, int]] = {}
-        for x, c in litems:
-            key = id(x)
-            x0, c0 = coeffs_by_id.get(key, (x, 0))
-            if x0 is not x:
-                return None
-            coeffs_by_id[key] = (x, c0 + c)
-        for y, c in ritems:
-            key = id(y)
-            y0, c0 = coeffs_by_id.get(key, (y, 0))
-            if y0 is not y:
-                return None
-            coeffs_by_id[key] = (y, c0 - c)
-        coeff_items = [(v, c) for v, c in coeffs_by_id.values() if c != 0]
+        coeff_items, c_target = extracted
         if len(coeff_items) != 2:
             return None
 
         # lhs OP rhs  =>  a*x + b*y OP c
         (x, a), (y, b) = coeff_items[0], coeff_items[1]
-        c_target = -(loff - roff)
 
         return _EncoderDispatch._compile_bivariate_int(model, x, a, y, b, c_target, op)
 
@@ -1402,43 +1391,6 @@ class _EncoderDispatch:
         return ClauseGroup(model, clauses)
 
     @staticmethod
-    def _try_univariate_int_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
-        """Detect and compile ``a*x OP c`` using a single ladder comparator literal.
-
-        Introduces zero auxiliary variables. Unsupported comparators/shapes return ``None``.
-        """
-        left = _EncoderDispatch._extract_multi_int_affine(model, lhs)
-        right = _EncoderDispatch._extract_multi_int_affine(model, rhs)
-        if left is None or right is None:
-            return None
-        litems, loff = left
-        ritems, roff = right
-
-        coeffs_by_id: dict[int, tuple[IntVar, int]] = {}
-        for x, c in litems:
-            key = id(x)
-            x0, c0 = coeffs_by_id.get(key, (x, 0))
-            if x0 is not x:
-                return None
-            coeffs_by_id[key] = (x, c0 + c)
-        for y, c in ritems:
-            key = id(y)
-            y0, c0 = coeffs_by_id.get(key, (y, 0))
-            if y0 is not y:
-                return None
-            coeffs_by_id[key] = (y, c0 - c)
-
-        coeff_items = [(v, c) for v, c in coeffs_by_id.values() if c != 0]
-        if len(coeff_items) != 1:
-            return None
-
-        (x, a) = coeff_items[0]
-        c_target = -(loff - roff)
-        clauses: list[Clause] = []
-        _EncoderDispatch._emit_univariate_affine_gated(clauses, model, True, x, a, op, c_target)
-        return ClauseGroup(model, clauses)
-
-    @staticmethod
     def _try_univariate_with_bool_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
         """Detect and compile ``a*x + w*b_lit OP c`` with gated univariate branches."""
         diff = lhs - rhs
@@ -1488,6 +1440,41 @@ class _EncoderDispatch:
         return ClauseGroup._from_dimacs_trusted(model, rows())
 
     @staticmethod
+    def _try_small_integer_fastpath(model, lhs, op, rhs):
+        """Recognize pure integer operands once, retaining the mixed-Boolean fallback."""
+        extracted = _EncoderDispatch._extract_integer_comparison(model, lhs, rhs)
+        if extracted is not None:
+            items, target = extracted
+            if len(items) == 1:
+                (variable, coefficient), = items
+                clauses = []
+                _EncoderDispatch._emit_univariate_affine_gated(
+                    clauses, model, True, variable, coefficient, op, target,
+                )
+                return ClauseGroup(model, clauses)
+            minimum = sum(c * (v.lb if c > 0 else v.ub) for v, c in items)
+            # Preserve the zero-bound encoding without normalizing every threshold.
+            if op in ('<=', '<') and target - (op == '<') == minimum:
+                zero = _EncoderDispatch._try_nonnegative_zero_leq_fastpath(model, lhs, op, rhs)
+                if zero is not None:
+                    return zero
+            if len(items) == 2:
+                (x, a), (y, b) = items
+                return _EncoderDispatch._compile_bivariate_int(model, x, a, y, b, target, op)
+            if len(items) == 3:
+                return _EncoderDispatch._try_trivariate_int_fastpath(model, lhs, op, rhs)
+            return None
+        for compiler in (
+            _EncoderDispatch._try_univariate_with_bool_fastpath,
+            _EncoderDispatch._try_nonnegative_zero_leq_fastpath,
+            _EncoderDispatch._try_bivariate_with_bool_fastpath,
+        ):
+            result = compiler(model, lhs, op, rhs)
+            if result is not None:
+                return result
+        return None
+
+    @staticmethod
     def compile(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup:
         """Compile a PB comparison with fast paths and PB/Card fallback."""
         lhs = lhs._realize_int_terms(model)
@@ -1511,33 +1498,10 @@ class _EncoderDispatch:
         if mixed_bigm_fast is not None:
             model._debug(model.DEBUG_COMPILE, f"encode path=fast_mixed_bigm op={op} clauses={len(mixed_bigm_fast)}")
             return mixed_bigm_fast
-        uni_fast = _EncoderDispatch._try_univariate_int_fastpath(model, lhs, op, rhs)
-        if uni_fast is not None:
-            model._debug(model.DEBUG_COMPILE, f"encode path=fast_univariate op={op} clauses={len(uni_fast)}")
-            return uni_fast
-        uni_bool_fast = _EncoderDispatch._try_univariate_with_bool_fastpath(model, lhs, op, rhs)
-        if uni_bool_fast is not None:
-            model._debug(model.DEBUG_COMPILE, f"encode path=fast_univariate_bool op={op} clauses={len(uni_bool_fast)}")
-            return uni_bool_fast
-        nonnegative_zero_fast = _EncoderDispatch._try_nonnegative_zero_leq_fastpath(model, lhs, op, rhs)
-        if nonnegative_zero_fast is not None:
-            model._debug(
-                model.DEBUG_COMPILE,
-                f"encode path=fast_nonnegative_zero op={op} clauses={len(nonnegative_zero_fast)}",
-            )
-            return nonnegative_zero_fast
-        bivar_bool_fast = _EncoderDispatch._try_bivariate_with_bool_fastpath(model, lhs, op, rhs)
-        if bivar_bool_fast is not None:
-            model._debug(model.DEBUG_COMPILE, f"encode path=fast_bivariate_bool op={op} clauses={len(bivar_bool_fast)}")
-            return bivar_bool_fast
-        tri_fast = _EncoderDispatch._try_trivariate_int_fastpath(model, lhs, op, rhs)
-        if tri_fast is not None:
-            model._debug(model.DEBUG_COMPILE, f"encode path=fast_trivariate op={op} clauses={len(tri_fast)}")
-            return tri_fast
-        bivar_fast = _EncoderDispatch._try_bivariate_int_fastpath(model, lhs, op, rhs)
-        if bivar_fast is not None:
-            model._debug(model.DEBUG_COMPILE, f"encode path=fast_bivariate op={op} clauses={len(bivar_fast)}")
-            return bivar_fast
+        affine_fast = _EncoderDispatch._try_small_integer_fastpath(model, lhs, op, rhs)
+        if affine_fast is not None:
+            model._debug(model.DEBUG_COMPILE, f"encode path=fast_integer op={op} clauses={len(affine_fast)}")
+            return affine_fast
 
         # Existing small-arity and mixed Boolean fast paths keep precedence.
         difference = lhs - rhs

@@ -116,7 +116,7 @@ def test_diff_univariate_fastpath_soundness():
     _assert_diff_equivalent(
         build_constraint=build,
         domains={"x": (0, 5)},
-        disable_fastpath="_try_univariate_int_fastpath",
+        disable_fastpath="_try_small_integer_fastpath",
         truth_fn=truth,
     )
 
@@ -151,7 +151,7 @@ def test_diff_bivariate_fastpath_soundness():
     _assert_diff_equivalent(
         build_constraint=build,
         domains={"x": (-2, 3), "y": (0, 5)},
-        disable_fastpath="_try_bivariate_int_fastpath",
+        disable_fastpath="_try_small_integer_fastpath",
         truth_fn=truth,
     )
 
@@ -424,7 +424,7 @@ def test_dispatch_precedence_unary_adder_over_trivariate():
 def test_dispatch_precedence_boolsum_over_univariate():
     seen = {"boolsum": 0, "univariate": 0}
     o1 = _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath
-    o2 = _EncoderDispatch._try_univariate_int_fastpath
+    o2 = _EncoderDispatch._try_small_integer_fastpath
 
     def w1(model, lhs, op, rhs):
         out = o1(model, lhs, op, rhs)
@@ -439,7 +439,7 @@ def test_dispatch_precedence_boolsum_over_univariate():
         return out
 
     _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath = staticmethod(w1)
-    _EncoderDispatch._try_univariate_int_fastpath = staticmethod(w2)
+    _EncoderDispatch._try_small_integer_fastpath = staticmethod(w2)
     try:
         m = Model()
         x = m.int("x", 0, 4)
@@ -453,7 +453,7 @@ def test_dispatch_precedence_boolsum_over_univariate():
         assert r.ok
     finally:
         _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath = o1
-        _EncoderDispatch._try_univariate_int_fastpath = o2
+        _EncoderDispatch._try_small_integer_fastpath = o2
 
     assert seen["boolsum"] >= 1
     assert seen["univariate"] == 0

@@ -26,6 +26,8 @@ See :doc:`modeling_objective_migration` for replacements.
 Other Highlights
 ~~~~~~~~~~
 * Unified and reduced AMO and EO encodings.
+* Reduced counters used by reified AMO, exactly-one and all-different constraints.
+* Reduced repeated work when compiling integer comparisons.
 * Reduced clause storage memory use, native encoding overhead, and formula export time.
 * Improved encodings of enums reificaiton and big domains.
 * Improved encodings of sets.

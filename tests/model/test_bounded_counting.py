@@ -5,6 +5,45 @@ from hermax.model import Model
 from hermax.model.encoders import _EncoderDispatch as Dispatch
 
 
+@pytest.mark.parametrize('pattern', [
+    (1, 2, 3, 4, 5), (1, 1, 2, 3), (1, -1, 2, 3), (1, 2, -2, 3, 1),
+])
+@pytest.mark.parametrize('thresholds', [[2], [1, 2]])
+def test_two_threshold_merge_matches_arithmetic(pattern, thresholds):
+    model = Model()
+    bits = list(model.bool_vector('b', max(map(abs, pattern))))
+    inputs = [bits[abs(i) - 1] if i > 0 else ~bits[abs(i) - 1] for i in pattern]
+    clauses, outputs = Dispatch._build_sequential_ge_counter(
+        model, inputs, thresholds=thresholds,
+    )
+    model._hard.extend(clauses)
+    with Solver(bootstrap_with=model.to_cnf().clauses) as solver:
+        for values in itertools.product([False, True], repeat=len(bits)):
+            count = sum(values[abs(i) - 1] if i > 0 else not values[abs(i) - 1]
+                        for i in pattern)
+            fixed = [model._lit_to_dimacs(lit if value else ~lit)
+                     for lit, value in zip(bits, values)]
+            for states in itertools.product([False, True], repeat=len(thresholds)):
+                assumptions = list(fixed)
+                constants_match = True
+                for rank, state in zip(thresholds, states):
+                    output = outputs[rank]
+                    if isinstance(output, bool):
+                        constants_match &= output == state
+                    else:
+                        assumptions.append(model._lit_to_dimacs(output if state else ~output))
+                expected = states == tuple(count >= rank for rank in thresholds)
+                assert (constants_match and solver.solve(assumptions=assumptions)) == expected
+
+
+def test_two_threshold_merge_avoids_intermediate_gates():
+    model = Model()
+    bits = list(model.bool_vector('b', 512))
+    clauses, _ = Dispatch._build_sequential_ge_counter(model, bits, thresholds=[2])
+    assert len(clauses) == 3573
+    assert model._next_id - 1 - len(bits) == 1021
+
+
 @pytest.mark.parametrize('signed', [False, True])
 def test_requested_thresholds_match_full_counter_soundness_and_propagation(signed):
     builds=[]

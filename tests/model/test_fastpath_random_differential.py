@@ -141,7 +141,7 @@ def test_random_diff_univariate_fastpath():
     _run_random_differential(
         rng_seed=11,
         cases=40,
-        fastpath_name="_try_univariate_int_fastpath",
+        fastpath_name="_try_small_integer_fastpath",
         make_case=make_case,
     )
 
@@ -243,7 +243,7 @@ def test_random_diff_bivariate_fastpath():
     _run_random_differential(
         rng_seed=13,
         cases=45,
-        fastpath_name="_try_bivariate_int_fastpath",
+        fastpath_name="_try_small_integer_fastpath",
         make_case=make_case,
     )
 
