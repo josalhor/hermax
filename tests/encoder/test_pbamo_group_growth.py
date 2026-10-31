@@ -116,11 +116,11 @@ def test_native_equality_group_emission_is_compact_and_exact():
 
 @pytest.mark.parametrize("backend", [pbamo.PBAMOEnc, PackedPBAMOEnc])
 @pytest.mark.parametrize("method,bound,expected", [
-    ("auto_leq", 1, None), ("auto_leq", 2, "kmtotalizer"),
-    ("auto_eq", 1, None), ("auto_eq", 2, "kmtotalizer"),
+    ("auto_leq", 1, None), ("auto_leq", 2, "seqcounter"),
+    ("auto_eq", 1, None), ("auto_eq", 2, None),
     ("auto_eq", 5, None),
 ])
-def test_flat_amo_uses_shared_policy_without_changing_general_counts(backend, method, bound, expected):
+def test_flat_counts_use_the_expected_cardinality_backend(backend, method, bound, expected):
     from hermax.encoder.card import EncType
 
     original = backend._card_encoder

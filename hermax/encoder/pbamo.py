@@ -13,6 +13,7 @@ from hermax.internal import _pbamo as _native_pbamo
 from hermax.internal._clause_storage import ClauseStorage
 from hermax.encoder.card import CardEnc, EncType as CardEncType, ITotalizer
 from hermax.encoder.pb_enc import PBEnc, EncType as PBEncType
+from hermax.encoder._cardinality_policy import prefer_sequential, prefer_shared_equality
 from hermax.internal.kmerge import get_basis, get_conflict_depth, get_short_circuit_subsets
 
 
@@ -380,6 +381,11 @@ class _PreparedStructure:
     amo_groups: tuple[tuple[int, ...], ...]
     eo_groups: tuple[tuple[int, ...], ...]
 
+    @property
+    def is_flat(self) -> bool:
+        return not (self.amo_groups or self.eo_groups
+                    or any(len(group) > 1 for group in self.groups))
+
     def append_candidate_clauses(self, cnf: CNFPlus) -> None:
         for groups, equality in ((self.amo_groups, False), (self.eo_groups, True)):
             for group in groups:
@@ -653,7 +659,6 @@ class PBAMOEnc:
         """Encode a grouped equality with one shared RGGT sum tree.
 
         With ``emit_amo=False``, callers must enforce the supplied AMO groups.
-        This explicit path does not change the routing of ``auto_eq``.
         """
         cls._validate_pb_input(lits, weights, bound)
         cls._validate_partition_groups(lits, groups)
@@ -787,11 +792,22 @@ class PBAMOEnc:
         structure = cls._prepare_structure(lits, weights, structure, overlap_policy)
 
         # No structural signal: keep the stronger dedicated equals backend.
-        has_structure = any(len(group) > 1 for group in structure.groups)
-        if not has_structure and not structure.amo_groups and not structure.eo_groups:
+        if structure.is_flat:
             if all(weight == 1 for weight in weights):
                 if bound == len(lits) - 1:
                     return cls._encode_amo([-lit for lit in lits], top_id, structure, equality=True)
+                small_bound = min(bound, len(lits) - bound)
+                if len({abs(lit) for lit in lits}) == len(lits):
+                    shared = prefer_shared_equality(len(lits), bound)
+                else:
+                    # Alias inputs retain their existing equality route.
+                    shared = 2 <= small_bound <= 3 and len(set(lits)) == len(lits)
+                if shared:
+                    counted = lits if bound == small_bound else [-lit for lit in lits]
+                    return cls.equals(
+                        lits=counted, weights=weights, groups=[[lit] for lit in counted],
+                        bound=small_bound, top_id=top_id, emit_amo=False,
+                    )
                 return cls._card_encoder.equals(lits=lits, bound=bound, top_id=top_id, encoding=CARD_FLAT_ENCODING)
 
             return cls._pb_encoder.equals(lits=lits, weights=weights, bound=bound, top_id=top_id, encoding=PBEncType.best)
@@ -841,7 +857,12 @@ class PBAMOEnc:
 
     @classmethod
     def _encode_atmost_prepared(cls, lits, bound, top_id, structure, structured_encoding, flat_encoding):
-        if choose_cardinality_portfolio(lits, structure.groups, bound) == "card":
+        flat = structure.is_flat
+        if flat or choose_cardinality_portfolio(lits, structure.groups, bound) == "card":
+            if (flat and flat_encoding == CardEncType.kmtotalizer
+                    and prefer_sequential(len(lits), bound)
+                    and len({abs(lit) for lit in lits}) == len(lits)):
+                flat_encoding = CardEncType.seqcounter
             cnf = cls._card_encoder.atmost(lits=lits, bound=bound, top_id=top_id, encoding=flat_encoding)
         else:
             enc = structured_encoding

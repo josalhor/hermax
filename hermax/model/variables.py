@@ -38,6 +38,7 @@ from .expressions import (
     _deferred_constant_constraint,
 )
 from ._int_thresholds import ThresholdLiterals
+from ._all_different import filter_domains as _filter_all_different_domains
 
 
 _INTEGER_COMPARISONS = {
@@ -1520,11 +1521,67 @@ class _BaseVector:
         return self._model.table(self._items, allowed=rows)
 
     def _all_different_pairwise(self) -> ClauseGroup:
-        clauses: list[tuple[int, ...]] = []
-        for i, left in enumerate(self._items):
-            for right in self._items[i + 1:]:
-                clauses.extend(left != right)
-        return ClauseGroup._from_dimacs_trusted(self._model, clauses)
+        return self._build_all_different(bipartite=False)
+
+    def _build_all_different(self, *, bipartite: bool) -> ClauseGroup:
+        model = self._model
+        if len(self) < 2:
+            return ClauseGroup(model, [])
+        if len({id(item) for item in self}) < len(self):
+            return ClauseGroup(model, [Clause(model, [])])
+        integers = isinstance(self._items[0], IntVar)
+        domains = ([range(x.lb, x.ub + 1) for x in self] if integers else
+                   [tuple(x.choices) + ((None,) if x.nullable else ()) for x in self])
+        analysis = _filter_all_different_domains(domains)
+        if analysis is None:
+            return ClauseGroup(model, [Clause(model, [])])
+        supported = analysis
+        clauses, amo_groups = [], []
+        if model._inc_state.bound:
+            model._reserve_literal_ids_up_to(int(model._inc_state.ip_next_vid))
+
+        def atoms(item, value):
+            if integers:
+                return item._exact_value_atoms(value)
+            return [item._none_indicator() if value is None else item._choice_lits[value]]
+
+        columns = {}
+        for item, domain, kept in zip(self, domains, supported):
+            if kept is not domain:
+                if integers:
+                    start = item.lb
+                    for lo, hi in _integer_runs(kept) + [(item.ub + 1, item.ub + 1)]:
+                        if start < lo:
+                            boundary = ([item < start] if start > item.lb else [])
+                            if lo <= item.ub:
+                                boundary.append(item >= lo)
+                            clauses.append(Clause(model, boundary))
+                        start = hi + 1
+                else:
+                    allowed = set(kept)
+                    clauses.extend(Clause(model, [~atom]) for value in domain if value not in allowed
+                                   for atom in atoms(item, value))
+            if bipartite:
+                for value in kept:
+                    columns.setdefault(value, []).append(item)
+
+        if not bipartite:
+            for i, left in enumerate(self._items):
+                for right in self._items[i + 1:]:
+                    clauses.extend(left != right)
+
+        for value, owners in columns.items():
+            if len(owners) > 1:
+                if integers and len(owners) == 2:
+                    patterns = [atoms(item, value) for item in owners]
+                    clauses.append(Clause(model, [~atom for pattern in patterns for atom in pattern]))
+                else:
+                    col = [model._lit_to_dimacs(item._none_indicator() if value is None else item == value)
+                           for item in owners]
+                    cnf = _encode_amo(col, model._top_id())
+                    clauses.extend(model._cnfplus_to_clausegroup(cnf))
+                    amo_groups.append(col)
+        return ClauseGroup(model, clauses, amo_groups=amo_groups)
 
     def _not_all_different(self) -> ClauseGroup:
         clauses: list[tuple[int, ...]] = []
@@ -1692,16 +1749,7 @@ class EnumVector(_BaseVector):
             yield [item._none_indicator() for item in nullable]
 
     def _all_different_bipartite(self) -> ClauseGroup:
-        clauses: list[Clause] = []
-        amo_groups: list[list[int]] = []
-        if self._model._inc_state.bound:
-            self._model._reserve_literal_ids_up_to(int(self._model._inc_state.ip_next_vid))
-        for col_lits in self._all_different_columns():
-            col = [self._model._lit_to_dimacs(lit) for lit in col_lits]
-            cnf = _encode_amo(col, self._model._top_id())
-            clauses.extend(self._model._cnfplus_to_clausegroup(cnf))
-            amo_groups.append(col)
-        return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
+        return self._build_all_different(bipartite=True)
 
     def _not_all_different_bipartite(self) -> ClauseGroup:
         return self._not_all_different_columns(self._all_different_columns())
@@ -1926,20 +1974,7 @@ class IntVector(_BaseVector):
             yield [x == value for x in column]
 
     def _all_different_bipartite(self) -> ClauseGroup:
-        clauses: list[Clause] = []
-        amo_groups: list[list[int]] = []
-        if self._model._inc_state.bound:
-            self._model._reserve_literal_ids_up_to(int(self._model._inc_state.ip_next_vid))
-        for value, column in self._all_different_value_columns():
-            if len(column) == 2:
-                atoms = [atom for x in column for atom in x._exact_value_atoms(value)]
-                clauses.append(Clause(self._model, [~atom for atom in atoms]))
-                continue
-            col = [self._model._lit_to_dimacs(x == value) for x in column]
-            cnf = _encode_amo(col, self._model._top_id())
-            clauses.extend(self._model._cnfplus_to_clausegroup(cnf))
-            amo_groups.append(col)
-        return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
+        return self._build_all_different(bipartite=True)
 
     def _not_all_different_bipartite(self) -> ClauseGroup:
         return self._not_all_different_columns(self._all_different_columns())

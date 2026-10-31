@@ -7,6 +7,7 @@ from pysat.solvers import Solver
 
 from hermax.encoder.pbamo import PBAMOEnc
 from hermax.encoder.pb_enc import PBEnc
+from hermax.encoder._packed import PBAMOEnc as PackedPBAMOEnc
 from hermax.internal import _pbamo
 
 
@@ -90,6 +91,35 @@ def test_default_equality_route_remains_pblib(monkeypatch):
     result = PBAMOEnc.auto_eq(lits=[1, 2, 3], weights=[2, 3, 5], bound=5)
     expected = PBEnc.equals([1, 2, 3], [2, 3, 5], 5, top_id=3)
     assert (result.clauses, result.nv) == (expected.clauses, expected.nv)
+
+
+@pytest.mark.parametrize('backend', [PBAMOEnc, PackedPBAMOEnc])
+@pytest.mark.parametrize('bound', [2, 3, 997, 998])
+def test_small_exact_counts_use_linear_shared_equality(backend, bound):
+    n, top_id = 1000, 1200
+    cnf = backend.auto_eq(lits=list(range(1, n + 1)), weights=[1] * n,
+                          bound=bound, top_id=top_id)
+    k = min(bound, n - bound)
+    assert cnf.nv - top_id <= k * (n - k) - 1
+    assert len(cnf.clauses) <= 5 * k * (n - k) - n - 1
+    assert all(abs(lit) <= n or top_id < abs(lit) <= cnf.nv
+               for clause in cnf.clauses for lit in clause)
+
+
+@pytest.mark.parametrize('backend', [PBAMOEnc, PackedPBAMOEnc])
+@pytest.mark.parametrize('lits', [
+    [1, -2, 3, -4, 5, -6],
+    [1, -1, 2, -2, 3, 4, 5, 6],
+    [1, 1, -2, 3, 4, 5],
+])
+def test_auto_small_counts_match_arithmetic_with_aliases(backend, lits):
+    for bound in {2, 3, len(lits) - 2, len(lits) - 3}:
+        cnf = backend.auto_eq(lits=lits, weights=[1] * len(lits), bound=bound)
+        with Solver(bootstrap_with=cnf.clauses) as solver:
+            for values in itertools.product([False, True], repeat=max(map(abs, lits))):
+                count = sum(values[abs(lit) - 1] == (lit > 0) for lit in lits)
+                fixed = [i if value else -i for i, value in enumerate(values, 1)]
+                assert solver.solve(assumptions=fixed) == (count == bound)
 
 
 def unit_propagate(clauses, assumptions):

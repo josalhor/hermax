@@ -7,6 +7,7 @@ from functools import reduce
 from typing import Iterable, Mapping, Optional, Sequence
 from hermax.encoder._packed import _ModelPBAMOEnc
 from hermax.encoder import _weighted_sum
+from hermax.encoder._cardinality_policy import reified_equality_lower_bound
 from ._integer_sum import compile_sum, compile_binary_sum, addition_encoding
 from hermax.internal import _encoding_policy as policy
 from ._counting import count_thresholds, count_clause_upper, merge_thresholds, _append_implication
@@ -666,6 +667,18 @@ class _EncoderDispatch:
         return x, a, y, b, literal, weight, offset
 
     @staticmethod
+    def _can_share_reified_count(model, literals, bound, indicator):
+        if model._known_amo_groups or model._known_eo_groups:
+            return False
+        ids = {literal.id for literal in literals}
+        if len(ids) != len(literals) or indicator.id in ids:
+            return False
+        variables, clauses = reified_equality_lower_bound(len(literals), bound)
+        shared_clauses = count_clause_upper(len(literals), [bound, bound + 1])
+        # Counting gates use one variable and three clauses each.
+        return shared_clauses // 3 <= variables and shared_clauses + 3 <= clauses
+
+    @staticmethod
     def _try_reify_cardinality(model, constraint, indicator):
         if constraint._op not in ("<=", "<", ">=", ">", "=="):
             return None
@@ -680,23 +693,28 @@ class _EncoderDispatch:
         literals = [literal for _, literal in pairs]
         if any(literal.id in model._intvar_threshold_owner_by_litid for literal in literals):
             return None
-        if comparison == ">=" or (comparison == "==" and bound != 1 and bound == len(literals) - 1):
+        if comparison == ">=" or (comparison == "==" and bound > len(literals) // 2):
             literals = [~literal for literal in literals]
             bound = len(literals) - bound
             comparison = "<=" if comparison == ">=" else "=="
-        if comparison not in ("<=", "==") or bound != 1:
+        if comparison not in ("<=", "=="):
             return None
-        thresholds = [1, 2] if comparison == "==" else [2]
+        if bound != 1:
+            if comparison != "==" or not 1 < bound < len(literals) - 1:
+                return None
+            if not _EncoderDispatch._can_share_reified_count(model, literals, bound, indicator):
+                return None
+        thresholds = [bound, bound + 1] if comparison == "==" else [bound + 1]
         clauses, outputs = _EncoderDispatch._build_sequential_ge_counter(
             model, literals, thresholds=thresholds
         )
-        at_most_one = _EncoderDispatch._negate_bool_or_lit(outputs[2])
-        _EncoderDispatch._lit_implies(clauses, model, indicator, at_most_one)
+        below_next = _EncoderDispatch._negate_bool_or_lit(outputs[bound + 1])
+        _EncoderDispatch._lit_implies(clauses, model, indicator, below_next)
         if comparison == "==":
-            _EncoderDispatch._lit_implies(clauses, model, indicator, outputs[1])
-            _EncoderDispatch._lit_conj_implies(clauses, model, outputs[1], at_most_one, indicator)
+            _EncoderDispatch._lit_implies(clauses, model, indicator, outputs[bound])
+            _EncoderDispatch._lit_conj_implies(clauses, model, outputs[bound], below_next, indicator)
         else:
-            _EncoderDispatch._lit_implies(clauses, model, at_most_one, indicator)
+            _EncoderDispatch._lit_implies(clauses, model, below_next, indicator)
         return ClauseGroup(model, clauses)
 
     @staticmethod
@@ -982,9 +1000,11 @@ class _EncoderDispatch:
             return None
 
         def compile_oriented(main_expr: PBExpr, cmp_op: str, affine_expr: PBExpr) -> ClauseGroup | None:
-            left = _EncoderDispatch._extract_int_plus_unit_bool_sum_affine(model, main_expr)
             right = _EncoderDispatch._extract_single_weighted_bool_affine(model, affine_expr)
-            if left is None or right is None:
+            if right is None:
+                return None
+            left = _EncoderDispatch._extract_int_plus_unit_bool_sum_affine(model, main_expr)
+            if left is None:
                 return None
             x, a, bool_lits, c_left = left
             lit, mcoef, c_right = right
