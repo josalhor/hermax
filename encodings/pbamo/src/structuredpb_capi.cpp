@@ -10,6 +10,7 @@
 
 #include "structuredpb/encoder.hpp"
 #include "structuredpb/rggt_equality.hpp"
+#include "amo.hpp"
 
 namespace {
 
@@ -248,7 +249,54 @@ PyObject* py_available_encoders(PyObject*, PyObject*) {
     }
 }
 
+PyObject* py_encode_amo_packed(PyObject*, PyObject* args) {
+    PyObject* inputs = nullptr;
+    int top_id = 0, equality = 0;
+    if (!PyArg_ParseTuple(args, "Oip", &inputs, &top_id, &equality)) return nullptr;
+    if (!PyList_Check(inputs)) {
+        PyErr_SetString(PyExc_TypeError, "AMO inputs must be a list");
+        return nullptr;
+    }
+    if (top_id < 0 || top_id == std::numeric_limits<int>::max()) {
+        PyErr_SetString(PyExc_ValueError, "top_id is outside the supported variable ID range");
+        return nullptr;
+    }
+    try {
+        std::vector<int> group;
+        group.reserve(PyList_GET_SIZE(inputs));
+        for (Py_ssize_t i = 0; i < PyList_GET_SIZE(inputs); ++i) {
+            PyObject* item = PyList_GET_ITEM(inputs, i);
+            if (!PyLong_Check(item) || PyBool_Check(item)) {
+                PyErr_SetString(PyExc_TypeError, "AMO literals must be integers");
+                return nullptr;
+            }
+            const long lit = PyLong_AsLong(item);
+            if (PyErr_Occurred()) return nullptr;
+            if (!lit || lit <= -std::numeric_limits<int>::max() || lit >= std::numeric_limits<int>::max()) {
+                PyErr_SetString(PyExc_ValueError, "AMO literal ID is outside the supported range");
+                return nullptr;
+            }
+            group.push_back(static_cast<int>(lit));
+            top_id = std::max(top_id, std::abs(static_cast<int>(lit)));
+        }
+        const auto* api = hermax::clauses::import_api();
+        if (!api) return nullptr;
+        structuredpb::CnfFormula cnf({PyMem_Malloc, PyMem_Free});
+        structuredpb::VariableManager variables(top_id);
+        structuredpb::add_amo_group(group, cnf, variables, equality != 0);
+        PyObject* clauses = api->adopt(&cnf.clauses);
+        if (!clauses) return nullptr;
+        return Py_BuildValue("Ni", clauses, variables.max_var());
+    } catch (const std::bad_alloc&) {
+        return PyErr_NoMemory();
+    } catch (const std::exception& error) {
+        PyErr_SetString(PyExc_ValueError, error.what());
+        return nullptr;
+    }
+}
+
 PyMethodDef module_methods[] = {
+    {"_encode_amo_packed", py_encode_amo_packed, METH_VARARGS, nullptr},
     {"_encode_leq_packed", reinterpret_cast<PyCFunction>(py_encode_leq_packed), METH_VARARGS | METH_KEYWORDS, nullptr},
     {"_encode_eq_packed", reinterpret_cast<PyCFunction>(py_encode_eq_packed), METH_VARARGS | METH_KEYWORDS, nullptr},
     {"encode_leq", reinterpret_cast<PyCFunction>(py_encode_leq), METH_VARARGS | METH_KEYWORDS,

@@ -306,29 +306,29 @@ def test_enum_export_preserves_exactly_one_semantics_for_nonnullable():
     assert r[color] in {"r", "g", "b"}
 
 
-def test_enum_domain_encoding_policy_uses_pairwise_up_to_8_and_seqcounter_from_9():
+def test_enum_domain_uses_shared_exactly_one_policy():
     m_small = Model()
-    e_small = m_small.enum("e_small", choices=[f"c{i}" for i in range(8)], nullable=False)
+    e_small = m_small.enum("e_small", choices=[f"c{i}" for i in range(5)], nullable=False)
     g_small = m_small._pending_literal_defs[e_small._choice_lits["c0"].id]
-    assert len(g_small._clauses) == 29
-    assert m_small._top_id() == 8
+    assert len(g_small._clauses) == 11
+    assert m_small._top_id() == 5
 
     m_big = Model()
-    e_big = m_big.enum("e_big", choices=[f"c{i}" for i in range(9)], nullable=False)
+    e_big = m_big.enum("e_big", choices=[f"c{i}" for i in range(6)], nullable=False)
     g_big = m_big._pending_literal_defs[e_big._choice_lits["c0"].id]
-    assert len(g_big._clauses) == 24
-    assert m_big._top_id() == 17
+    assert len(g_big._clauses) == 15
+    assert m_big._top_id() == 11
 
 
-def test_nullable_enum_domain_encoding_policy_uses_pairwise_up_to_8_and_seqcounter_from_9():
+def test_nullable_enum_domain_uses_shared_at_most_one_policy():
     m_small = Model()
-    e_small = m_small.enum("e_small", choices=[f"c{i}" for i in range(8)], nullable=True)
+    e_small = m_small.enum("e_small", choices=[f"c{i}" for i in range(6)], nullable=True)
     g_small = m_small._pending_literal_defs[e_small._choice_lits["c0"].id]
-    assert len(g_small._clauses) == 28
-    assert m_small._top_id() == 8
+    assert len(g_small._clauses) == 15
+    assert m_small._top_id() == 6
 
     m_big = Model()
-    e_big = m_big.enum("e_big", choices=[f"c{i}" for i in range(9)], nullable=True)
+    e_big = m_big.enum("e_big", choices=[f"c{i}" for i in range(7)], nullable=True)
     g_big = m_big._pending_literal_defs[e_big._choice_lits["c0"].id]
-    assert len(g_big._clauses) == 23
-    assert m_big._top_id() == 17
+    assert len(g_big._clauses) == 18
+    assert m_big._top_id() == 13

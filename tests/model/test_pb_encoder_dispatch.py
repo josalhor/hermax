@@ -20,6 +20,11 @@ def _patch_card_methods(monkeypatch, calls):
     real_atmost = CardEnc.atmost
     real_atleast = CardEnc.atleast
     real_equals = CardEnc.equals
+    real_amo = pbamo_mod._append_amo
+
+    def amo(cnf, lits, *, equality=False):
+        calls.append(("amo", list(lits), equality, int(cnf.nv)))
+        return real_amo(cnf, lits, equality=equality)
 
     def atmost(*args, **kwargs):
         lits = kwargs.get("lits", args[0] if len(args) > 0 else None)
@@ -45,6 +50,7 @@ def _patch_card_methods(monkeypatch, calls):
     monkeypatch.setattr(CardEnc, "atmost", staticmethod(atmost))
     monkeypatch.setattr(CardEnc, "atleast", staticmethod(atleast))
     monkeypatch.setattr(CardEnc, "equals", staticmethod(equals))
+    monkeypatch.setattr(pbamo_mod, "_append_amo", amo)
 
 
 def _patch_pb_methods(monkeypatch, calls):
@@ -180,7 +186,7 @@ def test_unit_coefficients_use_cardinality_atmost(monkeypatch):
 
     assert r[a] is True
     assert r[b] is False
-    assert [c[0] for c in calls] == ["structured.auto_leq", "card.atmost"]
+    assert [c[0] for c in calls] == ["structured.auto_leq", "amo"]
     kind, lits, weights, bound, _amo_groups, _eo_groups = calls[0]
     assert kind == "structured.auto_leq"
     assert sorted(abs(x) for x in lits) == sorted([a.id, b.id])
@@ -228,8 +234,8 @@ def test_unit_coefficients_use_cardinality_equals(monkeypatch):
     assert r[a] is True
     assert r[b] is False
     kinds = [c[0] for c in calls]
-    # Exactly-one bypasses grouping and uses the cardinality backend directly.
-    assert kinds == ["structured.auto_eq", "card.equals", "card.atleast", "card.atmost"]
+    # Exactly-one bypasses grouping and uses the shared AMO/EO builder.
+    assert kinds == ["structured.auto_eq", "amo"]
 
 
 def test_weighted_coefficients_use_pb_equals(monkeypatch):
@@ -332,7 +338,7 @@ def test_strict_operators_map_to_adjusted_cardinality_bounds(monkeypatch):
 
     assert r[c] is True and r[d] is True
     kinds = [c0 for c0, *_ in calls]
-    assert kinds == ["structured.auto_leq", "card.atmost", "structured.auto_leq", "card.atmost"]
+    assert kinds == ["structured.auto_leq", "amo", "structured.auto_leq", "card.atmost"]
     assert calls[0][3] == 1
     assert sorted(calls[2][1]) == sorted([-c.id, -d.id])
     assert calls[2][3] == 0
@@ -355,7 +361,7 @@ def test_negative_coefficients_normalize_by_flipping_literal_and_shifting_bound(
     assert r[a] is True
     assert r[b] is True
 
-    assert [c[0] for c in calls] == ["structured.auto_leq", "card.atmost"]
+    assert [c[0] for c in calls] == ["structured.auto_leq", "amo"]
     _kind, lits, _weights, bound, _amo_groups, _eo_groups = calls[0]
     # Normalization should produce unit-cardinality over [a, ~b] with bound 1.
     assert bound == 1
@@ -381,7 +387,7 @@ def test_expr_vs_expr_with_unit_coeffs_still_uses_cardinality_dispatch(monkeypat
     r = _solve_ok(m)
     assert r[b] is True
     assert r[c] is True
-    assert [c0 for c0, *_ in calls] == ["structured.auto_leq", "card.atmost"]
+    assert [c0 for c0, *_ in calls] == ["structured.auto_leq", "amo"]
 
 
 def test_expr_vs_expr_with_nonunit_coeffs_uses_pb_dispatch(monkeypatch):
@@ -420,7 +426,7 @@ def test_gcd_reduction_unlocks_cardinality_for_uniform_weighted_leq(monkeypatch)
     _solve_ok(m)
 
     kinds = [c0 for c0, *_ in calls]
-    assert kinds == ["structured.auto_leq", "card.atmost"]
+    assert kinds == ["structured.auto_leq", "amo"]
     _kind, _lits, _weights, bound, _amo_groups, _eo_groups = calls[0]
     assert bound == 1
 
@@ -562,7 +568,7 @@ def test_commit_pb_is_idempotent(monkeypatch):
     m._commit_pb()
     m._commit_pb()
 
-    assert [c[0] for c in calls] == ["structured.auto_leq", "card.atmost"]
+    assert [c[0] for c in calls] == ["structured.auto_leq", "amo"]
 
 
 def test_soft_pb_is_deferred_until_commit(monkeypatch):
@@ -598,7 +604,7 @@ def test_auto_pb_commit_triggers_immediate_hard_compile(monkeypatch):
 
     m &= (a + b <= 1)
 
-    assert [c[0] for c in calls] == ["structured.auto_leq", "card.atmost"]
+    assert [c[0] for c in calls] == ["structured.auto_leq", "amo"]
 
 
 def test_auto_pb_commit_triggers_immediate_soft_compile(monkeypatch):
@@ -637,7 +643,7 @@ def test_commit_pb_prioritizes_cardinality_before_structured_pb(monkeypatch):
 
     kinds = [c0 for c0, *_ in calls]
     weighted_idx = next(i for i, entry in enumerate(calls) if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
-    assert weighted_idx >= 6
+    assert kinds[:weighted_idx] == ["structured.auto_leq", "amo", "structured.auto_eq", "amo"]
     weighted_call = next(entry for entry in calls if entry[0] == "structured.auto_leq" and any(w != 1 for w in entry[2]))
     _kind, lits, weights, bound, amo_groups, eo_groups = weighted_call
     assert sorted(abs(x) for x in lits) == sorted([a.id, b.id, d.id])

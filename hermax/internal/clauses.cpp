@@ -141,7 +141,6 @@ struct Data : PackedClauses {
         size_t first_row = size(), offset = literals.size();
         size_t begin = other.ends[first];
         literals.insert(literals.end(), other.literals.begin() + begin, other.literals.end());
-        ends.reserve(ends.size() + other.size() - first);
         for (size_t i = first + 1; i < other.ends.size(); ++i) ends.push_back(offset + other.ends[i] - begin);
         for (auto it = other.wide.lower_bound(first); it != other.wide.end(); ++it) {
             wide.emplace(first_row + it->first - first, it->second);

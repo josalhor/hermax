@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
-from itertools import combinations
 from math import gcd
 
 from pysat.formula import CNFPlus
 
 from hermax.internal import _pbamo as _native_pbamo
+from hermax.internal._clause_storage import ClauseStorage
 from hermax.encoder.card import CardEnc, EncType as CardEncType, ITotalizer
 from hermax.encoder.pb_enc import PBEnc, EncType as PBEncType
 from hermax.internal.kmerge import get_basis, get_conflict_depth, get_short_circuit_subsets
@@ -18,6 +18,12 @@ from hermax.internal.kmerge import get_basis, get_conflict_depth, get_short_circ
 
 CARD_STRUCTURE_THRESHOLD = 0.27
 CARD_FLAT_ENCODING = CardEncType.kmtotalizer
+
+
+def _append_amo(cnf, lits, *, equality=False):
+    clauses, cnf.nv = _native_pbamo._encode_amo_packed(list(lits), cnf.nv, equality)
+    clauses = ClauseStorage._wrap(clauses)
+    cnf.clauses.extend(clauses.to_lists() if isinstance(cnf.clauses, list) else clauses)
 
 
 class EncType:
@@ -374,19 +380,10 @@ class _PreparedStructure:
     amo_groups: tuple[tuple[int, ...], ...]
     eo_groups: tuple[tuple[int, ...], ...]
 
-    def append_candidate_clauses(self, cnf: CNFPlus, card_encoder) -> None:
-        for group in self.amo_groups + self.eo_groups:
-            ordered = sorted(set(group))
-            if len(ordered) < 32:
-                for lit, other in combinations(ordered, 2):
-                    cnf.clauses.append([-lit, -other])
-            else:
-                encoded = card_encoder.atmost(
-                    lits=ordered, bound=1, top_id=cnf.nv, encoding=CardEncType.ladder,
-                )
-                cnf.clauses.extend(encoded.clauses)
-                cnf.nv = max(cnf.nv, encoded.nv)
-        self.append_eo_clauses(cnf)
+    def append_candidate_clauses(self, cnf: CNFPlus) -> None:
+        for groups, equality in ((self.amo_groups, False), (self.eo_groups, True)):
+            for group in groups:
+                _append_amo(cnf, sorted(set(group)), equality=equality)
 
     def append_eo_clauses(self, cnf: CNFPlus) -> None:
         for group in self.eo_groups:
@@ -702,8 +699,9 @@ class PBAMOEnc:
 
     @classmethod
     def _encode_amo(cls, lits, top_id, structure, *, equality=False):
-        encode = cls._card_encoder.equals if equality else cls._card_encoder.atmost
-        cnf = encode(lits=lits, bound=1, top_id=top_id, encoding=CardEncType.ladder)
+        cnf = cls._new_cnf()
+        cnf.nv = top_id
+        _append_amo(cnf, lits, equality=equality)
         # Global AMO implies all candidate AMOs; EO candidates still require a choice.
         if cls._emit_candidate_facts:
             structure.append_eo_clauses(cnf)
@@ -753,7 +751,7 @@ class PBAMOEnc:
                 top_id=top_id, encoding=enc, emit_amo=False,
             )
         if cls._emit_candidate_facts:
-            structure.append_candidate_clauses(cnf, cls._card_encoder)
+            structure.append_candidate_clauses(cnf)
         cnf.nv = max(int(cnf.nv), top_id)
         return cnf
 
@@ -792,8 +790,9 @@ class PBAMOEnc:
         has_structure = any(len(group) > 1 for group in structure.groups)
         if not has_structure and not structure.amo_groups and not structure.eo_groups:
             if all(weight == 1 for weight in weights):
-                encoding = CardEncType.ladder if bound == len(lits) - 1 else CARD_FLAT_ENCODING
-                return cls._card_encoder.equals(lits=lits, bound=bound, top_id=top_id, encoding=encoding)
+                if bound == len(lits) - 1:
+                    return cls._encode_amo([-lit for lit in lits], top_id, structure, equality=True)
+                return cls._card_encoder.equals(lits=lits, bound=bound, top_id=top_id, encoding=CARD_FLAT_ENCODING)
 
             return cls._pb_encoder.equals(lits=lits, weights=weights, bound=bound, top_id=top_id, encoding=PBEncType.best)
 
@@ -853,7 +852,7 @@ class PBAMOEnc:
                 bound=bound, top_id=top_id, encoding=enc, emit_amo=False,
             )
         if cls._emit_candidate_facts:
-            structure.append_candidate_clauses(cnf, cls._card_encoder)
+            structure.append_candidate_clauses(cnf)
         cnf.nv = max(int(cnf.nv), top_id)
         return cnf
 

@@ -17,6 +17,7 @@ def _count_calls(monkeypatch):
         "card_atmost": 0,
         "card_atleast": 0,
         "card_equals": 0,
+        "amo": 0,
         "pb_leq": 0,
         "pb_geq": 0,
         "pb_equals": 0,
@@ -30,6 +31,11 @@ def _count_calls(monkeypatch):
     orig_leq = PBEnc.leq
     orig_geq = PBEnc.geq
     orig_peq = PBEnc.equals
+    orig_amo = pbamo_mod._append_amo
+
+    def amo(*args, **kwargs):
+        calls["amo"] += 1
+        return orig_amo(*args, **kwargs)
 
     def auto_leq(*args, **kwargs):
         calls["structured_auto_leq"] += 1
@@ -67,9 +73,7 @@ def _count_calls(monkeypatch):
 
     monkeypatch.setattr(PBAMOEnc, "auto_leq", staticmethod(auto_leq))
     monkeypatch.setattr(PBAMOEnc, "auto_eq", staticmethod(auto_eq), raising=False)
-    monkeypatch.setattr(CardEnc, "atmost", atmost)
-    monkeypatch.setattr(CardEnc, "atleast", atleast)
-    monkeypatch.setattr(CardEnc, "equals", ceq)
+    monkeypatch.setattr(pbamo_mod, "_append_amo", amo)
     monkeypatch.setattr(CardEnc, "atmost", atmost)
     monkeypatch.setattr(CardEnc, "atleast", atleast)
     monkeypatch.setattr(CardEnc, "equals", ceq)
@@ -89,7 +93,7 @@ def test_card_cache_atmost_reused_for_equivalent_constraints(monkeypatch):
     m &= (a + b <= 1)
     m._commit_pb()
     assert calls["structured_auto_leq"] == 1
-    assert calls["card_atmost"] == 1
+    assert calls["amo"] == 1
 
 
 def test_card_cache_equals_reused(monkeypatch):
@@ -101,11 +105,10 @@ def test_card_cache_equals_reused(monkeypatch):
     m &= (a + b == 1)
     m._commit_pb()
     assert calls["structured_auto_eq"] == 1
-    # Exactly-one goes directly to CardEnc, and the repeated constraint is cached.
+    # Exactly-one uses the shared builder once; the repeated constraint is cached.
     assert calls["structured_auto_leq"] == 0
-    assert calls["card_equals"] == 1
-    assert calls["card_atleast"] == 1
-    assert calls["card_atmost"] == 1
+    assert calls["amo"] == 1
+    assert calls["card_equals"] == calls["card_atleast"] == calls["card_atmost"] == 0
 
 
 def test_card_cache_atleast_reused(monkeypatch):
@@ -117,7 +120,7 @@ def test_card_cache_atleast_reused(monkeypatch):
     m &= (a + b >= 1)
     m._commit_pb()
     assert calls["structured_auto_leq"] == 1
-    assert calls["card_atmost"] == 1
+    assert calls["amo"] == 1
     assert calls["card_atleast"] == 0
 
 
@@ -167,7 +170,7 @@ def test_cache_key_distinguishes_bound(monkeypatch):
     m._commit_pb()
     # second one is trivial true (sum<=2 with two unit vars), so no extra call
     assert calls["structured_auto_leq"] == 1
-    assert calls["card_atmost"] == 1
+    assert calls["amo"] == 1
 
 
 def test_cache_key_distinguishes_op(monkeypatch):
@@ -179,7 +182,7 @@ def test_cache_key_distinguishes_op(monkeypatch):
     m &= (a + b >= 1)
     m._commit_pb()
     assert calls["structured_auto_leq"] == 2
-    assert calls["card_atmost"] == 2
+    assert calls["amo"] == 2
     assert calls["card_atleast"] == 0
 
 
@@ -192,7 +195,7 @@ def test_cache_key_normalizes_literal_order(monkeypatch):
     m &= (b + a <= 1)
     m._commit_pb()
     assert calls["structured_auto_leq"] == 1
-    assert calls["card_atmost"] == 1
+    assert calls["amo"] == 1
 
 
 def test_cache_reused_when_model_grows_between_calls(monkeypatch):
@@ -205,7 +208,7 @@ def test_cache_reused_when_model_grows_between_calls(monkeypatch):
     m &= (a + b <= 1)
     m._commit_pb()
     assert calls["structured_auto_leq"] == 1
-    assert calls["card_atmost"] == 1
+    assert calls["amo"] == 1
 
 
 def test_cache_applies_for_obj_add_pbconstraint(monkeypatch):

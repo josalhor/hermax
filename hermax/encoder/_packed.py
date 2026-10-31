@@ -7,7 +7,7 @@ from hermax.internal import _pblib, _pbamo
 from hermax.internal._clause_storage import ClauseStorage
 from .card import CardEnc as _CardEnc, ITotalizer as _ITotalizer
 from .pb_enc import PBEnc as _PBEnc
-from .pbamo import PBAMOEnc as _PBAMOEnc
+from .pbamo import PBAMOEnc as _PBAMOEnc, _append_amo
 from .pb import PBCompiler as _PBCompiler
 
 
@@ -16,6 +16,12 @@ class _EncodedCNF:
     clauses: ClauseStorage = field(default_factory=ClauseStorage)
     nv: int = 0
     atmosts: list = field(default_factory=list)
+
+
+def encode_amo(lits, top_id, *, equality=False):
+    cnf = _EncodedCNF(nv=top_id)
+    _append_amo(cnf, lits, equality=equality)
+    return cnf
 
 
 def _wrap(result):

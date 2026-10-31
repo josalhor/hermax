@@ -10,9 +10,7 @@ from typing import Callable, Iterable, Mapping, Optional, Sequence
 from pysat.formula import CNF, WCNF
 from ._integer_views import binary_view as _binary_view_for
 from hermax.internal.operation_cache import _Identity, cached_operation
-from hermax.encoder.card import EncType as CardEncType
-from hermax.encoder._packed import CardEnc
-from hermax.encoder.pb_enc import PBEnc
+from hermax.encoder._packed import encode_amo as _encode_amo
 from hermax.utils import batcher_odd_even_unary_add_network
 from pysat.solvers import Solver as PySATSolver
 from hermax.non_incremental import RC2 as HermaxRC2
@@ -452,23 +450,12 @@ class EnumVar:
         if not lits:
             return
         dimacs = [self._model._lit_to_dimacs(lit) for lit in lits]
-        if len(lits) <= 8:
-            clauses = []
-            for i in range(len(lits)):
-                for j in range(i + 1, len(lits)):
-                    clauses.append(Clause(self._model, [~lits[i], ~lits[j]]))
-            if self.nullable:
-                group = ClauseGroup(self._model, clauses, amo_groups=[dimacs])
-            else:
-                clauses.append(Clause(self._model, lits))
-                group = ClauseGroup(self._model, clauses, eo_groups=[dimacs])
+        cnf = _encode_amo(dimacs, self._model._top_id(), equality=not self.nullable)
+        group = self._model._cnfplus_to_clausegroup(cnf)
+        if self.nullable:
+            group._amo_groups = [dimacs]
         else:
-            if self.nullable:
-                cnf = CardEnc.atmost(lits=dimacs, bound=1, top_id=self._model._top_id(), encoding=CardEncType.seqcounter)
-                group = ClauseGroup(self._model, self._model._cnfplus_to_clausegroup(cnf), amo_groups=[dimacs])
-            else:
-                cnf = CardEnc.equals(lits=dimacs, bound=1, top_id=self._model._top_id(), encoding=CardEncType.seqcounter)
-                group = ClauseGroup(self._model, self._model._cnfplus_to_clausegroup(cnf), eo_groups=[dimacs])
+            group._eo_groups = [dimacs]
         self._model._register_clausegroup_structure(group)
         for lit in lits:
             self._model._register_literal_definition(lit, group)
@@ -1711,12 +1698,8 @@ class EnumVector(_BaseVector):
             self._model._reserve_literal_ids_up_to(int(self._model._inc_state.ip_next_vid))
         for col_lits in self._all_different_columns():
             col = [self._model._lit_to_dimacs(lit) for lit in col_lits]
-            if len(self) < 32:
-                group = BoolVector(self._model, f"{self.name}.column", col_lits).at_most_one()
-                clauses.extend(self._model._as_clausegroup(group))
-            else:
-                cnf = CardEnc.atmost(lits=col, bound=1, top_id=self._model._top_id(), encoding=CardEncType.ladder)
-                clauses.extend(self._model._cnfplus_to_clausegroup(cnf))
+            cnf = _encode_amo(col, self._model._top_id())
+            clauses.extend(self._model._cnfplus_to_clausegroup(cnf))
             amo_groups.append(col)
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)
 
@@ -1953,7 +1936,7 @@ class IntVector(_BaseVector):
                 clauses.append(Clause(self._model, [~atom for atom in atoms]))
                 continue
             col = [self._model._lit_to_dimacs(x == value) for x in column]
-            cnf = CardEnc.atmost(lits=col, bound=1, top_id=self._model._top_id(), encoding=CardEncType.seqcounter)
+            cnf = _encode_amo(col, self._model._top_id())
             clauses.extend(self._model._cnfplus_to_clausegroup(cnf))
             amo_groups.append(col)
         return ClauseGroup(self._model, clauses, amo_groups=amo_groups)

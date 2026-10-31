@@ -116,11 +116,11 @@ def test_native_equality_group_emission_is_compact_and_exact():
 
 @pytest.mark.parametrize("backend", [pbamo.PBAMOEnc, PackedPBAMOEnc])
 @pytest.mark.parametrize("method,bound,expected", [
-    ("auto_leq", 1, "ladder"), ("auto_leq", 2, "kmtotalizer"),
-    ("auto_eq", 1, "ladder"), ("auto_eq", 2, "kmtotalizer"),
-    ("auto_eq", 5, "ladder"),
+    ("auto_leq", 1, None), ("auto_leq", 2, "kmtotalizer"),
+    ("auto_eq", 1, None), ("auto_eq", 2, "kmtotalizer"),
+    ("auto_eq", 5, None),
 ])
-def test_flat_amo_selects_ladder_without_changing_general_counts(backend, method, bound, expected):
+def test_flat_amo_uses_shared_policy_without_changing_general_counts(backend, method, bound, expected):
     from hermax.encoder.card import EncType
 
     original = backend._card_encoder
@@ -142,7 +142,7 @@ def test_flat_amo_selects_ladder_without_changing_general_counts(backend, method
 
     lits = [1, -2, 3, -4, 5, -6]
     cnf = getattr(RecordingBackend, method)(lits=lits, weights=[1] * 6, bound=bound, top_id=20)
-    assert selected == [getattr(EncType, expected)]
+    assert selected == ([] if expected is None else [getattr(EncType, expected)])
     with Solver(bootstrap_with=cnf.clauses) as solver:
         for bits in itertools.product([False, True], repeat=6):
             count = sum(bits)

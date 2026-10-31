@@ -73,7 +73,8 @@ def test_int_floordiv_is_holding_tank_and_does_not_mutate_model_until_used():
     span = q_real.ub - q_real.lb + 1
     assert m._top_id() - top_before == max(0, span - 1)
     assert len(m._hard) - hard_before == max(0, span - 2)
-    assert len(m._pending_literal_defs) >= max(0, len(q_real._threshold_lits) - 1)
+    assert len(m._pending_literal_defs) == 1
+    assert q_real._threshold_lits[0].id in m._pending_literal_defs
 
 
 @pytest.mark.parametrize("divisor", [1, 2, 3, 5])

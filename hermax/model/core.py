@@ -1533,7 +1533,7 @@ class Model:
             if lit is not None:
                 self._ensure_literal_def_realized(lit)
 
-    def _ensure_deferred_defs_in_group(self, group: ClauseGroup, *, defining: bool = False) -> None:
+    def _ensure_deferred_defs_in_group(self, group: Iterable[Sequence[int]], *, defining: bool = False) -> None:
         pending_defs = self._pending_literal_defs
         if len(self._realized_literal_defs) == len(pending_defs):
             return
@@ -1659,12 +1659,13 @@ class Model:
         self._reserve_container_name(out_name)
         out = IntVar(self, out_name, lb=out_lb, ub=out_ub)
 
+        clauses = []
         for q_val in range(out.lb + 1, out.ub + 1):
             q_lit = out.__ge__(q_val)
             x_lit = x.__ge__(q_val * divisor)
-            group = self._equiv_literals_group(q_lit, x_lit)
-            if not group.is_empty():
-                self._register_literal_definition(q_lit, group)
+            clauses.extend(self._equiv_literals_group(q_lit, x_lit))
+        if clauses:
+            self._register_literal_definition(out._threshold_lits[0], ClauseGroup(self, clauses))
         return out
 
     @cached_operation(normalize={"x": _realize_integer_source})
@@ -1689,6 +1690,7 @@ class Model:
         self._reserve_container_name(out_name)
         out = IntVar(self, out_name, lb=out_lb, ub=out_ub)
 
+        clauses = []
         for k in range(x.lb + 1, x.ub + 1):
             xk = x.__ge__(k) if factor > 0 else x.__lt__(k)
 
@@ -1696,19 +1698,15 @@ class Model:
             up_q = factor * k if factor > 0 else factor * (k - 1)
             if out.lb < up_q <= out.ub:
                 out_up = out.__ge__(up_q)
-                self._register_literal_definition(
-                    out_up,
-                    ClauseGroup(self, [Clause(self, [~xk, out_up])])
-                )
+                clauses.append(Clause(self, [~xk, out_up]))
 
             # Exclude output values between adjacent scaled input values.
             gap_q = factor * (k - 1) + 1 if factor > 0 else factor * k + 1
             if out.lb < gap_q <= out.ub:
                 out_gap = out.__ge__(gap_q)
-                self._register_literal_definition(
-                    out_gap,
-                    ClauseGroup(self, [Clause(self, [~out_gap, xk])])
-                )
+                clauses.append(Clause(self, [~out_gap, xk]))
+        if clauses:
+            self._register_literal_definition(out._threshold_lits[0], ClauseGroup(self, clauses))
         return out
 
     @cached_operation(normalize={"x": _realize_integer_source})
@@ -2380,35 +2378,30 @@ class Model:
         with self.profile_scope(scope_kind):
             if isinstance(constraint, PBConstraint):
                 self._maybe_register_pb_cardinality_structure(constraint)
-                compiled = self._prepare_pb_constraint(constraint)
-                if isinstance(compiled, PBConstraint):
-                    self._defer_pb_constraint(compiled)
+                constraint = self._prepare_pb_constraint(constraint)
+                if isinstance(constraint, PBConstraint):
+                    self._defer_pb_constraint(constraint)
                     if self._debug_level >= self.DEBUG_DELTA:
                         self._debug(self.DEBUG_DELTA, "defer_hard_pb count=1")
                     if self._auto_commit_pb:
                         self._commit_pb()
                     return self
-                group = compiled
-                self._ensure_deferred_defs_in_group(group)
-                self._register_clausegroup_structure(group)
-                self._hard.extend(group)
-                if self._debug_level >= self.DEBUG_DELTA:
-                    self._debug(self.DEBUG_DELTA, f"add_hard count={len(group)}")
-                    if self._debug_level >= self.DEBUG_VERBOSE:
-                        for i, c in enumerate(group):
-                            self._debug(self.DEBUG_VERBOSE, f"  hard[{i}]={self._clause_to_dimacs_list(c)}")
-                self._inc_state.route_deltas(hard0, soft0)
-                return self
-            group = self._as_clausegroup(constraint)
-            if isinstance(group, DeferredClauseGroup):
-                group = group._realize()
-            self._ensure_deferred_defs_in_group(group)
-            self._register_clausegroup_structure(group)
-            self._hard.extend(group)
+            if isinstance(constraint, Literal):
+                clauses = ((self._lit_to_dimacs(constraint),),)
+            elif isinstance(constraint, Clause):
+                clauses = (constraint.dimacs,)
+            else:
+                clauses = self._as_clausegroup(constraint)
+                if isinstance(clauses, DeferredClauseGroup):
+                    clauses = clauses._realize()
+            self._ensure_deferred_defs_in_group(clauses)
+            if isinstance(clauses, ClauseGroup):
+                self._register_clausegroup_structure(clauses)
+            self._hard.extend(clauses)
             if self._debug_level >= self.DEBUG_DELTA:
-                self._debug(self.DEBUG_DELTA, f"add_hard count={len(group)}")
+                self._debug(self.DEBUG_DELTA, f"add_hard count={len(clauses)}")
                 if self._debug_level >= self.DEBUG_VERBOSE:
-                    for i, c in enumerate(group):
+                    for i, c in enumerate(clauses):
                         self._debug(self.DEBUG_VERBOSE, f"  hard[{i}]={self._clause_to_dimacs_list(c)}")
             self._inc_state.route_deltas(hard0, soft0)
             return self
