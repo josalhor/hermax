@@ -110,8 +110,3 @@ other project references.
    changelog
    Developer <developer>
    Citation <acknowledgments>
-
-.. toctree::
-   :maxdepth: 1
-
-   formula
