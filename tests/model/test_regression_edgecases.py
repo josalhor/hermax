@@ -1,3 +1,4 @@
+
 import pytest
 
 from pysat.examples.rc2 import RC2 as PySATRC2
@@ -142,7 +143,8 @@ def test_empty_and_tautological_clauses_in_clausegroup_if_exposed_behave_transpa
     # An always-false preference has the same unavoidable cost in export and solve.
     m3 = Model()
     m3.set_soft_gcd_optimization(False)
-    m3.obj.add_soft(ClauseGroup(m3, [Clause(m3, [])]), 5)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m3.obj.add_soft(ClauseGroup(m3, [Clause(m3, [])]), 5)
     wcnf = m3.to_wcnf()
     solver_formula, scale = m3._to_wcnf_for_solver()
     assert scale == 1

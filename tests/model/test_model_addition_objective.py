@@ -1,3 +1,4 @@
+
 import pytest
 
 from hermax.model import ClauseGroup, Model
@@ -66,8 +67,8 @@ def test_objective_soft_literal_and_clause_choose_min_cost_assignment():
     b = m.bool("b")
 
     # Pay 5 if a is false. Pay 2 if b is true (soft clause ~b violated when b=true).
-    m.obj.add_soft(a, 5)
-    m.obj.add_soft(~b, 2)
+    m.obj.add(~a, weight=5)
+    m.obj.add(b, weight=2)
 
     r = _solve_ok(m)
     assert r.status == "optimum"
@@ -85,8 +86,8 @@ def test_objective_repeated_weight_bucket_accumulates_multiple_soft_clauses():
     m &= ~a
     m &= b
 
-    m.obj.add_soft(a, 3)     # violated because a=false => +3
-    m.obj.add_soft(~b, 3)    # violated because b=true  => +3
+    m.obj.add(~a, weight=3)     # violated because a=false => +3
+    m.obj.add(b, weight=3)    # violated because b=true  => +3
 
     r = _solve_ok(m)
     assert r.status == "optimum"
@@ -108,7 +109,9 @@ def test_objective_accepts_clausegroup_from_public_producer_end_to_end():
     # Force a=true and b=false so the generated clauses make c mandatory.
     m &= a
     m &= ~b
-    m.obj.add_soft(group, 7)
+    satisfied = m.bool()
+    m &= group.iff(satisfied)
+    m.obj.add(~satisfied, weight=7)
 
     # To avoid cost, solver should satisfy the whole group and set c=true.
     r = _solve_ok(m)
@@ -125,7 +128,9 @@ def test_objective_soft_pb_clausegroup_penalizes_violation_end_to_end():
     # PB comparator finalizes to ClauseGroup. Force a=b=true so (a+b<=1) is violated.
     m &= a
     m &= b
-    m.obj.add_soft(a + b <= 1, 10)
+    satisfied = m.bool()
+    m &= (a + b <= 1).iff(satisfied)
+    m.obj.add(~satisfied, weight=10)
 
     r = _solve_ok(m)
     assert r.status == "optimum"
@@ -139,8 +144,10 @@ def test_objective_true_is_noop_and_false_adds_unavoidable_cost():
     a = m.bool("a")
 
     m &= a
-    m.obj.add_soft(True, 4)   # no-op
-    m.obj.add_soft(False, 9)  # always violated => unavoidable cost
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(True, 4)   # no-op
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(False, 9)  # always violated => unavoidable cost
 
     r = _solve_ok(m)
     assert r.status == "optimum"
@@ -154,7 +161,8 @@ def test_empty_clausegroup_addition_is_noop_for_hard_and_soft():
     empty = ClauseGroup(m, [])
 
     m &= empty
-    m.obj.add_soft(empty, 5)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(empty, 5)
     m &= a
 
     r = _solve_ok(m)
@@ -178,9 +186,12 @@ def test_internal_hard_soft_storage_invariants_preserve_clause_shapes_and_weight
     m &= cg
 
     # Soft additions through literal, clause, and ClauseGroup.
-    m.obj.add_soft(~c, 5)
-    m.obj.add_soft(a | ~b, 7)
-    m.obj.add_soft(a + b <= 1, 11)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(~c, 5)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(a | ~b, 7)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(a + b <= 1, 11)
 
     # Hard storage invariants.
     assert all(isinstance(cl, tuple) for cl in m._hard)
@@ -218,7 +229,8 @@ def test_soft_pbconstraint_requires_targeted_relaxation_single_penalty():
     compiled = pb.clauses()
     assert len(compiled._clauses) >= 1
 
-    m.obj.add_soft(pb, 100)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(pb, 100)
 
     soft_100 = [cl for (w, cl) in m._soft if w == 100]
     assert len(soft_100) == 1, (
@@ -278,7 +290,7 @@ def test_objective_intvar_and_manual_threshold_soft_encoding_agree_on_argmin_and
     m2 &= (x2 >= 3)
     # Manual equivalent: constant offset + weighted threshold penalties.
     for t in x2._threshold_lits:
-        m2.obj.add_soft(~t, 4)
+        m2.obj.add(t, weight=4)
     m2._objective_constant += 4 * x2.lb
     r2 = _solve_ok(m2)
 

@@ -69,7 +69,8 @@ def _mk_nonunit_soft_model() -> Model:
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj.add_soft(a | b, weight=7)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(a | b, weight=7)
     return m
 
 
@@ -163,7 +164,8 @@ def test_add_soft_rejects_numeric_intvar():
     m = Model()
     x = m.int("x", -2, 3)
     with pytest.raises(TypeError, match="numeric"):
-        m.obj.add_soft(x, weight=1)
+        with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+            m.obj.add_soft(x, weight=1)
 
 
 def test_numeric_objective_rejects_cross_model_pbexpr():
@@ -249,14 +251,18 @@ def test_assumptions_reject_bool_zero_and_bad_term_coeff():
 def test_update_soft_weight_rejects_unknown_targets_and_types():
     m = Model()
     a = m.bool("a")
-    ref = m.obj.add_soft(a, weight=2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a, weight=2)
 
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft(999999, 3)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(999999, 3)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft(object(), 3)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(object(), 3)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft(ref.soft_ids[0], 3)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(ref.soft_ids[0], 3)
 
 
 def test_vector_element_all_comparators_with_intvar_rhs():
@@ -296,7 +302,8 @@ def test_set_objective_precision_rejects_bad_decimals_and_zero_rounding():
         m.set_objective_precision(decimals=True)
 
     m.set_objective_precision(decimals=2)
-    m.obj.add_soft(a, weight=0.01)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(a, weight=0.01)
     with pytest.raises(ValueError, match="rounds an existing positive soft weight to zero"):
         m.set_objective_precision(decimals=1)
 

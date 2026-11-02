@@ -1,3 +1,4 @@
+
 import pytest
 
 from hermax.model import Model, Clause, ClauseGroup
@@ -111,11 +112,14 @@ def test_explicit_soft_preferences_keep_satisfaction_direction(api):
     m = Model()
     x = m.bool("x")
     if api == "tier":
-        m.tier_obj.add_soft(x, 3, tier=0)
+        with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+            m.tier_obj.add_soft(x, 3, tier=0)
     elif api == "model":
-        m.add_soft(x, 3)
+        with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+            m.add_soft(x, 3)
     else:
-        m.obj.add_soft(x, 3)
+        with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+            m.obj.add_soft(x, 3)
     result = m.solve()
     assert result.ok and result[x] is True and result.cost == 0
 
@@ -129,18 +133,21 @@ def test_soft_apis_reject_numeric_costs(api, kind):
     expr = x if kind == "integer" else b + 2 if kind == "expression" else 2 * b
     with pytest.raises(TypeError, match="numeric"):
         if api == "model":
-            m.add_soft(expr, 3)
+            with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+                m.add_soft(expr, 3)
         elif api == "obj":
-            m.obj.add_soft(expr, 3)
+            with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+                m.obj.add_soft(expr, 3)
         else:
-            m.tier_obj.add_soft(expr, 3, tier=0)
+            with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+                m.tier_obj.add_soft(expr, 3, tier=0)
 
 
 @pytest.mark.parametrize("method", ["assign", "set", "replace"])
 def test_replacement_clears_all_previous_terms_and_invalidates_handles(method):
     m = Model()
     x, y = m.bool("x"), m.bool("y")
-    ref = m.obj.add_soft(x, 100)
+    ref = m.obj.add(~x, weight=100)
     m.obj.add(-2 * y + 7)
     if method == "assign":
         m.obj = x + 3
@@ -151,7 +158,7 @@ def test_replacement_clears_all_previous_terms_and_invalidates_handles(method):
     result = m.solve()
     assert result[x] is False and result.cost == 3
     with pytest.raises(ValueError):
-        m.obj.update_soft(ref, 200)
+        m.obj.update(ref, weight=200)
 
 
 @pytest.mark.parametrize("api", ["flat", "tier"])
@@ -198,18 +205,21 @@ def test_explicit_soft_preferences_reject_numeric_cost(tiered):
     x = m.int("x", 0, 3)
     with pytest.raises(TypeError, match="numeric"):
         if tiered:
-            m.tier_obj.add_soft(x, 3, tier=0)
+            with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+                m.tier_obj.add_soft(x, 3, tier=0)
         else:
-            m.obj.add_soft(x, 3)
+            with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+                m.obj.add_soft(x, 3)
 
 
 def test_explicit_soft_preference_handles_support_weight_updates():
     m = Model()
     x = m.bool("x")
     m &= ~x
-    ref = m.obj.add_soft(x, weight=3)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(x, weight=3)
     assert m.solve().cost == 3
-    m.obj.update_soft(ref, 5)
+    m.obj.update(ref, weight=5)
     assert m.solve().cost == 5
 
 

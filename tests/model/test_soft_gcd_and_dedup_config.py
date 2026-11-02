@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+
+
 from typing import Optional
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus
@@ -54,8 +57,8 @@ def test_soft_gcd_optimization_enabled_by_default_scales_one_shot_weights():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj.add_soft(a, 10)
-    m.obj.add_soft(~b, 20)
+    m.obj.add(~a, weight=10)
+    m.obj.add(b, weight=20)
     s = _FakeIPCost(cost=0)
     m.solve(solver=s, incremental=False)
     sent = sorted(w for _l, w in s.soft_units)
@@ -66,8 +69,8 @@ def test_soft_gcd_optimization_compensates_reported_cost():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj.add_soft(a, 10)
-    m.obj.add_soft(~b, 20)
+    m.obj.add(~a, weight=10)
+    m.obj.add(b, weight=20)
     s = _FakeIPCost(cost=7)
     r = m.solve(solver=s, incremental=False)
     assert r.cost == 70
@@ -78,8 +81,8 @@ def test_soft_gcd_optimization_can_be_disabled():
     m.set_soft_gcd_optimization(False)
     a = m.bool("a")
     b = m.bool("b")
-    m.obj.add_soft(a, 10)
-    m.obj.add_soft(~b, 20)
+    m.obj.add(~a, weight=10)
+    m.obj.add(b, weight=20)
     s = _FakeIPCost(cost=7)
     r = m.solve(solver=s, incremental=False)
     sent = sorted(w for _l, w in s.soft_units)
@@ -91,8 +94,8 @@ def test_soft_gcd_optimization_no_effect_when_gcd_is_one():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    m.obj.add_soft(a, 5)
-    m.obj.add_soft(~b, 6)
+    m.obj.add(~a, weight=5)
+    m.obj.add(b, weight=6)
     s = _FakeIPCost(cost=9)
     r = m.solve(solver=s, incremental=False)
     sent = sorted(w for _l, w in s.soft_units)
@@ -104,8 +107,10 @@ def test_soft_dedup_can_be_disabled_via_model_method():
     m = Model()
     m.set_soft_dedup(False)
     a = m.bool("a")
-    r1 = m.obj.add_soft(a, 5)
-    r2 = m.obj.add_soft(a, 10)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        r1 = m.obj.add_soft(a, 5)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        r2 = m.obj.add_soft(a, 10)
     assert len(m._soft) == 2
     assert sorted(w for w, _ in m._soft) == [5, 10]
     assert r1.soft_ids[0] != r2.soft_ids[0]

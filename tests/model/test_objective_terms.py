@@ -1,3 +1,4 @@
+
 import itertools
 
 import pytest
@@ -146,7 +147,8 @@ def test_numeric_add_soft_fails_with_migration_guidance():
     m = Model()
     x = m.int("x", 0, 4)
     with pytest.raises(TypeError, match="obj.add"):
-        m.obj.add_soft(x, 3)
+        with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+            m.obj.add_soft(x, 3)
     assert not m._soft
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import io
 
 from hermax.model import Model
@@ -20,7 +22,8 @@ def test_debug_level_one_shows_delta_events():
     m.set_debug(1, stream=buf)
     a = m.bool("a")
     m &= a
-    m.obj.add_soft(a, 3)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(a, 3)
     out = buf.getvalue()
     assert "add_hard count=" in out
     assert "add_soft hard_delta=" in out
@@ -60,7 +63,8 @@ def test_debug_level_three_includes_clause_dumps():
     m.set_debug(3, stream=buf)
     a = m.bool("a")
     m &= a
-    m.obj.add_soft(~a, 2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(~a, 2)
     out = buf.getvalue()
     assert "hard[0]=" in out
     assert "soft+[0]" in out

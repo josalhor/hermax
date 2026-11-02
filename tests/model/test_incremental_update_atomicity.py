@@ -1,3 +1,4 @@
+
 import pytest
 
 from hermax.model import Model
@@ -23,13 +24,14 @@ class _FailingBindSolver(FakeIPSolver):
 def test_incremental_soft_update_failure_does_not_diverge_model_from_backend():
     model = Model()
     a = model.bool("a")
-    ref = model.obj.add_soft(~a, 5)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = model.obj.add_soft(~a, 5)
     solver = _FailingUpdateSolver()
     model.solve(incremental=True, backend="maxsat", solver=solver)
     solver.fail_updates = True
 
     with pytest.raises(RuntimeError, match="synthetic live soft update failure"):
-        model.obj.update_soft(ref, 9)
+        model.obj.update(ref, weight=9)
 
     soft_id = ref.soft_ids[0]
     soft_index = model._soft_id_to_index[soft_id]
@@ -41,7 +43,8 @@ def test_incremental_maxsat_bind_failure_does_not_leave_partial_binding():
     model = Model()
     a = model.bool("a")
     b = model.bool("b")
-    model.obj.add_soft(a | b, 3)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        model.obj.add_soft(a | b, 3)
 
     with pytest.raises(RuntimeError, match="synthetic relaxed-soft bind failure"):
         model.solve(incremental=True, backend="maxsat", solver=_FailingBindSolver)

@@ -16,7 +16,8 @@ def test_float_weight_rejected_without_precision_add_soft():
     m = Model()
     a = m.bool("a")
     with pytest.raises(ValueError):
-        m.obj.add_soft(a, 1.25)  # type: ignore[arg-type]
+        with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+            m.obj.add_soft(a, 1.25)  # type: ignore[arg-type]
 
 
 def test_float_weight_rejected_without_precision_obj_bucket():
@@ -30,7 +31,7 @@ def test_integral_float_weight_also_rejected_without_precision():
     m = Model()
     a = m.bool("a")
     with pytest.raises(ValueError):
-        m.obj.add_soft(a, 1.0)  # type: ignore[arg-type]
+        m.obj.add(~a, weight=1.0)  # type: ignore[arg-type]
 
 
 def test_precision_allows_float_weights_and_rounds():
@@ -38,8 +39,8 @@ def test_precision_allows_float_weights_and_rounds():
     m.set_objective_precision(decimals=2)
     a = m.bool("a")
     b = m.bool("b")
-    m.obj.add_soft(a, 1.25)
-    m.obj.add_soft(~b, 3.50)
+    m.obj.add(~a, weight=1.25)
+    m.obj.add(b, weight=3.50)
     # Stored in scaled integer units.
     assert sorted(w for w, _ in m._soft) == [125, 350]
 
@@ -48,8 +49,10 @@ def test_precision_applies_to_update_soft_weight():
     m = Model()
     m.set_objective_precision(decimals=2)
     a = m.bool("a")
-    ref = m.obj.add_soft(a, 1.25)
-    m.obj.update_soft(ref, 2.34)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a, 1.25)
+    with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+        m.obj.update_soft(ref, 2.34)
     assert m._soft[0][0] == 234
 
 
@@ -57,7 +60,8 @@ def test_precision_change_rerounds_from_original_weights():
     m = Model()
     m.set_objective_precision(decimals=2)
     a = m.bool("a")
-    m.obj.add_soft(a, 1.25)   # 125
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(a, 1.25)   # 125
     assert m._soft[0][0] == 125
     m.set_objective_precision(decimals=1)  # re-round 1.25 -> 1.2
     assert m._soft[0][0] == 12
@@ -73,8 +77,8 @@ def test_precision_one_shot_solver_cost_is_descaled_float_real_solver():
     # Force both softs to be violated.
     m &= ~a
     m &= b
-    m.obj.add_soft(a, 1.25)
-    m.obj.add_soft(~b, 3.50)
+    m.obj.add(~a, weight=1.25)
+    m.obj.add(b, weight=3.50)
     # One-shot solve path uses real Hermax RC2-based backend.
     r = m.solve(incremental=False)
     assert isinstance(r.cost, float)
@@ -87,9 +91,10 @@ def test_precision_works_with_incremental_ipamir_updates():
     a = m.bool("a")
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
-    ref = m.obj.add_soft(a, 1.25)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a, 1.25)
     assert s.soft_updates[-1][1] == 125
-    m.obj.update_soft(ref, 3.50)
+    m.obj.update(ref, weight=3.50)
     assert s.soft_updates[-1][1] == 350
 
 

@@ -1,3 +1,4 @@
+
 import itertools
 
 import pytest
@@ -129,10 +130,13 @@ def test_zero_objective_is_noop_even_for_lazy_target():
 def test_zero_does_not_change_managed_soft_update_contract():
     m = Model()
     b = m.bool("b")
-    ref = m.obj.add_soft(b, 2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(b, 2)
     with pytest.raises(ValueError):
-        m.obj.update_soft(ref, 0)
-    m.obj.update_soft(ref, 3)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(ref, 0)
+    with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+        m.obj.update_soft(ref, 3)
     m &= ~b
     assert m.solve().cost == 3
 

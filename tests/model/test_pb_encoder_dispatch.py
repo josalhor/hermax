@@ -1,3 +1,4 @@
+
 import types
 
 import pytest
@@ -580,7 +581,8 @@ def test_soft_pb_is_deferred_until_commit(monkeypatch):
     a = m.bool("a")
     b = m.bool("b")
 
-    ref = m.obj.add_soft(2 * a + 3 * b <= 3, weight=5)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(2 * a + 3 * b <= 3, weight=5)
 
     assert len(ref.soft_ids) == 1
     assert len(m._soft) == 1
@@ -617,7 +619,8 @@ def test_auto_pb_commit_triggers_immediate_soft_compile(monkeypatch):
     a = m.bool("a")
     b = m.bool("b")
 
-    m.obj.add_soft(2 * a + 3 * b <= 3, weight=5)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(2 * a + 3 * b <= 3, weight=5)
 
     assert [c[0] for c in calls] == ["pb.leq"]
 

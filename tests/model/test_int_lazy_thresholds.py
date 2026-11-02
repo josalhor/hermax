@@ -1,3 +1,4 @@
+
 """Integer thresholds must retain their semantics when materialized lazily."""
 
 import pytest
@@ -201,7 +202,9 @@ def test_integer_declared_after_incremental_backend_reserves_auxiliary_ids():
     a, b = model.bool("a"), model.bool("b")
     model.obj.add(a, weight=1)
     assert model.solve(incremental=True, backend="maxsat").ok
-    model.obj.add_soft(a | b, weight=5)
+    satisfied = model.bool()
+    model &= (a | b).iff(satisfied)
+    model.obj.add(~satisfied, weight=5)
     backend_top = model._inc_state.ip_next_vid
     value = model.int("value", 0, 2)
     assert (value >= 1).id > backend_top

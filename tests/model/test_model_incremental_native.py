@@ -265,14 +265,16 @@ def test_incremental_maxsat_routes_updates_realtime_and_keeps_solver_instance():
 def test_incremental_maxsat_update_soft_weight_tracked_id_calls_set_soft():
     m = Model()
     a = m.bool("a")
-    ref = m.obj.add_soft(~a, 5)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(~a, 5)
     assert isinstance(ref, SoftRef)
 
     s = FakeIPSolver()
     m.solve(incremental=True, backend="maxsat", solver=s)
     before = len(s.soft_updates)
 
-    m.obj.update_soft(ref, 9)
+    with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+        m.obj.update_soft(ref, 9)
 
     assert len(s.soft_updates) == before + 1
     assert any(w == 9 for _lit, w in s.soft_updates)
@@ -284,15 +286,17 @@ def test_incremental_maxsat_nonunit_soft_update_then_hard_clause_has_correct_cos
     a, b, c, d = (m.bool(name) for name in "abcd")
 
     m &= b
-    first = m.obj.add_soft(d | ~b, 1)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        first = m.obj.add_soft(d | ~b, 1)
     penalty_satisfied = m.bool()
     m &= (a | ~c).iff(penalty_satisfied)
     m.obj += 3 * ~penalty_satisfied
-    third = m.obj.add_soft(~d | ~c | b, 2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        third = m.obj.add_soft(~d | ~c | b, 2)
     assert m.solve(incremental=True, backend="maxsat").ok
 
-    m.obj.update_soft(first, 5)
-    m.obj.update_soft(third, 3)
+    m.obj.update(first, weight=5)
+    m.obj.update(third, weight=3)
     penalty_satisfied = m.bool()
     m &= (~d | a | ~b).iff(penalty_satisfied)
     m.obj += 5 * ~penalty_satisfied
@@ -466,24 +470,28 @@ def test_incremental_maxsat_assumptions_and_raise_on_abnormal_passthrough():
 def test_incremental_soft_update_rejects_non_softref_target():
     m = Model()
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft(9999, 3)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(9999, 3)
 
 
 def test_incremental_soft_update_while_sat_bound_raises():
     m = Model()
     a = m.bool("a")
     m.solve(incremental=True, backend="sat")
-    ref = m.obj.add_soft(~a, 2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(~a, 2)
     with pytest.raises(ValueError):
-        m.obj.update_soft(ref, 5)
+        m.obj.update(ref, weight=5)
 
 
 def test_incremental_routes_preexisting_soft_when_binding_maxsat():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    ref1 = m.obj.add_soft(a, 2)
-    ref2 = m.obj.add_soft(a | b, 4)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref1 = m.obj.add_soft(a, 2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref2 = m.obj.add_soft(a | b, 4)
     s = FakeIPSolver()
     m.solve(incremental=True, backend="maxsat", solver=s)
     assert ref1.group_id in m._soft_group_to_ids
@@ -510,10 +518,11 @@ def test_incremental_update_soft_weight_after_relaxed_mapping():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    ref = m.obj.add_soft(a | b, 6)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a | b, 6)
     s = FakeIPSolver()
     m.solve(incremental=True, backend="maxsat", solver=s)
-    m.obj.update_soft(ref, 11)
+    m.obj.update(ref, weight=11)
     assert s.soft_updates[-1][1] == 11
 
 
@@ -603,9 +612,11 @@ def test_assumption_cross_model_literal_rejected():
 def test_update_soft_weight_by_softref_updates_all_members():
     m = Model()
     x = m.int("x", 0, 4)
-    ref = m.obj.add_soft((x >= 1) & (x <= 3), 3)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft((x >= 1) & (x <= 3), 3)
     assert len(ref.soft_ids) == 1
-    m.obj.update_soft(ref, 9)
+    with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+        m.obj.update_soft(ref, 9)
     for sid in ref.soft_ids:
         idx = m._soft_id_to_index[sid]
         assert m._soft[idx][0] == 9
@@ -614,23 +625,30 @@ def test_update_soft_weight_by_softref_updates_all_members():
 def test_update_soft_weight_invalid_target_type_raises():
     m = Model()
     a = m.bool("a")
-    ref = m.obj.add_soft(a, 1)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a, 1)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft(object(), 2)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(object(), 2)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft(123456, 2)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(123456, 2)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft(ref.soft_ids[0], 2)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(ref.soft_ids[0], 2)
 
 
 def test_update_soft_weight_rejects_non_positive_values():
     m = Model()
     a = m.bool("a")
-    ref = m.obj.add_soft(a, 1)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a, 1)
     with pytest.raises(ValueError):
-        m.obj.update_soft(ref, 0)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(ref, 0)
     with pytest.raises(ValueError):
-        m.obj.update_soft(ref, -1)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(ref, -1)
 
 
 def test_incremental_bound_sat_upgrades_when_soft_added_even_with_backend_sat():
@@ -654,11 +672,13 @@ def test_incremental_bound_sat_can_fail_on_upgrade_in_strict_mode():
 def test_incremental_maxsat_soft_weight_group_update_pushes_all_to_solver():
     m = Model()
     x = m.int("x", 0, 5)
-    ref = m.obj.add_soft((x >= 2) & (x <= 4), 2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft((x >= 2) & (x <= 4), 2)
     s = FakeIPSolver()
     m.solve(backend="maxsat", solver=s)
     before = len(s.soft_updates)
-    m.obj.update_soft(ref, 11)
+    with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+        m.obj.update_soft(ref, 11)
     assert len(s.soft_updates) >= before + len(ref.soft_ids)
 
 

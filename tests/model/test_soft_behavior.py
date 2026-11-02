@@ -67,7 +67,8 @@ class FakeIPSoft(IPAMIRSolver):
 def test_add_soft_returns_softref_single_clause():
     m = Model()
     a = m.bool("a")
-    ref = m.obj.add_soft(a, 3)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a, 3)
     assert isinstance(ref, SoftRef)
     assert len(ref.soft_ids) == 1
 
@@ -75,13 +76,14 @@ def test_add_soft_returns_softref_single_clause():
 def test_soft_integer_predicate_returns_one_updateable_preference():
     m = Model()
     x = m.int("x", 0, 5)
-    ref = m.obj.add_soft((x >= 1) & (x >= 2), 2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft((x >= 1) & (x >= 2), 2)
     assert len(ref.soft_ids) == 1
     # grouped handle should be usable as one update target
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
     before = len(s.soft_updates)
-    m.obj.update_soft(ref, 9)
+    m.obj.update(ref, weight=9)
     assert len(s.soft_updates) >= before + len(ref.soft_ids)
 
 
@@ -111,7 +113,8 @@ def test_targeted_relaxation_for_multiclause_group_uses_single_soft_penalty():
     a = m.bool("a")
     b = m.bool("b")
     grp = (a | b).implies(~a | ~b)  # multi-clause group
-    ref = m.obj.add_soft(grp, 7)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(grp, 7)
     assert len(ref.soft_ids) == 1
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
@@ -125,17 +128,20 @@ def test_targeted_relaxation_for_pbconstraint_uses_single_soft_penalty():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    ref = m.obj.add_soft(a + b <= 1, 5)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a + b <= 1, 5)
     assert len(ref.soft_ids) == 1
 
 
 def test_update_soft_weight_by_softref_updates_all_group_members():
     m = Model()
     x = m.int("x", 0, 5)
-    ref = m.obj.add_soft(x >= 3, 3)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(x >= 3, 3)
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
-    m.obj.update_soft(ref, 9)
+    with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+        m.obj.update_soft(ref, 9)
     # group update touches every lowered soft
     assert sum(1 for _lit, w in s.soft_updates if w == 9) >= len(ref.soft_ids)
 
@@ -143,11 +149,13 @@ def test_update_soft_weight_by_softref_updates_all_group_members():
 def test_update_soft_weight_softref_reaches_every_lowered_member():
     m = Model()
     x = m.int("x", 0, 5)
-    ref = m.obj.add_soft((x >= 2) & (x <= 4), 3)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft((x >= 2) & (x <= 4), 3)
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
     before = len(s.soft_updates)
-    m.obj.update_soft(ref, 8)
+    with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+        m.obj.update_soft(ref, 8)
     assert len(s.soft_updates) >= before + len(ref.soft_ids)
     assert all(m._soft[m._soft_id_to_index[sid]][0] == 8 for sid in ref.soft_ids)
 
@@ -155,36 +163,45 @@ def test_update_soft_weight_softref_reaches_every_lowered_member():
 def test_update_soft_weight_rejects_non_softref_targets():
     m = Model()
     a = m.bool("a")
-    ref = m.obj.add_soft(a, 2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a, 2)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft(99999, 5)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(99999, 5)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft(object(), 4)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(object(), 4)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft(ref.soft_ids[0], 4)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(ref.soft_ids[0], 4)
     with pytest.raises(TypeError, match="SoftRef"):
-        m.obj.update_soft([ref.soft_ids[0]], 4)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft([ref.soft_ids[0]], 4)
 
 
 def test_update_soft_weight_rejects_nonpositive():
     m = Model()
     a = m.bool("a")
-    ref = m.obj.add_soft(a, 2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a, 2)
     with pytest.raises(ValueError):
-        m.obj.update_soft(ref, 0)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(ref, 0)
     with pytest.raises(ValueError):
-        m.obj.update_soft(ref, -1)
+        with pytest.warns(FutureWarning, match=r"update_soft\(\) is deprecated"):
+            m.obj.update_soft(ref, -1)
 
 
 def test_incremental_update_uses_set_semantics_not_accumulate_for_same_lit():
     m = Model()
     a = m.bool("a")
-    ref = m.obj.add_soft(~a, 5)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(~a, 5)
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
     lit = s.soft_updates[-1][0]
-    m.obj.update_soft(ref, 9)
-    m.obj.update_soft(ref, 11)
+    m.obj.update(ref, weight=9)
+    m.obj.update(ref, weight=11)
     assert s.soft_map[lit] == 11
     # two updates recorded; same key overwritten in map
     assert s.soft_updates[-1] == (lit, 11)
@@ -196,7 +213,8 @@ def test_incremental_add_soft_after_bind_routes_new_soft_immediately():
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
     before = len(s.soft_updates)
-    m.obj.add_soft(a, 4)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(a, 4)
     assert len(s.soft_updates) == before + 1
     assert s.soft_updates[-1][1] == 4
 
@@ -205,7 +223,8 @@ def test_incremental_multiclause_soft_uses_relaxation_literal_mapping():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    ref = m.obj.add_soft(a | b, 3)  # single clause OR => unit soft over clause, still one id
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a | b, 3)  # single clause OR => unit soft over clause, still one id
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
     assert len(ref.soft_ids) == 1
@@ -216,8 +235,9 @@ def test_incremental_multiclause_soft_uses_relaxation_literal_mapping():
 def test_prebind_weight_update_persists_and_is_used_when_binding_solver():
     m = Model()
     a = m.bool("a")
-    ref = m.obj.add_soft(~a, 2)
-    m.obj.update_soft(ref, 7)  # before any backend bind
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(~a, 2)
+    m.obj.update(ref, weight=7)  # before any backend bind
     s = FakeIPSoft()
     m.solve(backend="maxsat", solver=s)
     lit = s.soft_updates[-1][0]
@@ -228,17 +248,20 @@ def test_sat_bound_model_rejects_soft_weight_updates():
     m = Model()
     a = m.bool("a")
     m.solve(backend="sat")
-    ref = m.obj.add_soft(a, 1)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        ref = m.obj.add_soft(a, 1)
     with pytest.raises(ValueError):
-        m.obj.update_soft(ref, 2)
+        m.obj.update(ref, weight=2)
 
 
 def test_add_soft_group_keeps_group_mapping_integrity():
     m = Model()
     a = m.bool("a")
     b = m.bool("b")
-    r1 = m.obj.add_soft(a, 1)
-    r2 = m.obj.add_soft(b, 2)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        r1 = m.obj.add_soft(a, 1)
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        r2 = m.obj.add_soft(b, 2)
     assert r1.group_id != r2.group_id
     assert len(r1.soft_ids) == 1
     assert len(r2.soft_ids) == 1
@@ -273,7 +296,7 @@ def test_numeric_addition_preserves_term_coefficients_alongside_preferences():
     m.obj.add(2 * x1 + 5 * x2, weight=1)
 
     # Competing soft objective favoring x2=True (incurs penalty of 15 if x2 is False).
-    m.obj.add_soft(x2, weight=15)
+    m.obj.add(~x2, weight=15)
 
     # Add nine more copies of the numeric cost, retaining the preference.
     # The updated objective must represent 10 * (2*x1 + 5*x2) = 20*x1 + 50*x2.

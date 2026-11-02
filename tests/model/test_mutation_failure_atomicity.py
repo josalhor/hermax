@@ -1,3 +1,4 @@
+
 import pytest
 
 from hermax.model import Model
@@ -33,7 +34,8 @@ def test_invalid_objective_addition_is_failure_atomic(bad_objective):
     before = _objective_bookkeeping(model)
 
     with pytest.raises((TypeError, ValueError)):
-        model.obj.add_soft(bad, 1)
+        with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+            model.obj.add_soft(bad, 1)
 
     assert _objective_bookkeeping(model) == before
 
@@ -74,6 +76,7 @@ def test_invalid_foreign_tier_clause_does_not_create_empty_tier():
     before = {tier: dict(data) for tier, data in model.tier_obj._tiers.items()}
 
     with pytest.raises(ValueError, match="different models"):
-        model.tier_obj.add_soft(group, 1, tier=4)
+        with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+            model.tier_obj.add_soft(group, 1, tier=4)
 
     assert model.tier_obj._tiers == before
