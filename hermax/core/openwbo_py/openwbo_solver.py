@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 import hermax.core.openwbo as openwbo
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult
 from hermax.core.ipamir_solver_interface import SolveStatus

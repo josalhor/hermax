@@ -1,6 +1,46 @@
 from collections import deque
 
 
+def clause_costs(items):
+    """Count pairwise clauses and bound bipartite clauses with fresh equality predicates."""
+    events = {}
+
+    def event(value, owners, interiors):
+        previous = events.get(value, (0, 0))
+        events[value] = previous[0] + owners, previous[1] + interiors
+
+    for item in items:
+        event(item.lb, 1, 0)
+        event(item.ub + 1, -1, 0)
+        if item.ub - item.lb > 1:
+            event(item.lb + 1, 0, 1)
+            event(item.ub, 0, -1)
+    pairwise = bipartite = owners = interiors = 0
+    previous = None
+    for value, (owner_change, interior_change) in sorted(events.items()):
+        if previous is not None:
+            span = value - previous
+            pairs = owners * (owners - 1) // 2
+            pairwise += span * pairs
+            # Interior equality predicates each need three defining clauses.
+            column = pairs if owners <= 2 else min(pairs, 3 * (owners - 1)) + 3 * interiors
+            bipartite += span * column
+        owners += owner_change
+        interiors += interior_change
+        previous = value
+    return pairwise, bipartite
+
+
+def prefer_bipartite(items):
+    if len(items) < 2 or max(x.ub for x in items) - min(x.lb for x in items) + 1 < len(items):
+        return False
+    # Preserve the large-group route, which avoids quadratic variable-pair scans.
+    if len(items) >= 32:
+        return True
+    pairwise, bipartite = clause_costs(items)
+    return bipartite < pairwise
+
+
 def filter_domains(domains):
     """Return supported domains, or None if no matching exists."""
     n = len(domains)

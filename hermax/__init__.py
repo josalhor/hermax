@@ -7,7 +7,7 @@ import time so optional/native dependencies can fail independently.
 
 from importlib import import_module
 
-__all__ = ["incremental", "non_incremental", "portfolio", "utils", "__version__"]
+__all__ = ["incremental", "non_incremental", "portfolio", "utils", "formula", "__version__"]
 
 
 def __getattr__(name: str):

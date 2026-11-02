@@ -115,3 +115,60 @@ def test_binary_tables_only_remove_supports_that_cover_every_partner():
             fixed = [m._lit_to_dimacs(lit) for var, val in [(a, left), (b, right)]
                      for lit in var._exact_value_atoms(val)]
             assert solver.solve(assumptions=fixed) is ((left, right) in rows)
+
+
+@pytest.mark.parametrize("anchor", [0, 1, 2])
+def test_table_reuses_unique_column_without_row_selectors(anchor):
+    m = Model()
+    items = [m.enum(f"x{i}", list(range(4))) for i in range(3)]
+    rows = [(0, 0, 0), (0, 1, 1), (1, 0, 2), (1, 1, 3)]
+    rows = [row[2:] + row[:2] if anchor == 0 else
+            (row[0], row[2], row[1]) if anchor == 1 else row for row in rows]
+    baseline = m.to_cnf()
+    top = m._top_id()
+    m &= m.table(items, allowed=rows)
+    cnf = m.to_cnf()
+    assert m._top_id() == top
+    assert len(cnf.clauses) - len(baseline.clauses) == 9
+
+
+@pytest.mark.parametrize("mode", ["post", "only_if", "implies", "iff"])
+@pytest.mark.parametrize("shape", ["integers", "mixed", "repeated"])
+def test_unique_column_table_preserves_truth_tables(mode, shape):
+    m = Model()
+    if shape == "integers":
+        objects = list(m.int_vector("x", 3, 0, 2))
+        domains = [range(3)] * 3
+        rows = [(0, 1, 0), (0, 0, 1), (1, 2, 2)]
+        positions = [0, 1, 2]
+    elif shape == "mixed":
+        objects = [m.bool("b"), m.int("x", 0, 2), m.enum("e", ["a", "b"], nullable=True)]
+        domains = [(False, True), range(3), (None, "a", "b")]
+        rows = [(False, 0, None), (False, 1, "a"), (True, 2, "b")]
+        positions = [0, 1, 2]
+    else:
+        objects = [m.int("x", 0, 2), m.bool("b")]
+        domains = [range(3), (False, True)]
+        rows = [(0, 0, True), (1, 0, False), (2, 2, True)]
+        positions = [0, 0, 1]
+    flag = m.bool("flag")
+    condition = m.table([objects[i] for i in positions], allowed=rows)
+    m &= condition if mode == "post" else getattr(condition, mode)(flag)
+    with Solver(bootstrap_with=m.to_cnf().clauses) as solver:
+        for values in itertools.product(*domains):
+            truth = tuple(values[i] for i in positions) in rows
+            atoms = []
+            for item, value, domain in zip(objects, values, domains):
+                if domain == (False, True):
+                    atoms.append(item if value else ~item)
+                elif value is None:
+                    atoms.extend(~lit for lit in item._choice_lits.values())
+                elif isinstance(value, str):
+                    atoms.append(item == value)
+                else:
+                    atoms.extend(item._exact_value_atoms(value))
+            fixed = [m._lit_to_dimacs(atom) for atom in atoms]
+            for enabled in (False, True):
+                expected = (truth if mode == "post" else truth == enabled if mode == "iff"
+                            else not enabled or truth if mode == "only_if" else not truth or enabled)
+                assert solver.solve(assumptions=fixed + [flag.id if enabled else -flag.id]) == expected

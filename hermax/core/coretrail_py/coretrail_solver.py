@@ -3,8 +3,11 @@ from __future__ import annotations
 import importlib
 import importlib.util
 from typing import List, Optional
+from itertools import chain
 
-from pysat.formula import WCNF
+from hermax.internal._clause_storage import ClauseStorage
+
+from hermax.formula import WCNF
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
 from hermax.core.ipamir_state_mixin import IPAMIRStateMixin
@@ -35,7 +38,10 @@ class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
     @staticmethod
     def _create_backend():
         backend = importlib.import_module("hermax.core.coretrail_native")
-        return backend.CoreTrail(WCNF())
+        return backend.CoreTrail(
+            WCNF(), solver="g4", adapt=True, exhaust=True, minz=False,
+            blo="div", trim=0, full_stratified=True, nohard=True,
+        )
 
     @property
     def num_vars(self) -> int:
@@ -86,20 +92,18 @@ class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
 
     def _load_initial_formula(self, formula: WCNF) -> None:
         data = extract_wcnf_data(formula)
-        hard = data.hard
-        soft = [clause for clause, _weight in data.soft]
-        weights = [weight for _clause, weight in data.soft]
-        max_var = data.num_vars
-        for clause in [*hard, *soft]:
+        bulk_hards = getattr(self.solver, '_add_hard_packed', None)
+        native_hards = isinstance(data.hard, ClauseStorage) and callable(bulk_hards)
+        max_var = max(data.num_vars, data.hard.max_var if native_hards else 0)
+        hards_to_validate = () if native_hards else data.hard
+        for clause in chain(hards_to_validate, (cl for cl, _ in data.soft)):
             for lit in clause:
                 max_var = max(max_var, abs(self._normalize_lit(lit)))
+        if max_var > _MAX_I32:
+            raise OverflowError("Variable count exceeds CoreTrail's int32 range.")
         self._ensure_var(max_var)
-
-        for clause in hard:
-            self.add_clause(list(clause))
-        if len(soft) != len(weights):
-            raise ValueError("WCNF soft clauses and weights must have the same length.")
-        for clause, weight in zip(soft, weights):
+        self.add_clauses(data.hard)
+        for clause, weight in data.soft:
             if not clause:
                 raise ValueError("Invalid empty soft clause in WCNF.")
             if len(clause) == 1:
@@ -117,6 +121,19 @@ class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
         self._require_open()
         self.solver.add_clause(self._normalize_clause(clause))
         self._invalidate_solution()
+
+    def add_clauses(self, clauses) -> None:
+        self._require_open()
+        bulk = getattr(self.solver, '_add_hard_packed', None)
+        if isinstance(clauses, ClauseStorage) and callable(bulk):
+            max_var = clauses.max_var
+            if max_var > _MAX_I32:
+                raise OverflowError("Literal exceeds CoreTrail's int32 range.")
+            self._ensure_var(max_var)
+            bulk(clauses._storage)
+            self._invalidate_solution()
+        else:
+            super().add_clauses(clauses)
 
     def set_soft(self, lit: int, weight: int) -> None:
         self._require_open()

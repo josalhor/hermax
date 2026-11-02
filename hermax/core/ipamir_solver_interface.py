@@ -62,6 +62,15 @@ class IPAMIRSolver(abc.ABC):
     def __init__(self, *args, **kwargs):
         self._status: SolveStatus = SolveStatus.UNKNOWN
 
+    def add_clauses(self, clauses) -> None:
+        """Add hard clauses from an iterable, preserving their order.
+
+        Native adapters may consume native clause collections in bulk. The
+        default preserves the per-clause behavior of existing implementations.
+        """
+        for clause in clauses:
+            self.add_clause(list(clause))
+
     @abc.abstractmethod
     def add_clause(self, clause: list[int]) -> None:
         """

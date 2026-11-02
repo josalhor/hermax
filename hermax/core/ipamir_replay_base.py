@@ -3,8 +3,9 @@ from __future__ import annotations
 import abc
 from dataclasses import dataclass
 from typing import List, Optional
+from itertools import chain
 
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
 from hermax.core.ipamir_state_mixin import IPAMIRStateMixin
@@ -46,7 +47,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         cl = self._normalize_clause(clause)
 
         if weight is None:
-            self._journal.add_hard(cl)
+            self._journal._append_hard(cl)
             self._invalidate_solution()
             return
 
@@ -202,6 +203,11 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
 
     def _load_initial_formula(self, formula: WCNF) -> None:
         data = extract_wcnf_data(formula)
+        max_var = data.num_vars
+        for clause in chain(data.hard, (cl for cl, _ in data.soft)):
+            for lit in clause:
+                max_var = max(max_var, abs(self._normalize_lit(lit)))
+        self._journal.ensure_var(max_var)
         for cl in data.hard:
             self.add_clause(list(cl))
         for cl, w in data.soft:

@@ -51,8 +51,7 @@ Relevant variables:
 Optional OptiLog Formula Support
 --------------------------------
 
-Hermax can optionally accept OptiLog ``WCNF`` formulas by converting them to
-PySAT ``WCNF`` internally.
+Hermax can optionally accept supported OptiLog ``WCNF`` formula objects.
 
 .. code-block:: bash
 

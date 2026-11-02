@@ -108,10 +108,11 @@ def test_cnf_and_wcnf_export_keep_public_types_and_do_not_alias_storage():
     cnf, wcnf = to_cnf(storage), to_wcnf(storage)
     assert cnf.clauses == wcnf.hard == [[1, -2], []]
     assert cnf.nv == wcnf.nv == 2
-    assert type(cnf.clauses) is list and all(type(row) is list for row in cnf.clauses)
+    assert isinstance(cnf.clauses, ClauseStorage)
+    assert all(type(row) is tuple for row in cnf.clauses)
     wcnf.append([3], weight=2**100)
     assert wcnf.wght == [2**100] and wcnf.topw == 2**100 + 1
-    cnf.clauses[0].append(9)
+    cnf.clauses.append([9])
     wcnf.hard.clear()
     assert list(storage) == [(1, -2), ()]
 

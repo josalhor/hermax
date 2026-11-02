@@ -11,8 +11,8 @@ from hermax.model import BoolVector, Model
 
 
 def _same(plain, packed):
-    assert type(plain.clauses) is list
-    assert all(type(row) is list for row in plain.clauses)
+    assert isinstance(plain.clauses, ClauseStorage)
+    assert all(type(row) is tuple for row in plain.clauses)
     assert isinstance(packed.clauses, ClauseStorage)
     assert packed.clauses.to_lists() == plain.clauses
     assert packed.nv == plain.nv

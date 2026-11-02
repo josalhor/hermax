@@ -180,6 +180,18 @@ void GlucoseBackend::set_interrupt_probe(InterruptProbe probe) {
     p_->solver.setInterruptProbe(probe);
 }
 
+void GlucoseBackend::set_termination_callback(void* state, int (*callback)(void*)) {
+    p_->solver.setTerminationCallback(state, callback);
+}
+
+void GlucoseBackend::clear_termination_request() {
+    p_->solver.clearTerminationRequest();
+}
+
+bool GlucoseBackend::termination_requested() const {
+    return p_->solver.terminationRequested();
+}
+
 void GlucoseBackend::reset() {
     delete p_;
     p_ = new Impl();

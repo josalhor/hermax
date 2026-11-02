@@ -12,7 +12,7 @@ def binary_view(owner: "IntVar") -> tuple[int, ...]:
     if view is not None:
         return view
     model = owner._model
-    chain = [model._lit_to_dimacs(lit) for lit in owner._threshold_lits]
+    chain = owner._threshold_ids()
     if len(chain) <= 1:
         view = tuple(chain)
     else:

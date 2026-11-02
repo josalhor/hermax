@@ -66,7 +66,7 @@
 #
 #==============================================================================
 import math
-from pysat.formula import CNFPlus
+from hermax.formula import CNFPlus
 
 # checking whether or not internal pblib bindings are available
 pblib_present = True
@@ -219,8 +219,10 @@ class PBEnc(object):
             vmap[top] = vpool.top
 
         # updating the clauses
-        for cl in cnf.clauses:
-            cl[:] = map(lambda l: int(math.copysign(vmap[abs(l)], l)) if abs(l) in vmap else l, cl)
+        cnf.clauses = [
+            [vmap[abs(l)] * (1 if l > 0 else -1) if abs(l) in vmap else l for l in cl]
+            for cl in cnf.clauses
+        ]
 
         # updating the number of variables
         cnf.nv = vpool.top

@@ -331,8 +331,8 @@ def test_positive_posting_does_not_build_the_negative_encoding(kind):
          else model.table(xs, allowed=[(0, 1, 0), (1, 0, 1)]))
     top = model._top_id()
     model &= g.only_if(b)
-    # Pairwise AllDifferent needs no helpers; a ternary table needs only its two selectors.
-    assert model._top_id() - top == (0 if kind == "alldifferent" else 2)
+    # Neither constraint needs helpers; the table reuses its first column.
+    assert model._top_id() == top
 
 
 def test_gated_all_different_does_not_register_unconditional_amos():

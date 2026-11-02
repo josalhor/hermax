@@ -17,7 +17,7 @@ build-verbosity = 1
 
 # Test settings - pure import smoke test from /tmp
 test-requires = ["pytest", "python-sat", "psutil"]
-test-sources = ["tests"]
+test-sources = ["tests", "examples"]
 test-command = "python tests/cibw_test_entrypoint.py"
 
 [tool.cibuildwheel.environment]

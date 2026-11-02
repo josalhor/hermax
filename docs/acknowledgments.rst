@@ -86,6 +86,10 @@ MaxSAT References
 The following MaxSAT academic references are cited across the
 Hermax documentation set:
 
+* Josep Maria Salvia Hornos, Alexey Ignatiev, Joao Marques-Silva.
+  *CoreTrail and ShareTrail: Incremental Core-Guided MaxSAT Solvers*.
+  MaxSAT Evaluation 2026: Solver and Benchmark Descriptions, p. 17.
+  University of Helsinki, 2026. https://hdl.handle.net/10138/640150
 * Andreas Niskanen, Jeremias Berg, Matti Järvisalo.
   *Incremental Maximum Satisfiability*. SAT 2022.
 * Marek Piotrów.

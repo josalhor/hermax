@@ -1,7 +1,7 @@
 """Weighted threshold PB encoding with bounded native output."""
 from collections.abc import Sequence
 
-from pysat.formula import CNFPlus
+from hermax.formula import CNFPlus
 
 from hermax.internal import _integer_sum_native as native
 from hermax.internal import _encoding_policy as policy
@@ -22,15 +22,37 @@ def encode_thresholds(
 ) -> CNFPlus | _EncodedCNF:
     if len(chains) != len(coefficients):
         raise ValueError("one coefficient per chain is required")
+    return _encode(
+        ((literal, coefficient) for row, coefficient in zip(chains, coefficients) for literal in row),
+        bound, comparator, top_id, native.PB_BEST, _packed,
+    )
+
+
+def encode_binary_views(
+    views: Sequence[Sequence[int]],
+    coefficients: Sequence[int],
+    bound: int,
+    comparator: str,
+    top_id: int,
+    *,
+    _packed: bool = False,
+) -> CNFPlus | _EncodedCNF:
+    if len(views) != len(coefficients):
+        raise ValueError("one coefficient per binary view is required")
+    return _encode(
+        ((literal, coefficient * (1 << index))
+         for row, coefficient in zip(views, coefficients) for index, literal in enumerate(row)),
+        bound, comparator, top_id, native.PB_BDD, _packed,
+    )
+
+
+def _encode(terms, bound, comparator, top_id, encoder, packed):
     totals = {}
-    for row, coefficient in zip(chains, coefficients):
-        for literal in row:
-            if literal < 0:
-                bound -= coefficient
-                literal, contribution = -literal, -coefficient
-            else:
-                contribution = coefficient
-            totals[literal] = totals.get(literal, 0) + contribution
+    for literal, coefficient in terms:
+        if literal < 0:
+            bound -= coefficient
+            literal, coefficient = -literal, -coefficient
+        totals[literal] = totals.get(literal, 0) + coefficient
     terms = []
     for literal, coefficient in totals.items():
         if coefficient < 0:
@@ -38,18 +60,18 @@ def encode_thresholds(
             terms.append((-literal, -coefficient))
         elif coefficient > 0:
             terms.append((literal, coefficient))
-    encode = native._encode_pb_packed if _packed else native.encode_pb
+    encode = native._encode_pb_packed if packed else native.encode_pb
     clauses, top = encode(
         wlits=terms,
         comparator={"<=": native.LEQ, ">=": native.GEQ, "==": native.BOTH}[comparator],
         bound=bound,
         top_id=top_id,
-        pb_encoder=native.PB_BEST,
+        pb_encoder=encoder,
         conditionals=[],
         state_limit=policy.STATE_LIMIT,
         clause_limit=policy.CLAUSE_LIMIT,
     )
-    result = _EncodedCNF() if _packed else CNFPlus()
-    result.clauses = ClauseStorage._wrap(clauses) if _packed else clauses
+    result = _EncodedCNF() if packed else CNFPlus()
+    result.clauses = ClauseStorage._wrap(clauses) if packed else clauses
     result.nv = max(top, top_id)
     return result

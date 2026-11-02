@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from math import gcd
 
-from pysat.formula import CNFPlus
+from hermax.formula import CNFPlus
 
 from hermax.internal import _pbamo as _native_pbamo
 from hermax.internal._clause_storage import ClauseStorage

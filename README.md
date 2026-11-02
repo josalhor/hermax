@@ -89,10 +89,12 @@ print(r.status, r.cost)
 
 ## Incremental MaxSAT Example
 
-```python
-from hermax.incremental import UWrMaxSAT
+CoreTrail is Hermax’s native incremental core-guided MaxSAT solver.
 
-solver = UWrMaxSAT()
+```python
+from hermax.incremental import CoreTrail
+
+solver = CoreTrail()
 solver.add_clause([1, 2])   # hard
 solver.set_soft(-1, 10)     # soft weight
 solver.set_soft(-1, 6)      # update weight (last-wins)
@@ -126,6 +128,19 @@ If you use Hermax in research, please cite:
   URN = {urn:nbn:de:0030-drops-263478},
   doi = {10.4230/LIPIcs.SAT.2026.41},
   annote = {Keywords: MaxSAT, Incremental Solving, IPAMIR, Python, Constraint modelling}
+}
+```
+
+If you use CoreTrail, please also cite its solver description:
+
+```bibtex
+@article{hornos2026coretrail,
+  title={CoreTrail and ShareTrail: Incremental Core-Guided MaxSAT Solvers},
+  author={Hornos, Josep Maria Salvia and Ignatiev, Alexey and Marques-Silva, Joao},
+  journal={MaxSAT Evaluation 2026: Solver and Benchmark Descriptions},
+  pages={17},
+  year={2026},
+  url={https://hdl.handle.net/10138/640150}
 }
 ```
 

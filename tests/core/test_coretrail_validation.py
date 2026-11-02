@@ -21,10 +21,6 @@ def _load(formula):
     solver._load_initial_formula(formula)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="CoreTrail formula loading converts malformed WCNF literals before validation",
-)
 @pytest.mark.parametrize("bad_literal", [1.5, True, "1"])
 def test_coretrail_rejects_non_integer_formula_literals(bad_literal):
     formula = SimpleNamespace(hard=[[bad_literal]], soft=[], wght=[], nv=1)
@@ -33,10 +29,6 @@ def test_coretrail_rejects_non_integer_formula_literals(bad_literal):
         _load(formula)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="CoreTrail formula loading converts malformed WCNF weights before validation",
-)
 @pytest.mark.parametrize("bad_weight", [1.5, True, "2"])
 def test_coretrail_rejects_non_integer_formula_weights(bad_weight):
     formula = SimpleNamespace(hard=[], soft=[[1]], wght=[bad_weight], nv=1)

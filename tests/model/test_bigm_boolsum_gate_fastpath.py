@@ -188,3 +188,29 @@ def test_swapped_orientation_uses_no_pb_no_card(monkeypatch, n: int):
     m &= (n * y >= _boolsum(xs))
     r = _solve(m)
     assert r.ok
+
+
+@pytest.mark.parametrize('count', [2, 5])
+@pytest.mark.parametrize('coefficient', [-1, 1])
+def test_single_clause_gated_count_skips_structure_lookup(monkeypatch, count, coefficient):
+    from pysat.solvers import Solver
+    from hermax.model.encoders import _EncoderDispatch
+
+    def reject_lookup(*args):
+        pytest.fail('A single-clause bound must not scan AMO/EO groups')
+
+    monkeypatch.setattr(_EncoderDispatch, '_structured_overlap_for', reject_lookup)
+    m = Model()
+    xs = list(m.bool_vector('x', count))
+    gate = m.bool('gate')
+    constant = count if coefficient < 0 else count - 1
+    m &= sum(xs) <= constant + coefficient * gate
+    cnf = m.to_cnf()
+    assert len(cnf.clauses) == 1
+    assert cnf.nv == count + 1
+    with Solver(name='g4', bootstrap_with=cnf.clauses) as solver:
+        for values in itertools.product([False, True], repeat=count + 1):
+            assumptions = [lit.id if value else -lit.id
+                           for lit, value in zip([*xs, gate], values)]
+            expected = sum(values[:-1]) <= constant + coefficient * values[-1]
+            assert solver.solve(assumptions=assumptions) == expected

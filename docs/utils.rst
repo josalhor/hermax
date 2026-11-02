@@ -21,7 +21,7 @@ The function :func:`hermax.core.utils.normalize_wcnf_formula` provides the
 central conversion path used by solver constructors:
 
 * PySAT ``WCNF``/``WCNFPlus`` inputs are passed through unchanged
-* OptiLog ``WCNF`` inputs are converted into PySAT ``WCNF``
+* OptiLog ``WCNF`` inputs are converted into Hermax formula objects
 * ``None`` is preserved.
 
 This keeps solver wrappers simple and ensures consistent behavior across all
@@ -42,8 +42,8 @@ PySAT remains a required dependency of Hermax.
 Based on OptiLog's documented ``WCNF`` API (`hard_clauses` and
 `soft_clauses`), Hermax converts:
 
-* each item in ``hard_clauses`` into a hard clause in PySAT ``WCNF``
-* each pair ``(weight, clause)`` in ``soft_clauses`` into a PySAT soft clause
+* each item in ``hard_clauses`` into a hard clause
+* each pair ``(weight, clause)`` in ``soft_clauses`` into a soft clause
   with that weight.
 
 API Details

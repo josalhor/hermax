@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from collections.abc import Sequence
 
-from pysat.formula import WCNF, WCNFPlus
+from hermax.formula import WCNF, WCNFPlus
 
 
 @dataclass(frozen=True)
@@ -16,9 +17,29 @@ class WCNFData:
     rather than probe arbitrary formula objects themselves.
     """
 
-    hard: list[list[Any]]
-    soft: list[tuple[list[Any], Any]]
+    hard: Sequence
+    soft: Sequence
     num_vars: int
+
+
+class _SoftTerms(Sequence):
+    """Repeatable term view; native formulas need no whole-formula list export."""
+    def __init__(self, formula):
+        self._clauses = formula.soft
+        self._weights = formula.wght
+        if len(self._clauses) != len(self._weights):
+            raise ValueError('Soft clauses and weights must have equal length.')
+
+    def __len__(self):
+        return len(self._clauses)
+
+    def __iter__(self):
+        return zip(self._clauses, self._weights)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return list(zip(self._clauses[index], self._weights[index]))
+        return self._clauses[index], self._weights[index]
 
 
 def _is_optilog_wcnf_instance(formula: Any) -> bool:
@@ -33,7 +54,7 @@ def _is_optilog_wcnf_instance(formula: Any) -> bool:
 
 def _convert_optilog_wcnf(formula: Any) -> WCNF:
     """
-    Convert an OptiLog WCNF instance into a PySAT WCNF.
+    Convert an OptiLog WCNF instance into a native Hermax WCNF.
 
     Expected OptiLog fields (based on public docs):
     - hard_clauses: Iterable[Iterable[int]]
@@ -65,18 +86,18 @@ def _convert_optilog_wcnf(formula: Any) -> WCNF:
 
 def normalize_wcnf_formula(formula: Any) -> Any:
     """
-    Normalize WCNF-like inputs to PySAT WCNF when needed.
+    Normalize foreign WCNF inputs when needed.
 
     Returns ``None`` unchanged.
     Returns PySAT ``WCNF``/``WCNFPlus`` unchanged.
-    Converts OptiLog ``WCNF`` into PySAT ``WCNF``.
+    Converts OptiLog ``WCNF`` into Hermax ``WCNF``.
     Returns any other object unchanged, so existing wrapper-specific
     best-effort loaders can still handle custom WCNF-like objects.
     """
     if formula is None:
         return None
-    if isinstance(formula, (WCNF, WCNFPlus)):
-        return formula
+    if isinstance(formula, WCNF):
+        return formula.validate()
     if _is_optilog_wcnf_instance(formula):
         return _convert_optilog_wcnf(formula)
     return formula
@@ -85,12 +106,19 @@ def normalize_wcnf_formula(formula: Any) -> Any:
 def extract_wcnf_data(formula: Any) -> WCNFData:
     """Extract clauses from a PySAT or compatible WCNF object.
 
-    Compatibility attribute access is deliberately contained here.  The
-    returned lists are copies, so adapters can normalize them without
-    mutating a caller-owned formula.
+    Compatibility attribute access is deliberately contained here.
+    External clauses are copied. Native formulas expose read-only clause values
+    through their existing collections, avoiding whole-formula materialization.
     """
     if formula is None:
         raise TypeError("formula must be a WCNF-like object, not None.")
+
+    if getattr(formula, "atms", None):
+        raise NotImplementedError("Native cardinality and pseudo-Boolean constraints are unsupported; encode them as clauses first.")
+
+    if isinstance(formula, WCNF):
+        formula.validate()
+        return WCNFData(formula.hard, _SoftTerms(formula), formula.nv)
 
     try:
         hard_attr = formula.hard
@@ -106,9 +134,9 @@ def extract_wcnf_data(formula: Any) -> WCNFData:
     else:
         weights = None
 
-    if weights is not None and len(weights) == len(soft_attr) and (
-        not soft_attr or not isinstance(soft_attr[0], tuple)
-    ):
+    if weights is not None:
+        if len(weights) != len(soft_attr):
+            raise ValueError("Soft clauses and weights must have equal length.")
         soft = [(list(clause), weight) for clause, weight in zip(soft_attr, weights)]
     else:
         soft = []

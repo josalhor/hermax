@@ -7,12 +7,12 @@ List of Classes
 .. autosummary::
    :nosignatures:
 
+   hermax.incremental.CoreTrail
    hermax.incremental.UWrMaxSAT
    hermax.incremental.UWrMaxSATCompetition
    hermax.incremental.EvalMaxSAT
    hermax.incremental.EvalMaxSATIncremental
    hermax.incremental.IMaxHS
-   hermax.incremental.CoreTrail
 
 Module Description
 ------------------
@@ -20,6 +20,10 @@ Module Description
 This module exposes Hermax classes backed by solvers that are used through an
 incremental/IPAMIR workflow, i.e., repeated solve calls while preserving
 internal state and/or interface state [1]_.
+
+CoreTrail is Hermax's default MaxSAT backend. Developed as part of Hermax,
+it is a native core-guided solver designed for related incremental queries [5]_.
+Its state can be reused across changes and interrupted queries can be resumed.
 
 The classes map to the following backends:
 
@@ -114,3 +118,7 @@ References
 .. [2] Marek Piotrów. *UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems*. ICTAI 2020.
 .. [3] Florent Avellaneda. *EvalMaxSAT*. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
 .. [4] Andreas Niskanen, Jeremias Berg, Matti Järvisalo. *Enabling Incrementality in the Implicit Hitting Set Approach to MaxSAT Under Changing Weights*. CP 2021.
+.. [5] Josep Maria Salvia Hornos, Alexey Ignatiev, Joao Marques-Silva.
+   *CoreTrail and ShareTrail: Incremental Core-Guided MaxSAT Solvers*.
+   MaxSAT Evaluation 2026: Solver and Benchmark Descriptions, p. 17.
+   University of Helsinki, 2026. https://hdl.handle.net/10138/640150

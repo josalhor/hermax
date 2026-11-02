@@ -89,3 +89,48 @@ def test_formula_journal_rejects_non_integer_hard_literals(raw_literal):
 
     with pytest.raises((TypeError, ValueError)):
         journal.add_hard([raw_literal])
+
+
+def test_journal_exports_an_independent_native_formula_with_overwrite_semantics():
+    from hermax.formula import WCNF
+    journal = FormulaJournal()
+    journal.ensure_var(8)
+    journal.add_hard([1, -2])
+    journal.set_soft(-1, 3)
+    journal.set_soft(-1, 7)
+    journal.add_soft_nonunit([1, 2], 5)
+    formula = journal.to_formula(assumptions=[-3])
+    assert isinstance(formula, WCNF)
+    assert formula.nv == 8
+    assert formula.hard == [[1, -2], [-3]]
+    assert list(zip(formula.soft, formula.wght)) == [((-1,), 7), ((1, 2), 5)]
+    formula.append([6])
+    formula.wght[0] = 9
+    assert journal.snapshot()['hard_clauses'] == [[1, -2]]
+    assert journal.soft_units == {-1: 7}
+
+
+def test_journal_snapshot_roundtrip_preserves_native_storage_and_ownership():
+    from hermax.internal._clause_storage import ClauseStorage
+    source = FormulaJournal()
+    source.add_hard([1, -2])
+    source.add_soft_nonunit([2, 3], 5)
+    snapshot = source.snapshot()
+    copied = FormulaJournal.from_snapshot(snapshot)
+    assert isinstance(copied.hard_clauses, ClauseStorage)
+    snapshot['hard_clauses'][0][0] = -1
+    snapshot['soft_nonunit'][0][0][0] = -2
+    assert copied.snapshot() == source.snapshot()
+
+
+@pytest.mark.parametrize('field,value', [
+    ('num_vars', 1.5),
+    ('hard_clauses', [[True]]),
+    ('soft_units', [(1, 2.5)]),
+    ('soft_nonunit', [([1, 2], -3)]),
+])
+def test_journal_snapshot_rejects_malformed_data(field, value):
+    snapshot = FormulaJournal().snapshot()
+    snapshot[field] = value
+    with pytest.raises((TypeError, ValueError)):
+        FormulaJournal.from_snapshot(snapshot)

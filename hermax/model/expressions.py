@@ -1305,7 +1305,7 @@ class MaxExpr(_LazyIntExpr):
 
 class PBExpr(_PBComparable):
     """Pseudo-Boolean expression (weighted sum of literals / lifted Int variables)."""
-    __slots__ = ("_model", "terms", "constant", "int_terms", "_collapsed", "_term_index")
+    __slots__ = ("_model", "terms", "constant", "int_terms", "_collapsed", "_term_index", "_literal_ceiling")
 
     def __init__(
         self,
@@ -1322,6 +1322,7 @@ class PBExpr(_PBComparable):
         self.int_terms = [(int(c), v) for c, v in (int_terms or []) if int(c) != 0]
         self._collapsed = True
         self._term_index = None
+        self._literal_ceiling = max((t.literal.id for t in self.terms), default=0)
 
     @classmethod
     def _from_terms_trusted(
@@ -1332,6 +1333,7 @@ class PBExpr(_PBComparable):
         *,
         int_terms: Sequence[tuple[int, IntVar | _LazyIntExpr]] | None = None,
         collapsed: bool = True,
+        literal_ceiling: int | None = None,
     ) -> "PBExpr":
         expr = cls.__new__(cls)
         expr._model = model
@@ -1340,6 +1342,8 @@ class PBExpr(_PBComparable):
         expr.int_terms = [(int(c), v) for c, v in (int_terms or []) if int(c) != 0]
         expr._collapsed = bool(collapsed)
         expr._term_index = None
+        expr._literal_ceiling = (max((t.literal.id for t in expr.terms), default=0)
+                                 if literal_ceiling is None else literal_ceiling)
         return expr
 
     def _ensure_term_index(self) -> dict[tuple[int, bool], int]:
@@ -1369,6 +1373,7 @@ class PBExpr(_PBComparable):
                     continue
                 index[key] = len(self.terms)
                 self.terms.append(t)
+                self._literal_ceiling = max(self._literal_ceiling, t.literal.id)
                 continue
 
             prev = self.terms[pos]
@@ -1423,7 +1428,8 @@ class PBExpr(_PBComparable):
                 return rhs_terms, True
             if not rhs_terms:
                 return list(lhs.terms), True
-            if cls._terms_disjoint(lhs.terms, rhs_terms):
+            if ((len(rhs_terms) == 1 and rhs_terms[0].literal.id > lhs._literal_ceiling)
+                    or cls._terms_disjoint(lhs.terms, rhs_terms)):
                 return [*lhs.terms, *rhs_terms], True
         return [*lhs.terms, *rhs_terms], False
 
@@ -1568,6 +1574,7 @@ class PBExpr(_PBComparable):
                 self.constant + sign * other.constant,
                 int_terms=int_terms,
                 collapsed=True,
+                literal_ceiling=max(self._literal_ceiling, other._literal_ceiling),
             )
         return PBExpr(model, terms, self.constant + sign * other.constant, int_terms=int_terms)
 

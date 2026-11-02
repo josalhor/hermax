@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 from typing import Optional
 
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 from hermax.core.ipamir_subprocess_replay_base import OneShotSubprocessReplaySolverBase
 

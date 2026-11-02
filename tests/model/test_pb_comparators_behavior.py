@@ -249,7 +249,7 @@ def test_constant_only_pb_comparator_uses_internal_boolean_constants_in_export()
     hard = {tuple(cl) for cl in cnf.clauses}
     # False constant definition and use should be present as unit clauses.
     assert (-f.id,) in hard
-    assert sum(1 for cl in cnf.clauses if cl == [f.id]) >= 1
+    assert sum(1 for cl in cnf.clauses if tuple(cl) == (f.id,)) >= 1
 
 
 @pytest.mark.parametrize("op", ["<=", "<", ">=", ">", "==", "!="])

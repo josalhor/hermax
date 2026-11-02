@@ -1,8 +1,9 @@
 import importlib
 import importlib.util
 from typing import List, Optional
+from itertools import chain
 
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
 from hermax.core.utils import extract_wcnf_data, normalize_wcnf_formula
@@ -26,7 +27,7 @@ class TTOpenWBOIncSolver(IPAMIRSolver):
         if formula is not None:
             data = extract_wcnf_data(formula)
             max_var = data.num_vars
-            all_clauses = [*data.hard, *(c for c, _w in data.soft)]
+            all_clauses = chain(data.hard, (c for c, _w in data.soft))
             for cl in all_clauses:
                 for lit in cl:
                     max_var = max(max_var, abs(int(lit)))

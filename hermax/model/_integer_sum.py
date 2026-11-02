@@ -113,7 +113,7 @@ def _encode_order_plan(model, items, bound, comparator, plan):
         model._reserve_literal_ids_up_to(int(model._inc_state.ip_next_vid))
     chains = []
     for (owner, _), sign in zip(items, plan.orientations):
-        row = [model._lit_to_dimacs(lit) for lit in owner._threshold_lits]
+        row = owner._threshold_ids()
         chains.append(row if sign > 0 else [-lit for lit in reversed(row)])
     cnf = encode_order(
         chains, plan.bound, model._top_id(), plan.kind,

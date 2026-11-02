@@ -7,9 +7,10 @@ from numbers import Integral
 from contextlib import contextmanager
 from functools import reduce
 from typing import Callable, Iterable, Mapping, Optional, Sequence
-from pysat.formula import CNF, WCNF
+from hermax.formula import CNF, WCNF
 from hermax.utils import batcher_odd_even_unary_add_network
 from pysat.solvers import Solver as PySATSolver
+from hermax.incremental import CoreTrail as DefaultMaxSATSolver
 from hermax.non_incremental import RC2 as HermaxRC2
 from hermax.core.time_limits import validate_time_limit
 from hermax.core.interrupt_recovery import InterruptRecovery
@@ -639,7 +640,7 @@ class _IncrementalCoordinator:
         m = self._model
         created = False
         if solver is None:
-            solver = HermaxRC2
+            solver = DefaultMaxSATSolver
         if isinstance(solver, IPAMIRSolver):
             ip_solver = solver
         else:
@@ -656,7 +657,7 @@ class _IncrementalCoordinator:
                 raise TypeError("solver callable must return an IPAMIRSolver instance.")
 
         # replay
-        formula = m.to_wcnf()
+        m._prepare_encoding()
         # Make the backend visible to the allocator while reserving the
         # model's existing variable IDs.  Otherwise reservation would only
         # advance the coordinator counter and not the backend journal.
@@ -664,10 +665,8 @@ class _IncrementalCoordinator:
         self.ip_created = created
         self.ip_next_vid = 0
         try:
-            self._reserve_ip_vars(max(int(formula.nv), int(m._top_id())))
-            for c in formula.hard:
-                self._reserve_ip_vars(max((abs(int(l)) for l in c), default=0))
-                ip_solver.add_clause([int(l) for l in c])
+            self._reserve_ip_vars(max(int(m._top_id()), m._hard.max_var))
+            ip_solver.add_clauses(m._hard)
             self.mode = "maxsat"
             self.solver_factory = solver
             self.solver_kwargs = dict(solver_kwargs or {})
@@ -2270,10 +2269,14 @@ class Model:
             if len(row_atoms) == 1:
                 return ClauseGroup(self, [Clause(self, [atom]) for atom in row_atoms[0]])
 
-            selectors = [self.bool() for _ in row_atoms]
+            anchor = next((i for i in range(width)
+                           if len({row[i] for row in norm_rows}) == len(norm_rows)), None)
+            selectors = ([atoms[anchor] for atoms in row_atoms] if anchor is not None
+                         else [self.bool() for _ in row_atoms])
             clauses = [Clause(self, selectors)]
             for selector, atoms in zip(selectors, row_atoms):
-                clauses.extend(Clause(self, [~selector, atom]) for atom in atoms)
+                clauses.extend(Clause(self, [~selector, atom])
+                               for i, atom in enumerate(atoms) if i != anchor)
             return ClauseGroup(self, clauses)
 
         def _build_negative() -> ClauseGroup:
@@ -2968,7 +2971,7 @@ class Model:
         self._ensure_all_pending_literal_defs_realized()
 
     def to_cnf(self) -> CNF:
-        """Export the current hard constraints to a PySAT :class:`~pysat.formula.CNF`.
+        """Export the current hard constraints to a native Hermax CNF.
 
         Raises:
             ValueError: If the model contains soft clauses.
@@ -2979,7 +2982,7 @@ class Model:
         return _hard_to_cnf(self._hard)
 
     def to_wcnf(self) -> WCNF:
-        """Export hard and soft constraints to a PySAT :class:`~pysat.formula.WCNF`."""
+        """Export hard and soft constraints to a native Hermax WCNF."""
         self._prepare_encoding()
         wcnf = _hard_to_wcnf(self._hard)
         for weight, clause in self._soft:
@@ -3099,7 +3102,7 @@ class Model:
                     formula.append([int(dim)], weight=int(w))
 
             res = self._solve_with_hermax_solver(
-                solver=solver if solver is not None else HermaxRC2,
+                solver=solver if solver is not None else DefaultMaxSATSolver,
                 solver_kwargs=solver_kwargs,
                 assumptions=assumptions_dimacs,
                 raise_on_abnormal=raise_on_abnormal,
@@ -3221,7 +3224,7 @@ class Model:
                 formula.append([int(dim)], weight=int(w))
 
         res = self._solve_with_hermax_solver(
-            solver=solver if solver is not None else HermaxRC2,
+            solver=solver if solver is not None else DefaultMaxSATSolver,
             solver_kwargs=solver_kwargs,
             assumptions=assumptions_dimacs,
             raise_on_abnormal=raise_on_abnormal,
@@ -3258,7 +3261,7 @@ class Model:
         self,
         *,
         sat_solver_name: str = "g4",
-        maxsat_backend: str = "rc2",
+        maxsat_backend: str = "coretrail",
         solver=None,
         solver_kwargs: Optional[dict] = None,
         assumptions: Optional[Sequence[object]] = None,
@@ -3272,7 +3275,7 @@ class Model:
         """Solve the model using the selected backend.
 
         By default, hard-only models use PySAT and models with soft clauses use
-        RC2. Pass ``solver`` to use a Hermax IPAMIR solver instead.
+        CoreTrail. Pass ``solver`` to select another Hermax IPAMIR solver.
 
         Notes:
             Assumptions accept integer DIMACS literals, :class:`Literal`, or
@@ -3318,17 +3321,13 @@ class Model:
                 raise_on_abnormal=raise_on_abnormal,
             )
 
+        if solver is None and self._soft:
+            if maxsat_backend.lower() == "rc2":
+                solver = HermaxRC2
+            elif maxsat_backend.lower() != "coretrail":
+                raise ValueError("Unsupported maxsat backend for Model.solve().")
+
         use_incremental = bool(incremental or self._inc_state.bound)
-        # One-shot convenience MaxSAT (PySAT RC2) when no incremental
-        # MaxSAT backend is explicitly provided and no backend is bound yet.
-        if (
-            use_incremental
-            and self._inc_state.mode is None
-            and self._soft
-            and solver is None
-            and (backend or "auto").lower() == "auto"
-        ):
-            use_incremental = False
         # One-shot explicit solver path for backend='auto' when caller
         # passes a concrete solver/factory and no incremental backend is bound.
         if (
@@ -3363,11 +3362,8 @@ class Model:
             )
 
         if self._soft:
-            if maxsat_backend.lower() != "rc2":
-                raise ValueError("Unsupported maxsat backend for Model.solve().")
-
             return self._solve_with_hermax_solver(
-                solver=HermaxRC2,
+                solver=DefaultMaxSATSolver,
                 solver_kwargs={},
                 assumptions=assumptions,
                 raise_on_abnormal=raise_on_abnormal,

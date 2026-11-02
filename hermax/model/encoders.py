@@ -913,6 +913,8 @@ class _EncoderDispatch:
                 return ClauseGroup(model, [Clause(model, [~gate])])
             if lower == 0:
                 return ClauseGroup(model, [Clause(model, [~literal, ~gate]) for literal in literals])
+            if lower == len(literals) - 1:
+                return ClauseGroup(model, [Clause(model, [~literal for literal in literals] + [~gate])])
             return _EncoderDispatch._compile_structured_auto_leq(
                 model, [model._lit_to_dimacs(literal) for literal in literals],
                 [1] * len(literals), lower,

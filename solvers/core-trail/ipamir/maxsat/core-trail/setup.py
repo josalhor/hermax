@@ -34,6 +34,7 @@ ext = Extension(
     ],
     include_dirs=[
         "include",
+        "../../../../../hermax/internal/native",
         "third_party/glucose-syrup-4.1",
         "third_party/cardenc",
     ],

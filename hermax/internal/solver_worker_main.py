@@ -51,22 +51,28 @@ def _write_frame(stream, obj: Any) -> None:
 
 
 def _snapshot_replay_to_solver(solver, snap: Dict[str, Any]) -> None:
-    nvars = int(snap.get("num_vars", 0))
-    for _ in range(nvars):
+    from hermax.core.formula_journal import FormulaJournal
+    journal = FormulaJournal.from_snapshot({
+        'num_vars': snap.get('num_vars', 0),
+        'hard_clauses': snap.get('hard_clauses', []),
+        'soft_units': snap.get('soft_units', []),
+        'soft_nonunit': snap.get('soft_nonunit', []),
+    })
+
+    def new_var(_):
         try:
             solver.new_var()
-        except AttributeError:
-            # Some wrappers size vars on demand only.
-            break
+        except (AttributeError, NotImplementedError):
+            # Some wrappers size variables on demand only.
+            pass
 
-    for cl in snap.get("hard_clauses", []):
-        solver.add_clause([_literal(x) for x in cl])
-
-    for lit, w in snap.get("soft_units", []):
-        solver.set_soft(_literal(lit), _weight(w))
-
-    for cl, w in snap.get("soft_nonunit", []):
-        solver.add_clause([_literal(x) for x in cl], _weight(w))
+    journal.replay(
+        new_var=new_var,
+        add_hard=solver.add_clause,
+        add_hards=getattr(solver, 'add_clauses', None),
+        set_soft=solver.set_soft,
+        add_soft_nonunit=lambda clause, weight: solver.add_clause(clause, weight),
+    )
 
 
 def _ops_replay_to_solver(solver, ops: Iterable[Any]) -> None:

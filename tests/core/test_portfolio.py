@@ -227,3 +227,25 @@ def test_performance_portfolio_max_workers_1_runs_on_real_data():
     assert p.get_model() is not None
     assert isinstance(p.get_cost(), int)
     p.close()
+
+
+def test_portfolio_replay_preserves_weight_overwrite_order_for_relaxation_literals():
+    from hermax.core import RC2Reentrant
+    p = PortfolioSolver([RC2Reentrant], max_workers=1, per_solver_time_limit_s=3.0)
+    try:
+        p.set_soft(-2, 3)
+        p.add_soft_relaxed([1], 7, relax_var=2)  # replaces the earlier weight on -2
+        p.set_soft(-1, 5)
+        from hermax.internal.solver_worker_main import _ops_replay_to_solver
+        replayed = RC2Reentrant()
+        try:
+            _ops_replay_to_solver(replayed, p._ops_for_worker_replay())
+            assert replayed.solve()
+            assert replayed.get_cost() == 5
+        finally:
+            replayed.close()
+        assert p.solve()
+        assert p.get_cost() == 5
+        assert 1 in p.get_model()
+    finally:
+        p.close()

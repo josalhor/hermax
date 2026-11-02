@@ -1,7 +1,7 @@
 from typing import List, Optional, Callable
 
 import hermax.core.urmaxsat_py as _urmaxsat
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 from hermax.core.ipamir_native_incremental_base import NativeIncrementalSolverBase
 from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible

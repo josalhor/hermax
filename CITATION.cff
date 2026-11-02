@@ -40,6 +40,20 @@ preferred-citation:
 references:
   - type: conference-paper
     authors:
+      - family-names: "Salvia Hornos"
+        given-names: "Josep Maria"
+      - family-names: "Ignatiev"
+        given-names: "Alexey"
+      - family-names: "Marques-Silva"
+        given-names: "Joao"
+    title: "CoreTrail and ShareTrail: Incremental Core-Guided MaxSAT Solvers"
+    collection-title: "MaxSAT Evaluation 2026: Solver and Benchmark Descriptions"
+    year: 2026
+    start: 17
+    end: 17
+    url: "https://hdl.handle.net/10138/640150"
+  - type: conference-paper
+    authors:
       - family-names: "Niskanen"
         given-names: "Andreas"
       - family-names: "Berg"

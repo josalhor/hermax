@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 import hermax.core.evalmaxsat_latest as evalmaxsat_latest
 from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 import hermax.core.evalmaxsat_incr as evalmaxsat_incr
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 from hermax.core.ipamir_native_incremental_base import NativeIncrementalSolverBase
 from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible

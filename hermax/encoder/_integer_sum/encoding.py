@@ -2,7 +2,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from pysat.formula import CNFPlus
+from hermax.formula import CNFPlus
 
 from hermax.internal import _integer_sum_native as native
 from hermax.internal._clause_storage import ClauseStorage

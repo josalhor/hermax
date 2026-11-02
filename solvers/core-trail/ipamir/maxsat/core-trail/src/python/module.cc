@@ -12,6 +12,11 @@
 
 #include "coretrail/coretrail_solver.hpp"
 
+#if __has_include("clause_read_api.hpp")
+#include "clause_read_api.hpp"
+#define HERMAX_NATIVE_CLAUSE_READ 1
+#endif
+
 typedef struct {
     PyObject_HEAD
     coretrail::CoreTrailSolver* solver;
@@ -53,22 +58,38 @@ private:
 
 }  // namespace
 
+static int py_to_literal(PyObject* value, int* out) {
+    if (!PyLong_Check(value) || PyBool_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "DIMACS literals must be integers.");
+        return -1;
+    }
+    long literal = PyLong_AsLong(value);
+    if (PyErr_Occurred()) return -1;
+    if (literal < -INT32_MAX || literal > INT32_MAX) {
+        PyErr_SetString(PyExc_OverflowError, "Literal exceeds CoreTrail's signed int32 range.");
+        return -1;
+    }
+    if (!literal) {
+        PyErr_SetString(PyExc_ValueError, "DIMACS literal zero is invalid.");
+        return -1;
+    }
+    *out = static_cast<int>(literal);
+    return 0;
+}
+
 static int py_to_int_vector(PyObject* seq, std::vector<int>* out) {
     PyObject* it = PyObject_GetIter(seq);
-    if (it == nullptr) return -1;
-    PyObject* x = nullptr;
-    while ((x = PyIter_Next(it)) != nullptr) {
-        long v = PyLong_AsLong(x);
-        Py_DECREF(x);
-        if (PyErr_Occurred()) {
-            Py_DECREF(it);
-            return -1;
-        }
-        out->push_back(static_cast<int>(v));
+    if (!it) return -1;
+    PyObject* value;
+    while ((value = PyIter_Next(it)) != nullptr) {
+        int literal;
+        int status = py_to_literal(value, &literal);
+        Py_DECREF(value);
+        if (status < 0) { Py_DECREF(it); return -1; }
+        out->push_back(literal);
     }
     Py_DECREF(it);
-    if (PyErr_Occurred()) return -1;
-    return 0;
+    return PyErr_Occurred() ? -1 : 0;
 }
 
 static int load_formula_from_wcnf(coretrail::CoreTrailSolver* solver, PyObject* formula) {
@@ -77,6 +98,10 @@ static int load_formula_from_wcnf(coretrail::CoreTrailSolver* solver, PyObject* 
     long nv = PyLong_AsLong(nv_obj);
     Py_DECREF(nv_obj);
     if (PyErr_Occurred()) return -1;
+    if (nv < 0 || nv > INT32_MAX) {
+        PyErr_SetString(PyExc_OverflowError, "Variable count exceeds CoreTrail's signed int32 range.");
+        return -1;
+    }
     solver->initialize_external_vars(static_cast<int>(nv));
 
     PyObject* hard = PyObject_GetAttrString(formula, "hard");
@@ -290,6 +315,9 @@ static int PyCoreTrail_init(PyCoreTrail* self, PyObject* args, PyObject* kwargs)
     } catch (const std::invalid_argument& e) {
         PyErr_SetString(PyExc_ValueError, e.what());
         return -1;
+    } catch (const std::overflow_error& e) {
+        PyErr_SetString(PyExc_OverflowError, e.what());
+        return -1;
     } catch (const std::exception& e) {
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return -1;
@@ -310,6 +338,34 @@ static inline coretrail::CoreTrailSolver* get_solver(PyCoreTrail* self) {
     return self->solver;
 }
 
+#ifdef HERMAX_NATIVE_CLAUSE_READ
+static int add_packed_hard(void* context, const int32_t* values, size_t count) {
+    try {
+        std::vector<int> clause;
+        if (count) clause.assign(values, values + count);
+        static_cast<coretrail::CoreTrailSolver*>(context)->add_hard_clause(clause);
+        return 0;
+    } catch (const std::bad_alloc&) {
+        PyErr_NoMemory();
+    } catch (const std::overflow_error& e) {
+        PyErr_SetString(PyExc_OverflowError, e.what());
+    } catch (const std::invalid_argument& e) {
+        PyErr_SetString(PyExc_ValueError, e.what());
+    } catch (const std::exception& e) {
+        PyErr_SetString(PyExc_RuntimeError, e.what());
+    }
+    return -1;
+}
+
+static PyObject* m_add_hard_packed(PyCoreTrail* self, PyObject* storage) {
+    auto* solver = get_solver(self);
+    if (!solver) return nullptr;
+    const auto* api = hermax::clauses::import_read_api();
+    if (!api || api->visit(storage, solver, add_packed_hard) < 0) return nullptr;
+    Py_RETURN_NONE;
+}
+#endif
+
 static PyObject* m_add_clause(PyCoreTrail* self, PyObject* args, PyObject* kwargs) {
     coretrail::CoreTrailSolver* s = get_solver(self);
     if (s == nullptr) return nullptr;
@@ -321,7 +377,8 @@ static PyObject* m_add_clause(PyCoreTrail* self, PyObject* args, PyObject* kwarg
         if (w != nullptr) weight_obj = w;
     }
     std::vector<int> clause;
-    if (PyTuple_Check(clause_obj) && PyTuple_Size(clause_obj) >= 2) {
+    if (PyTuple_Check(clause_obj) && PyTuple_Size(clause_obj) >= 2 &&
+        (PyList_Check(PyTuple_GetItem(clause_obj, 0)) || PyTuple_Check(PyTuple_GetItem(clause_obj, 0)))) {
         PyObject* lits_obj = PyTuple_GetItem(clause_obj, 0);  // borrowed
         if (lits_obj == nullptr) return nullptr;
         if (py_to_int_vector(lits_obj, &clause) < 0) return nullptr;
@@ -340,6 +397,9 @@ static PyObject* m_add_clause(PyCoreTrail* self, PyObject* args, PyObject* kwarg
     } catch (const std::invalid_argument& e) {
         PyErr_SetString(PyExc_ValueError, e.what());
         return nullptr;
+    } catch (const std::overflow_error& e) {
+        PyErr_SetString(PyExc_OverflowError, e.what());
+        return nullptr;
     } catch (const std::exception& e) {
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return nullptr;
@@ -350,20 +410,20 @@ static PyObject* m_add_clause(PyCoreTrail* self, PyObject* args, PyObject* kwarg
 static PyObject* m_set_soft(PyCoreTrail* self, PyObject* args, PyObject* kwargs) {
     coretrail::CoreTrailSolver* s = get_solver(self);
     if (s == nullptr) return nullptr;
-    long lit = 0;
+    PyObject* lit_object = nullptr;
     long long weight = 0;
-    if (!PyArg_ParseTuple(args, "lL", &lit, &weight)) return nullptr;
-    if (kwargs != nullptr) {
-        PyObject* l = PyDict_GetItemString(kwargs, "lit");
-        PyObject* w = PyDict_GetItemString(kwargs, "weight");
-        if (l) lit = PyLong_AsLong(l);
-        if (w) weight = PyLong_AsLongLong(w);
-        if (PyErr_Occurred()) return nullptr;
-    }
+    int lit;
+    static const char* names[] = {"lit", "weight", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OL", const_cast<char**>(names),
+                                     &lit_object, &weight)) return nullptr;
+    if (py_to_literal(lit_object, &lit) < 0) return nullptr;
     try {
-        s->set_soft(static_cast<int>(lit), weight);
+        s->set_soft(lit, weight);
     } catch (const std::invalid_argument& e) {
         PyErr_SetString(PyExc_ValueError, e.what());
+        return nullptr;
+    } catch (const std::overflow_error& e) {
+        PyErr_SetString(PyExc_OverflowError, e.what());
         return nullptr;
     } catch (const std::exception& e) {
         PyErr_SetString(PyExc_RuntimeError, e.what());
@@ -375,20 +435,20 @@ static PyObject* m_set_soft(PyCoreTrail* self, PyObject* args, PyObject* kwargs)
 static PyObject* m_add_soft_unit(PyCoreTrail* self, PyObject* args, PyObject* kwargs) {
     coretrail::CoreTrailSolver* s = get_solver(self);
     if (s == nullptr) return nullptr;
-    long lit = 0;
+    PyObject* lit_object = nullptr;
     long long weight = 0;
-    if (!PyArg_ParseTuple(args, "lL", &lit, &weight)) return nullptr;
-    if (kwargs != nullptr) {
-        PyObject* l = PyDict_GetItemString(kwargs, "lit");
-        PyObject* w = PyDict_GetItemString(kwargs, "weight");
-        if (l) lit = PyLong_AsLong(l);
-        if (w) weight = PyLong_AsLongLong(w);
-        if (PyErr_Occurred()) return nullptr;
-    }
+    int lit;
+    static const char* names[] = {"lit", "weight", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OL", const_cast<char**>(names),
+                                     &lit_object, &weight)) return nullptr;
+    if (py_to_literal(lit_object, &lit) < 0) return nullptr;
     try {
-        s->add_soft_unit(static_cast<int>(lit), weight);
+        s->add_soft_unit(lit, weight);
     } catch (const std::invalid_argument& e) {
         PyErr_SetString(PyExc_ValueError, e.what());
+        return nullptr;
+    } catch (const std::overflow_error& e) {
+        PyErr_SetString(PyExc_OverflowError, e.what());
         return nullptr;
     } catch (const std::exception& e) {
         PyErr_SetString(PyExc_RuntimeError, e.what());
@@ -537,6 +597,9 @@ static PyObject* m_close(PyCoreTrail* self, PyObject* args) {
 }
 
 static PyMethodDef CoreTrail_methods[] = {
+#ifdef HERMAX_NATIVE_CLAUSE_READ
+    {"_add_hard_packed", (PyCFunction)m_add_hard_packed, METH_O, nullptr},
+#endif
     {"add_clause", (PyCFunction)(void(*)(void))m_add_clause, METH_VARARGS | METH_KEYWORDS, "Add hard/soft clause."},
     {"set_soft", (PyCFunction)(void(*)(void))m_set_soft, METH_VARARGS | METH_KEYWORDS, "Set soft literal."},
     {"add_soft_unit", (PyCFunction)(void(*)(void))m_add_soft_unit, METH_VARARGS | METH_KEYWORDS, "Add soft unit."},

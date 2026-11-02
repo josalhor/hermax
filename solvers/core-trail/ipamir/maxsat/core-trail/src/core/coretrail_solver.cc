@@ -23,12 +23,12 @@ static inline void append_all(std::vector<int>* dst, const std::vector<int>& src
 
 static inline void dedup_lits_inplace(std::vector<int>* lits) {
     std::unordered_set<int> seen;
-    std::vector<int> out;
-    out.reserve(lits->size());
+    seen.reserve(lits->size());
+    size_t write = 0;
     for (int l : *lits) {
-        if (seen.insert(l).second) out.push_back(l);
+        if (seen.insert(l).second) (*lits)[write++] = l;
     }
-    lits->swap(out);
+    lits->resize(write);
 }
 
 static inline std::string lits_key(const std::vector<int>& lits) {
@@ -229,6 +229,7 @@ bool CoreTrailSolver::stop_or_interrupted(bool check_sat_unknown) {
     if (interrupt_probe_ != nullptr && interrupt_probe_()) {
         request_stop();
     }
+    if (sat_.termination_requested()) request_stop();
     if (stop_requested_.load(std::memory_order_relaxed)) {
         if (incumbent_cost_.has_value()) {
             restore_incumbent();
@@ -277,9 +278,9 @@ void CoreTrailSolver::publish_candidate() {
         (void)internal_var;
         if (present.insert(external_var).second) external.push_back(external_var);
     }
-    std::sort(external.begin(), external.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
     const std::int64_t exact_cost = objective_.evaluate(external);
     if (incumbent_cost_.has_value() && exact_cost >= *incumbent_cost_) return;
+    std::sort(external.begin(), external.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
     incumbent_cost_ = exact_cost;
     incumbent_model_ = std::move(external);
 }
@@ -336,19 +337,17 @@ std::shared_ptr<Consequence> CoreTrailSolver::new_consequence(std::optional<std:
 }
 
 void CoreTrailSolver::filter_assumps() {
-    std::vector<int> new_sels;
-    new_sels.reserve(sels_.size());
-    for (int l : sels_) {
-        if (garbage_.find(l) == garbage_.end()) new_sels.push_back(l);
+    if (garbage_.empty()) {
+        normalize_active_objective_assumptions();
+        return;
     }
-    sels_.swap(new_sels);
 
-    std::vector<int> new_sums;
-    new_sums.reserve(sums_.size());
-    for (int l : sums_) {
-        if (garbage_.find(l) == garbage_.end()) new_sums.push_back(l);
-    }
-    sums_.swap(new_sums);
+    auto remove_garbage = [this](std::vector<int>& lits) {
+        lits.erase(std::remove_if(lits.begin(), lits.end(),
+            [this](int l) { return garbage_.find(l) != garbage_.end(); }), lits.end());
+    };
+    remove_garbage(sels_);
+    remove_garbage(sums_);
 
     for (int l : garbage_) {
         auto ib = bnds_.find(l);
@@ -356,8 +355,11 @@ void CoreTrailSolver::filter_assumps() {
             bnds_history_[l] = ib->second;
             bnds_.erase(ib);
         }
-        erase_weight(l);
+        wght_.erase(l);
     }
+
+    wght_order_.erase(std::remove_if(wght_order_.begin(), wght_order_.end(),
+        [this](int l) { return garbage_.find(l) != garbage_.end(); }), wght_order_.end());
 
     for (int l : garbage_) {
         sels_set_.erase(l);
@@ -410,10 +412,12 @@ bool CoreTrailSolver::remove_contradictory_objective_assumptions() {
         std::vector<int> active;
         active.reserve(sels_.size() + sums_.size());
         for (int l : sels_) {
-            if (is_active_objective_lit(l) && !is_base(l)) active.push_back(l);
+            const auto iw = wght_.find(l);
+            if (iw != wght_.end() && iw->second > 0 && !is_base(l)) active.push_back(l);
         }
         for (int l : sums_) {
-            if (is_active_objective_lit(l) && !is_base(l)) active.push_back(l);
+            const auto iw = wght_.find(l);
+            if (iw != wght_.end() && iw->second > 0 && !is_base(l)) active.push_back(l);
         }
         std::unordered_set<int> active_set(active.begin(), active.end());
 
@@ -537,27 +541,17 @@ std::int64_t CoreTrailSolver::disable_old_consequences() {
     });
 
     for (const auto& consequence : sorted) {
-        std::vector<int> new_sels;
-        new_sels.reserve(sels_.size());
-        for (int l : sels_) {
-            if (!contains_lit(consequence->added_lits, l)) new_sels.push_back(l);
+        if (!consequence->added_lits.empty()) {
+            const std::unordered_set<int> added(consequence->added_lits.begin(), consequence->added_lits.end());
+            auto remove_added = [&added](std::vector<int>& lits) {
+                lits.erase(std::remove_if(lits.begin(), lits.end(),
+                    [&added](int l) { return added.find(l) != added.end(); }), lits.end());
+            };
+            remove_added(sels_);
+            remove_added(sums_);
+            remove_added(impossible_lits_);
+            for (int l : consequence->added_lits) sels_set_.erase(l);
         }
-        sels_.swap(new_sels);
-        for (int l : consequence->added_lits) sels_set_.erase(l);
-
-        std::vector<int> new_sums;
-        new_sums.reserve(sums_.size());
-        for (int l : sums_) {
-            if (!contains_lit(consequence->added_lits, l)) new_sums.push_back(l);
-        }
-        sums_.swap(new_sums);
-
-        std::vector<int> new_impossible;
-        new_impossible.reserve(impossible_lits_.size());
-        for (int l : impossible_lits_) {
-            if (!contains_lit(consequence->added_lits, l)) new_impossible.push_back(l);
-        }
-        impossible_lits_.swap(new_impossible);
 
         for (int l : consequence->removed_lits) {
             if (all_sels_.find(l) != all_sels_.end() || transition_weights_.find(l) != transition_weights_.end()) {
@@ -655,7 +649,10 @@ std::int64_t CoreTrailSolver::disable_old_consequences() {
         });
         std::vector<std::vector<int>> core_epoch;
         core_epoch.reserve(sorted.size());
-        for (const auto& c : sorted) core_epoch.push_back(c->core);
+        for (const auto& c : sorted) {
+            core_epoch.push_back(c->core);
+            dedup_lits_inplace(&core_epoch.back());
+        }
         if (core_history_.size() >= static_cast<size_t>(core_replay_)) {
             core_history_.pop_front();
         }
@@ -666,7 +663,7 @@ std::int64_t CoreTrailSolver::disable_old_consequences() {
 }
 
 bool CoreTrailSolver::redo_conflicting_assumptions() {
-    if (core_replay_ <= 0) return false;
+    if (core_replay_ <= 0) return true;
 
     std::unordered_set<int> base_set;
     base_set.insert(assumptions_.begin(), assumptions_.end());
@@ -678,8 +675,6 @@ bool CoreTrailSolver::redo_conflicting_assumptions() {
         auto& epoch = *epoch_it;
         for (size_t i = 0; i < epoch.size(); ++i) {
             auto& core = epoch[i];
-            if (core.empty()) continue;
-            dedup_lits_inplace(&core);
             if (core.empty()) continue;
 
             bool could_core_happen = core.size() <= base_set.size();
@@ -1101,12 +1096,14 @@ bool CoreTrailSolver::trim_core() {
 }
 
 bool CoreTrailSolver::minimize_core() {
+    if (!minz_) return true;
+
     CoreSplit split = split_core_assumptions(original_core_);
     std::vector<int> sels_ass = std::move(split.sels_ass);
     std::vector<int> obj_core = std::move(split.reduced_core);
     std::vector<int> impossible_soft = std::move(split.impossible_soft);
 
-    if (minz_ && obj_core.size() > 1U) {
+    if (obj_core.size() > 1U) {
         std::sort(obj_core.begin(), obj_core.end(), [this](int a, int b) {
             return wght_.at(a) < wght_.at(b);
         });
@@ -1129,10 +1126,7 @@ bool CoreTrailSolver::minimize_core() {
                 ++i;
             } else {
                 sat_.budget_off();
-                if (stop_requested_.load(std::memory_order_relaxed) || sat_.time_limit_expired()) {
-                    (void)stop_or_interrupted();
-                    return false;
-                }
+                if (stop_or_interrupted()) return false;
                 // The conflict budget is only a minimization heuristic. Its
                 // UNKNOWN result still leaves original_core_ as a valid core.
                 break;
@@ -1365,23 +1359,13 @@ std::pair<TotTree*, std::string> CoreTrailSolver::create_sum() {
         throw std::runtime_error("create_sum: empty totalizer");
     }
 
-    std::string totalizer_id = lits_key(result.rels_used);
+    std::string totalizer_id = std::move(result.key);
 
-    auto& encoded = sum_to_rels_[totalizer_id];
-    encoded.clear();
-    for (int used_rel : result.rels_used) {
-        auto expanded = itot_dag_.expand_rel(used_rel);
-        for (int r : expanded) {
-            if (!contains_lit(core_sums_, -r)) {
-                encoded.insert(r);
-                continue;
-            }
-            auto it_prev = lit_to_totalizerid_.find(-r);
-            if (it_prev == lit_to_totalizerid_.end()) {
-                throw std::runtime_error("create_sum: missing totalizer id for reused sum literal");
-            }
-            const auto& existing_rels = sum_to_rels_[it_prev->second];
-            encoded.insert(existing_rels.begin(), existing_rels.end());
+    // Every core sum contributes its negation to this counter. Keep the
+    // metadata check without constructing unused flattened provenance.
+    for (int l : core_sums_) {
+        if (lit_to_totalizerid_.find(l) == lit_to_totalizerid_.end()) {
+            throw std::runtime_error("create_sum: missing totalizer id for reused sum literal");
         }
     }
 
@@ -1393,11 +1377,13 @@ std::pair<TotTree*, std::string> CoreTrailSolver::create_sum() {
 }
 
 bool CoreTrailSolver::exhaust_core(TotTree* tobj, const std::string& totalizer_id) {
+    // process_sums() appends to rels_ while the counter's inputs stay fixed.
+    const size_t input_count = rels_.size();
     set_bound(tobj, 1, std::nullopt, totalizer_id);
     std::vector<int> base = assumptions_;
     append_all(&base, impossible_lits_);
 
-    for (int b = 1; b <= static_cast<int>(rels_.size()) - 1; ++b) {
+    for (int b = 1; b < static_cast<int>(input_count); ++b) {
         int lit = -tobj->vars[static_cast<size_t>(b)];
 
         std::vector<int> q;
@@ -1430,15 +1416,10 @@ bool CoreTrailSolver::exhaust_core(TotTree* tobj, const std::string& totalizer_i
         filter_assumps();
     }
 
-    if (consequence_) {
-        for (int relv : rels_) {
-            impossible_lits_.push_back(relv);
-            consequence_->added_lits.push_back(relv);
-        }
-    } else {
-        for (int relv : rels_) {
-            impossible_lits_.push_back(relv);
-        }
+    for (size_t i = 0; i < input_count; ++i) {
+        const int relv = rels_[i];
+        impossible_lits_.push_back(relv);
+        if (consequence_) consequence_->added_lits.push_back(relv);
     }
 
     consequence_ = nullptr;
@@ -1627,8 +1608,6 @@ bool CoreTrailSolver::compute_base(const std::vector<int>& assumptions) {
             model_set_.insert(ext);
         }
 
-        std::sort(mapped.begin(), mapped.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
-
         int vmax = 0;
         for (const auto& kv : e2i_) {
             if (kv.first > vmax) vmax = kv.first;
@@ -1813,11 +1792,12 @@ bool CoreTrailSolver::continue_optimization() {
             throw std::runtime_error("All soft clauses should be active at end of stratified compute");
         }
     }
+    const std::unordered_set<int> active_sums(sums_.begin(), sums_.end());
     for (int l : wght_order_) {
         auto it = wght_.find(l);
         if (it == wght_.end()) continue;
         if (it->second <= 0) throw std::runtime_error("All weights should be positive at end of stratified compute");
-        if (!contains_lit(sels_, l) && !contains_lit(sums_, l)) {
+        if (sels_set_.find(l) == sels_set_.end() && active_sums.find(l) == active_sums.end()) {
             throw std::runtime_error("All weights should correspond to active soft clauses at end of stratified compute");
         }
     }
@@ -1836,8 +1816,6 @@ bool CoreTrailSolver::continue_optimization() {
         mapped.push_back(ext);
         model_set_.insert(ext);
     }
-    std::sort(mapped.begin(), mapped.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
-
     int vmax = 0;
     for (const auto& kv : e2i_) vmax = std::max(vmax, kv.first);
     std::unordered_set<int> present;
@@ -1899,6 +1877,7 @@ void CoreTrailSolver::add_clause(const std::vector<int>& clause, std::optional<s
         throw std::invalid_argument("soft clause cannot be empty");
     }
 
+    objective_.validate_weight(0, *weight, false);
     std::vector<int> mapped;
     mapped.reserve(clause.size());
     for (int l : clause) {
@@ -1914,7 +1893,7 @@ void CoreTrailSolver::add_clause(const std::vector<int>& clause, std::optional<s
         pending_clauses_.push_back(std::move(mapped));
         objective_.add_clause(selv, objective_clause, *weight);
     } else {
-        objective_.add_unit(clause.front(), *weight);
+        objective_.add_unit(selv, clause.front(), *weight);
     }
 
     if (all_sels_.find(selv) != all_sels_.end()) {
@@ -1924,10 +1903,15 @@ void CoreTrailSolver::add_clause(const std::vector<int>& clause, std::optional<s
         if (mapped.size() != 1U) {
             throw std::invalid_argument("selector already exists");
         }
-        const std::int64_t previous = original_wght_.at(selv);
-        const std::int64_t combined = previous + *weight;
-        set_weight(selv, combined);
-        original_wght_[selv] = combined;
+        // The working weight may already have been split by a core. Queue
+        // the new objective weight so dependent consequences are undone
+        // before it is installed, just as for set_soft().
+        const std::int64_t combined = objective_.unit_weight(selv);
+        if (combined == original_wght_.at(selv)) {
+            transition_weights_.erase(selv);
+        } else {
+            transition_weights_[selv] = combined;
+        }
         mark_query_dirty();
         return;
     }
@@ -1947,6 +1931,9 @@ void CoreTrailSolver::set_soft(int lit, std::int64_t weight) {
     if (weight < 0) {
         throw std::invalid_argument("weight must be positive");
     }
+    const auto mapped = e2i_.find(std::abs(lit));
+    const int existing = mapped == e2i_.end() ? 0 : (lit > 0 ? mapped->second : -mapped->second);
+    objective_.validate_weight(existing, weight, true);
     int lint = map_extlit(lit);
     if (all_sels_.find(lint) != all_sels_.end()) {
         auto it = original_wght_.find(lint);
@@ -1956,7 +1943,7 @@ void CoreTrailSolver::set_soft(int lit, std::int64_t weight) {
         } else {
             transition_weights_[lint] = weight;
         }
-        objective_.set_unit(lit, weight);
+        objective_.set_unit(lint, lit, weight);
         if (weight != ow) mark_query_dirty();
         return;
     }
@@ -1991,11 +1978,16 @@ bool CoreTrailSolver::solve(
     }
     interrupted_last_solve_ = false;
     clear_stop_request();
+    sat_.clear_termination_request();
     if (time_limit.has_value()) {
         sat_.set_time_limit(*time_limit);
     }
     bool sat = false;
     try {
+        if (stop_or_interrupted()) {
+            sat_.clear_time_limit();
+            return false;
+        }
         sat = compute(requested_assumptions);
         if (optimization_complete_) {
             sat_.clear_time_limit();
@@ -2029,6 +2021,10 @@ void CoreTrailSolver::clear_stop_request() noexcept {
 void CoreTrailSolver::set_interrupt_probe(GlucoseBackend::InterruptProbe probe) noexcept {
     interrupt_probe_ = probe;
     sat_.set_interrupt_probe(probe);
+}
+
+void CoreTrailSolver::set_termination_callback(void* state, int (*callback)(void*)) {
+    sat_.set_termination_callback(state, callback);
 }
 
 bool CoreTrailSolver::stop_requested() const noexcept {
@@ -2112,7 +2108,6 @@ void CoreTrailSolver::close() noexcept {
     bnds_history_.clear();
     tobj_.clear();
     swgt_.clear();
-    sum_to_rels_.clear();
     consequence_ = nullptr;
     itot_dag_.clear();
     impossible_lits_.clear();

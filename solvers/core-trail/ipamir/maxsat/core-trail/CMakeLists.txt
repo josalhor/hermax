@@ -47,7 +47,8 @@ find_package(pybind11 REQUIRED)
 pybind11_add_module(coretrail_native MODULE NO_EXTRAS src/python/module.cc)
 target_compile_features(coretrail_native PRIVATE cxx_std_17)
 target_compile_definitions(coretrail_native PRIVATE Glucose=RC2Glucose)
-target_include_directories(coretrail_native PRIVATE include third_party/glucose-syrup-4.1 third_party/cardenc)
+target_include_directories(coretrail_native PRIVATE include third_party/glucose-syrup-4.1 third_party/cardenc
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../hermax/internal/native")
 target_link_libraries(coretrail_native PRIVATE Python3::Module pybind11::module coretrail_core)
 
 if(UNIX)

@@ -5,7 +5,7 @@ import importlib.util
 import os
 from typing import Dict, List, Optional, Set
 
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult
 from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible

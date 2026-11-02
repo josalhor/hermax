@@ -1836,8 +1836,8 @@ setup(
     ext_modules=[
         Extension(
             "hermax.internal._clauses",
-            ["hermax/internal/clauses.cpp"],
-            depends=["hermax/internal/native/packed_clauses.hpp", "hermax/internal/native/clause_api.hpp"],
+            ["hermax/internal/clauses.cpp", "hermax/internal/native/formula_parse.cpp"],
+            depends=["hermax/internal/native/packed_clauses.hpp", "hermax/internal/native/clause_api.hpp", "hermax/internal/native/formula_parse.hpp", "hermax/internal/native/clause_read_api.hpp"],
             extra_compile_args=(["/O2", "/std:c++17"] if platform.system() == "Windows" else ["-O3", "-std=c++17"]),
             language="c++",
         ),

@@ -25,12 +25,12 @@ See :doc:`modeling_objective_migration` for replacements.
 
 Other Highlights
 ~~~~~~~~~~
+* Made CoreTrail the default MaxSAT solver.
 * Unified and reduced AMO and EO encodings.
 * Improved cardinality encoder selection.
-* Improved encodings of of some reified constraints.
-* Improved all-different encodings with domain filtering.
-* Reduced repeated work when compiling integer comparisons.
-* Reduced clause storage memory use, native encoding overhead, and formula export time.
+* Improved encodings of some reified constraints.
+* Improved all-different encodings with domain filtering and encoder selection.
+* Improved table constraints.
 * Improved encodings of enums reificaiton and big domains.
 * Improved encodings of sets.
 * Fixed assumptions on unused variables and one-sided bounds of single-item vectors.
@@ -55,7 +55,7 @@ Other Highlights
 * Reduced memory use for repeated vector lookups and objective replacement.
 * Fixed some weight updates with precision changes.
 * Fixed decoding edge cases of integer comparisons.
-* Other internal changes on edge cases that should not impact the API.
+* Many other internal changes and performance improvements that should not impact the API.
 
 Version 1.2.10
 --------------

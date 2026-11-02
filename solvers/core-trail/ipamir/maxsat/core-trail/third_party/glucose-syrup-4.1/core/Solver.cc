@@ -187,6 +187,10 @@ verbosity(0)
 , propagation_budget(-1)
 , asynch_interrupt(false)
 , interrupt_probe(nullptr)
+, termination_state(nullptr)
+, termination_callback(nullptr)
+, termination_requested(false)
+, termination_check_counter(1)
 , deadline_active(false)
 , deadline_check_counter(0)
 , deadline_expired(false)
@@ -276,6 +280,10 @@ Solver::Solver(const Solver &s) :
 , propagation_budget(s.propagation_budget)
 , asynch_interrupt(s.asynch_interrupt.load(std::memory_order_relaxed))
 , interrupt_probe(s.interrupt_probe)
+, termination_state(s.termination_state)
+, termination_callback(s.termination_callback)
+, termination_requested(s.termination_requested)
+, termination_check_counter(s.termination_check_counter)
 , deadline_active(s.deadline_active)
 , deadline(s.deadline)
 , deadline_check_counter(s.deadline_check_counter)
@@ -1471,7 +1479,7 @@ void Solver::adaptSolver() {
             }
         }
         learnts.shrink(i - j);
-        printf("c Activating Chanseok Strategy: moved %d clauses to the permanent set.\n", moved);
+        //printf("c Activating Chanseok Strategy: moved %d clauses to the permanent set.\n", moved);
     }
 
     if(reinit) {
@@ -1490,7 +1498,7 @@ void Solver::adaptSolver() {
 	}
 	printf("c reinitialization of all variables activity/phase/learnt clauses.\n");
 */
-        printf("c Removing of non permanent clauses.\n");
+        //printf("c Removing of non permanent clauses.\n");
     }
 
 }

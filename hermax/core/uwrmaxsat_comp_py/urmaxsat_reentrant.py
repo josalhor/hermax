@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from typing import List, Optional
 
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 import hermax.core.urmaxsat_comp_py as _urmaxsat
 from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult

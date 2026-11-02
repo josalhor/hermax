@@ -17,9 +17,6 @@ struct SolverHandle {
     bool has_empty_hard_clause{false};
     std::string input_error{};
 
-    void* term_state{nullptr};
-    int (*term_cb)(void*){nullptr};
-
     explicit SolverHandle()
         : solver(coretrail::CoreTrailOptions{}) {
     }
@@ -110,11 +107,6 @@ int ipamir_solve(void* solver) {
             h->assumptions.clear();
             return 20;
         }
-        if (h->term_cb && h->term_cb(h->term_state)) {
-            h->assumptions.clear();
-            return 0;
-        }
-
         (void)h->solver.solve(h->assumptions, false);
         h->assumptions.clear();
 
@@ -168,8 +160,7 @@ int32_t ipamir_val_lit(void* solver, int32_t lit) {
 void ipamir_set_terminate(void* solver, void* state, int (*terminate)(void*)) {
     auto* h = as_handle(solver);
     if (!h) return;
-    h->term_state = state;
-    h->term_cb = terminate;
+    h->solver.set_termination_callback(state, terminate);
 }
 
 }  // extern "C"

@@ -98,6 +98,19 @@ Output
 .. literalinclude:: _generated/example_outputs/quickstart_uwrmaxsat.txt
    :language: console
 
+CoreTrail
+---------
+
+Use CoreTrail for related MaxSAT queries with changing assumptions or soft
+weights. It retains its native search state between solves.
+
+.. literalinclude:: ../examples/coretrail_incremental.py
+   :language: python
+   :caption: examples/coretrail_incremental.py
+
+The example reports costs 3 and 6 for its first two queries, then 2 after
+the weight update. See :doc:`incremental` for the API and solver citation.
+
 RC2
 ---------------------------------------
 
@@ -122,9 +135,8 @@ Output
 Load from WCNF Formula
 ----------------------
 
-Use this when a formula is already built elsewhere and you want to pass the
-whole WCNF to a solver instead of replaying clause additions. This fits a
-PySAT based workflow [3]_.
+Use ``hermax.formula.load_formula`` to load a formula file and pass it to a
+solver. Existing PySAT formula objects can also be supplied directly [3]_.
 
 Related API: :class:`hermax.incremental.EvalMaxSAT`.
 

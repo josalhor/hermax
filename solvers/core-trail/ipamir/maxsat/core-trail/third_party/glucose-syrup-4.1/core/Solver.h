@@ -189,6 +189,9 @@ public:
     void    clearInterrupt();     // Clear interrupt indicator flag.
     using InterruptProbe = bool (*)() noexcept;
     void    setInterruptProbe(InterruptProbe probe);
+    void    setTerminationCallback(void* state, int (*callback)(void*));
+    void    clearTerminationRequest();
+    bool    terminationRequested() const;
 
     // Memory managment:
     //
@@ -396,6 +399,10 @@ protected:
     int64_t             propagation_budget; // -1 means no budget.
     std::atomic<bool>   asynch_interrupt;
     InterruptProbe      interrupt_probe;
+    void*               termination_state;
+    int               (*termination_callback)(void*);
+    mutable bool        termination_requested;
+    mutable int         termination_check_counter;
     bool                deadline_active;
     std::chrono::steady_clock::time_point deadline;
     mutable int         deadline_check_counter;
@@ -579,10 +586,29 @@ inline bool     Solver::timeLimitExpired() const {
 inline void     Solver::interrupt(){ asynch_interrupt.store(true, std::memory_order_relaxed); }
 inline void     Solver::clearInterrupt(){ asynch_interrupt.store(false, std::memory_order_relaxed); }
 inline void     Solver::setInterruptProbe(InterruptProbe probe){ interrupt_probe = probe; }
+inline void Solver::setTerminationCallback(void* state, int (*callback)(void*)) {
+    termination_state = state;
+    termination_callback = callback;
+    clearTerminationRequest();
+}
+inline void Solver::clearTerminationRequest() {
+    termination_requested = false;
+    termination_check_counter = 1;
+}
+inline bool Solver::terminationRequested() const {
+    if (!termination_requested && termination_callback != nullptr && termination_callback(termination_state))
+        termination_requested = true;
+    return termination_requested;
+}
 inline void     Solver::budgetOff(){ conflict_budget = propagation_budget = -1; }
 inline bool     Solver::withinBudget() const {
     if (asynch_interrupt.load(std::memory_order_relaxed)) return false;
     if (interrupt_probe != nullptr && interrupt_probe()) return false;
+    if (termination_requested) return false;
+    if (termination_callback != nullptr && --termination_check_counter <= 0) {
+        termination_check_counter = 256;
+        if (terminationRequested()) return false;
+    }
     if (deadline_expired) return false;
     if (deadline_active && --deadline_check_counter <= 0) {
         deadline_check_counter = 256;

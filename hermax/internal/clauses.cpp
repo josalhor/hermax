@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 #include "native/clause_api.hpp"
+#include "native/clause_read_api.hpp"
+#include "native/formula_parse.hpp"
 
 namespace {
 
@@ -466,7 +468,57 @@ PyGetSetDef getters[] = {
 };
 PyMappingMethods mapping = {reinterpret_cast<lenfunc>(storage_length), reinterpret_cast<binaryfunc>(storage_get), reinterpret_cast<objobjargproc>(storage_delete)};
 PyNumberMethods numbers = {};
-PyModuleDef module = {PyModuleDef_HEAD_INIT, "_clauses", nullptr, -1, nullptr};
+// Keep Python integers here: validation also supports IDs outside int32 storage.
+PyObject *satisfies(PyObject *, PyObject *args) {
+    PyObject *hards, *model;
+    if (!PyArg_ParseTuple(args, "OO:satisfies", &hards, &model)) return nullptr;
+    Ref assignment(PySet_New(nullptr)), variables(PySet_New(nullptr));
+    Ref values(PyObject_GetIter(model));
+    if (!assignment || !variables || !values) return nullptr;
+    while (Ref value{PyIter_Next(values.get())}) {
+        if (!PyLong_Check(value.get()) || PyBool_Check(value.get()) || !PyObject_IsTrue(value.get()))
+            Py_RETURN_FALSE;
+        Ref variable(PyNumber_Absolute(value.get()));
+        if (!variable) return nullptr;
+        int duplicate = PySet_Contains(variables.get(), variable.get());
+        if (duplicate < 0) return nullptr;
+        if (duplicate) Py_RETURN_FALSE;
+        if (PySet_Add(variables.get(), variable.get()) || PySet_Add(assignment.get(), value.get())) return nullptr;
+    }
+    if (PyErr_Occurred()) return nullptr;
+    Ref clauses(PyObject_GetIter(hards));
+    if (!clauses) return nullptr;
+    while (Ref clause{PyIter_Next(clauses.get())}) {
+        Ref literals(PyObject_GetIter(clause.get()));
+        if (!literals) return nullptr;
+        bool found = false;
+        while (Ref value{PyIter_Next(literals.get())}) {
+            if (!PyLong_Check(value.get()) || PyBool_Check(value.get())) {
+                PyErr_SetString(PyExc_TypeError, "hard clause literals must be integers.");
+                return nullptr;
+            }
+            if (!PyObject_IsTrue(value.get())) {
+                PyErr_SetString(PyExc_ValueError, "hard clause literals cannot be 0.");
+                return nullptr;
+            }
+            int present = PySet_Contains(assignment.get(), value.get());
+            if (present < 0) return nullptr;
+            if (present) { found = true; break; }
+        }
+        if (PyErr_Occurred()) return nullptr;
+        if (!found) Py_RETURN_FALSE;
+    }
+    if (PyErr_Occurred()) return nullptr;
+    Py_RETURN_TRUE;
+}
+PyObject *parse_formula(PyObject *, PyObject *args);
+
+PyMethodDef module_methods[] = {
+    {"parse_formula", parse_formula, METH_VARARGS, nullptr},
+    {"satisfies", satisfies, METH_VARARGS, nullptr},
+    {nullptr, nullptr, 0, nullptr}
+};
+PyModuleDef module = {PyModuleDef_HEAD_INIT, "_clauses", nullptr, -1, module_methods};
 
 PyObject *api_create() { return checked([]() { return wrap(&StorageType, empty_data()); }); }
 int api_append(PyObject *object, const int32_t *values, size_t count) {
@@ -487,6 +539,37 @@ PyObject *api_adopt(PackedClauses *buffer) {
         return wrap(&StorageType, std::move(data));
     });
 }
+int parser_append(PyObject *object, PyObject *literals) {
+    Ref result(storage_append(reinterpret_cast<Storage *>(object), literals));
+    return result ? 0 : -1;
+}
+PyObject *parser_max_var(PyObject *object) {
+    return storage_max_var(reinterpret_cast<Storage *>(object), nullptr);
+}
+PyObject *parse_formula(PyObject *, PyObject *args) {
+    const hermax::formula::ClauseBuilder storage{
+        api_create, parser_append, api_append, parser_max_var};
+    return hermax::formula::parse(args, storage);
+}
+
+int api_visit(PyObject *object, void *context, int (*visitor)(void *, const int32_t *, size_t)) {
+    if (!PyObject_TypeCheck(object, &StorageType)) {
+        PyErr_SetString(PyExc_TypeError, "Expected native clause storage.");
+        return -1;
+    }
+    SharedData source = reinterpret_cast<Storage *>(object)->data;
+    // Check the complete input before invoking any mutating consumer callback.
+    if (!source->wide.empty()) {
+        PyErr_SetString(PyExc_OverflowError, "Native solver literals exceed the signed int32 range.");
+        return -1;
+    }
+    for (size_t i = 0; i < source->size(); ++i) {
+        const auto row = (*source)[i];
+        if (visitor(context, row.values, row.count) < 0) return -1;
+    }
+    return 0;
+}
+const hermax::clauses::ReadAPI read_api{1, api_visit};
 const hermax::clauses::API api{1, sizeof(PackedClauses), api_create, api_append, api_adopt};
 
 } // namespace
@@ -514,5 +597,8 @@ PyMODINIT_FUNC PyInit__clauses() {
     if (!result || PyModule_AddObjectRef(result.get(), "Storage", reinterpret_cast<PyObject *>(&StorageType))) return nullptr;
     Ref capsule(PyCapsule_New(const_cast<hermax::clauses::API *>(&api), "hermax.internal._clauses._C_API", nullptr));
     if (!capsule || PyModule_AddObjectRef(result.get(), "_C_API", capsule.get())) return nullptr;
+    Ref read_capsule(PyCapsule_New(const_cast<hermax::clauses::ReadAPI *>(&read_api),
+                                  "hermax.internal._clauses._READ_API", nullptr));
+    if (!read_capsule || PyModule_AddObjectRef(result.get(), "_READ_API", read_capsule.get())) return nullptr;
     return result.release();
 }

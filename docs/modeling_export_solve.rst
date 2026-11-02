@@ -1,7 +1,7 @@
 Solve, Export, and Decode
 =========================
 
-The model layer can export PySAT formulas, decode solver models, and call
+The model layer can export formulas, decode solver models, and call
 ``solve()``. For API changes in 1.3, see :doc:`modeling_objective_migration`.
 
 Export to CNF / WCNF
@@ -16,6 +16,9 @@ Rules:
 
 * ``to_cnf()`` requires the model to contain **no soft clauses**
 * ``to_wcnf()`` exports both hard and soft clauses
+
+Formula exports support interchange with PySAT. Call ``to_pysat()``
+on an exported formula when a PySAT object is required.
 
 ``to_cnf()`` raises ``ValueError`` if soft clauses are present.
 
@@ -288,7 +291,7 @@ Notes:
 
 * ``solver_kwargs`` is only valid when ``solver`` is a class/factory.
 * ``backend="maxsat"`` in incremental mode requires a Hermax IPAMIR solver.
-* default ``backend="auto"`` keeps one-shot Hermax RC2 for soft models.
+* default ``backend="auto"`` uses CoreTrail for soft models.
 
 Example
 -------

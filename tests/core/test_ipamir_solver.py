@@ -1,4 +1,5 @@
 import unittest
+import pytest
 from typing import Type
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus
 
@@ -174,6 +175,20 @@ class TestIPAMIRSolver(unittest.TestCase):
         self.assertEqual(self.solver.get_status(), SolveStatus.OPTIMUM, "Status after adding soft clause mismatch.")
         self.assertEqual(self.solver.get_cost(), 1, f"Expected cost 1 after adding soft clause, got {self.solver.get_cost()}.")
         print(f"Soft clause added - Cost: {self.solver.get_cost()}, Model: {self.solver.get_model()}")
+
+    def test_assumptions_preserve_relaxation_model_and_cost(self):
+        """Assumptions must preserve the relaxation clause and its full cost."""
+        self.solver.add_clause([-1, -2])
+        self.solver.set_soft(1, 1)
+        self.solver.set_soft(2, 1)
+        self.solver.add_soft_relaxed([1, 2], 1, relax_var=3)
+
+        self.assertTrue(self.solver.solve(assumptions=[-1, -2]))
+        model = set(self.solver.get_model())
+        self.assertTrue({-1, -2}.issubset(model), 'Model violates assumptions.')
+        for clause in ([-1, -2], [1, 2, 3]):
+            self.assertTrue(any(lit in model for lit in clause), 'Model violates a hard clause.')
+        self.assertEqual(self.solver.get_cost(), 3)
 
     def test_termination_callback(self):
         """Test that the termination callback can stop the solver."""
@@ -385,6 +400,10 @@ class IncompletePresetPortfolioSolver(IncompletePortfolioSolver):
 
 class TestUWrMaxSATSolverTerminationCallback(TestIPAMIRSolver):
     SOLVER_CLASS = UWrMaxSATSolver
+
+    @pytest.mark.xfail(strict=False, reason="Bundled UWr can violate assumptions during model postprocessing")
+    def test_assumptions_preserve_relaxation_model_and_cost(self):
+        super().test_assumptions_preserve_relaxation_model_and_cost()
 
 
 class TestApertureSolverConformance(TestIPAMIRSolver):

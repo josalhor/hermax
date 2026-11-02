@@ -4,6 +4,7 @@ import pytest
 from pysat.formula import WCNF
 
 from hermax.core.utils import normalize_wcnf_formula
+from hermax.formula import WCNF as NativeWCNF
 
 
 def test_normalize_wcnf_formula_passthrough_pysat() -> None:
@@ -26,7 +27,7 @@ def test_normalize_wcnf_formula_optilog_like_conversion() -> None:
     obj.max_var = lambda: 3
 
     out = normalize_wcnf_formula(obj)
-    assert isinstance(out, WCNF)
+    assert isinstance(out, NativeWCNF)
     assert out.hard == [[1, 2], [-2, 3]]
     assert out.soft == [[-1], [-3, 2]]
     assert out.wght == [4, 2]
@@ -77,7 +78,7 @@ def test_normalize_wcnf_formula_optilog_matches_pysat_on_data(wcnf_path: Path) -
     optilog_f = load_wcnf(str(wcnf_path))
     out = normalize_wcnf_formula(optilog_f)
 
-    assert isinstance(out, WCNF)
+    assert isinstance(out, NativeWCNF)
     assert out.hard == pysat_f.hard
     assert out.soft == pysat_f.soft
     assert out.wght == pysat_f.wght

@@ -94,8 +94,8 @@
 #
 #==============================================================================
 import math
-from pysat.formula import CNF, CNFPlus, IDPool
-from pysat._utils import MainThread
+from hermax.formula import CNF, CNFPlus
+from threading import current_thread, main_thread
 import hermax_pycard as pycard
 import signal
 
@@ -237,8 +237,10 @@ class CardEnc(object):
             vmap[top] = vpool.top
 
         # updating the clauses
-        for cl in cnf.clauses:
-            cl[:] = map(lambda l: int(math.copysign(vmap[abs(l)], l)) if abs(l) in vmap else l, cl)
+        cnf.clauses = [
+            [vmap[abs(l)] * (1 if l > 0 else -1) if abs(l) in vmap else l for l in cl]
+            for cl in cnf.clauses
+        ]
 
         # updating the number of variables
         cnf.nv = vpool.top
@@ -301,7 +303,7 @@ class CardEnc(object):
             return ret
 
         res = cls._encode_atmost_native(lits, bound, top_id, encoding,
-                int(MainThread.check()))
+                int(current_thread() is main_thread()))
 
         if res:
             ret.clauses, ret.nv = res
@@ -404,7 +406,7 @@ class CardEnc(object):
             return ret
 
         res = cls._encode_atleast_native(lits, bound, top_id, encoding,
-                int(MainThread.check()))
+                int(current_thread() is main_thread()))
 
         if res:
             ret.clauses, ret.nv = res
@@ -568,7 +570,7 @@ class ITotalizer(object):
 
         # creating the object
         self.tobj, clauses, self.rhs, self.top_id = self._new_native(self.lits,
-                self.ubound, self.top_id, int(MainThread.check()))
+                self.ubound, self.top_id, int(current_thread() is main_thread()))
 
         # saving the result
         self.cnf.clauses = clauses
@@ -679,7 +681,7 @@ class ITotalizer(object):
 
         # updating the object and adding more variables and clauses
         clauses, self.rhs, self.top_id = pycard.itot_inc(self.tobj,
-                self.ubound, self.top_id, int(MainThread.check()))
+                self.ubound, self.top_id, int(current_thread() is main_thread()))
 
         # saving the result
         self.cnf.clauses.extend(clauses)
@@ -788,7 +790,7 @@ class ITotalizer(object):
 
         # updating the object and adding more variables and clauses
         self.tobj, clauses, self.rhs, self.top_id = pycard.itot_ext(self.tobj,
-                lits, self.ubound, self.top_id, int(MainThread.check()))
+                lits, self.ubound, self.top_id, int(current_thread() is main_thread()))
 
         # saving the result
         self.cnf.clauses.extend(clauses)
@@ -867,7 +869,7 @@ class ITotalizer(object):
 
         # updating the object and adding more variables and clauses
         self.tobj, clauses, self.rhs, self.top_id = pycard.itot_mrg(self.tobj,
-                another.tobj, self.ubound, self.top_id, int(MainThread.check()))
+                another.tobj, self.ubound, self.top_id, int(current_thread() is main_thread()))
 
         # saving the result
         self.cnf.clauses.extend(another.cnf.clauses)

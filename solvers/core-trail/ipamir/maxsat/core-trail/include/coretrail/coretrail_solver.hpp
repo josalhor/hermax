@@ -103,6 +103,7 @@ public:
     void request_stop() noexcept;
     void clear_stop_request() noexcept;
     void set_interrupt_probe(GlucoseBackend::InterruptProbe probe) noexcept;
+    void set_termination_callback(void* state, int (*callback)(void*));
     bool stop_requested() const noexcept;
     bool interrupted_last_solve() const noexcept;
     SolveStatus get_status() const noexcept;
@@ -213,7 +214,6 @@ private:
     std::unordered_map<int, int> bnds_history_{};
     std::unordered_map<int, TotTree*> tobj_{};
     std::unordered_map<int, std::int64_t> swgt_{};
-    std::unordered_map<std::string, std::unordered_set<int>> sum_to_rels_{};
     std::shared_ptr<Consequence> consequence_{nullptr};
     std::vector<int> impossible_lits_{};
     std::unordered_map<int, std::string> lit_to_totalizerid_{};

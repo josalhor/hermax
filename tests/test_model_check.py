@@ -39,3 +39,26 @@ def test_model_check_rejects_non_integer_soft_weights(bad_weight):
 def test_model_check_rejects_non_integer_reported_cost():
     with pytest.raises((TypeError, ValueError)):
         check_model([1], [], [], reported_cost=0.5)
+
+
+def test_native_hard_validation_matches_exhaustive_reference():
+    from itertools import product
+    from hermax.internal._clauses import satisfies
+
+    clauses = [[], [1], [-1, 2], [2, -2], [-3, 1, 2]]
+    for values in product((-1, 0, 1), repeat=3):
+        model = [i * value for i, value in enumerate(values, 1) if value]
+        for first in clauses:
+            for second in clauses:
+                hards = [first, second]
+                expected = all(any(lit in model for lit in row) for row in hards)
+                assert satisfies(hards, model) == expected
+
+
+def test_native_hard_validation_preserves_wide_literals_and_iterators():
+    from hermax.internal._clauses import satisfies
+
+    wide = 2**80
+    assert satisfies(iter([[wide], [-wide, 1]]), iter([wide, 1]))
+    assert not satisfies([[wide]], [-wide])
+    assert not satisfies([], [wide, -wide])

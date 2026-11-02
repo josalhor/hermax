@@ -108,3 +108,45 @@ def test_variable_clause_tradeoffs_keep_modulo_counter():
         expected = CardEnc.atmost(lits=lits, bound=bound, encoding=EncType.kmtotalizer)
         assert actual.nv == expected.nv
         assert list(actual.clauses) == list(expected.clauses)
+
+
+@pytest.mark.parametrize('count,bound,selected', [
+    (64, 8, True), (64, 16, True), (200, 13, True), (200, 17, True),
+    (200, 25, True), (128, 32, True), (200, 43, True), (200, 187, True),
+    (200, 73, True), (200, 127, True), (200, 100, False), (400, 100, False),
+])
+def test_shared_equality_allows_bounded_size_tradeoffs(count, bound, selected):
+    from hermax.encoder._cardinality_policy import prefer_shared_equality
+
+    assert prefer_shared_equality(count, bound) is selected
+
+
+@pytest.mark.parametrize('candidate,compact,selected', [
+    ((20000, 50000), (1000, 10000), True),
+    ((20001, 50000), (1000, 10000), False),
+    ((10000, 50001), (1000, 10000), False),
+    ((10000, 40001), (10000, 20000), True),
+    ((22000, 40000), (30000, 50000), True),
+])
+def test_shared_equality_bounds_variables_and_extra_clauses(monkeypatch, candidate, compact, selected):
+    import hermax.encoder._cardinality_policy as policy
+
+    monkeypatch.setattr(policy, 'shared_equality_size', lambda *_: candidate)
+    monkeypatch.setattr(policy, '_modulo_equality_size', lambda *_: compact)
+    assert policy.prefer_shared_equality(200, 13) is selected
+
+
+@pytest.mark.parametrize('backend', [PBAMOEnc, PackedPBAMOEnc])
+@pytest.mark.parametrize('count,bound', [(64, 8), (64, 56), (200, 73), (200, 127)])
+def test_newly_selected_equality_propagates_both_boundaries(backend, count, bound):
+    lits = [i if i % 2 else -i for i in range(1, count + 1)]
+    top_id = count + 100
+    cnf = backend.auto_eq(lits=lits, weights=[1] * count, bound=bound, top_id=top_id)
+    assert (cnf.nv - top_id, len(cnf.clauses)) == shared_equality_size(count, bound)
+    with Solver(bootstrap_with=cnf.clauses) as solver:
+        ok, propagated = solver.propagate(assumptions=lits[:bound])
+        assert ok and {-lit for lit in lits[bound:]} <= set(propagated)
+        ok, propagated = solver.propagate(assumptions=[-lit for lit in lits[:count-bound]])
+        assert ok and set(lits[count-bound:]) <= set(propagated)
+        assert not solver.solve(assumptions=lits[:bound+1])
+        assert not solver.solve(assumptions=[-lit for lit in lits[:count+1-bound]])

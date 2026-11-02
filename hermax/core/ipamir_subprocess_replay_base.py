@@ -4,7 +4,7 @@ import abc
 import warnings
 from typing import List, Optional
 
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 from hermax.core.rc2.rc2 import RC2
 
 from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult
@@ -207,28 +207,7 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
         return ReplaySolveResult(status=st, model=model, cost=cost)
 
     def _reference_solve_from_snapshot(self, assumptions: List[int]) -> tuple[Optional[List[int]], Optional[int]]:
-        wcnf = WCNF()
-        max_var = int(self._num_vars)
-
-        for cl in self._hard_clauses:
-            wcnf.append([int(x) for x in cl])
-            for lit in cl:
-                max_var = max(max_var, abs(int(lit)))
-
-        for a in assumptions:
-            wcnf.append([int(a)])
-            max_var = max(max_var, abs(int(a)))
-
-        for lit, w in self._soft_unit_by_lit.items():
-            wcnf.append([int(lit)], weight=int(w))
-            max_var = max(max_var, abs(int(lit)))
-
-        for cl, w in self._soft_nonunit:
-            wcnf.append([int(x) for x in cl], weight=int(w))
-            for lit in cl:
-                max_var = max(max_var, abs(int(lit)))
-
-        wcnf.nv = max(int(wcnf.nv), max_var)
+        wcnf = self._journal.to_formula(assumptions)
         with RC2(wcnf) as rc2:
             model = rc2.compute()
             if model is None:

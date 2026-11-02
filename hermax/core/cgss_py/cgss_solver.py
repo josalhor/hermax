@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult
 from hermax.core.ipamir_solver_interface import SolveStatus
@@ -42,16 +42,7 @@ class _CGSSBaseSolver(ReplayFormulaSolverBase):
         return ReplayFormulaSolverBase._normalize_nonnegative_weight(weight)
 
     def _run_replay_solve(self, assumptions: List[int]) -> ReplaySolveResult:
-        wcnf = WCNF()
-        for cl in self._hard_clauses:
-            wcnf.append([int(x) for x in cl])
-        for lit, w in self._soft_unit_by_lit.items():
-            wcnf.append([int(lit)], weight=int(w))
-        for cl, w in self._soft_nonunit:
-            wcnf.append([int(x) for x in cl], weight=int(w))
-        for a in assumptions:
-            wcnf.append([int(a)])
-        wcnf.nv = max(int(wcnf.nv), int(self._num_vars))
+        wcnf = self._journal.to_formula(assumptions)
 
         try:
             backend_cls = _load_cgss_backend()

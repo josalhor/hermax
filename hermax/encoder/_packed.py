@@ -1,6 +1,6 @@
 """Encoder adapters for the model's private clause storage."""
 
-from dataclasses import dataclass, field
+from hermax.formula import CNFPlus
 
 import hermax_pycard
 from hermax.internal import _pblib, _pbamo
@@ -11,11 +11,12 @@ from .pbamo import PBAMOEnc as _PBAMOEnc, _append_amo
 from .pb import PBCompiler as _PBCompiler
 
 
-@dataclass(slots=True)
-class _EncodedCNF:
-    clauses: ClauseStorage = field(default_factory=ClauseStorage)
-    nv: int = 0
-    atmosts: list = field(default_factory=list)
+class _EncodedCNF(CNFPlus):
+    """Native formula returned directly by packed encoder bindings."""
+    def __init__(self, clauses=(), nv=0, atmosts=()):
+        super().__init__(from_clauses=clauses)
+        self.nv = nv
+        self.atmosts = atmosts
 
 
 def encode_amo(lits, top_id, *, equality=False):

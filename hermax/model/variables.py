@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import reduce
 from typing import Callable, Iterable, Mapping, Optional, Sequence
-from pysat.formula import CNF, WCNF
+from hermax.formula import CNF, WCNF
 from ._integer_views import binary_view as _binary_view_for
 from hermax.internal.operation_cache import _Identity, cached_operation
 from hermax.encoder._packed import encode_amo as _encode_amo
@@ -38,7 +38,10 @@ from .expressions import (
     _deferred_constant_constraint,
 )
 from ._int_thresholds import ThresholdLiterals
-from ._all_different import filter_domains as _filter_all_different_domains
+from ._all_different import (
+    filter_domains as _filter_all_different_domains,
+    prefer_bipartite as _prefer_bipartite_all_different,
+)
 
 
 _INTEGER_COMPARISONS = {
@@ -783,6 +786,12 @@ class IntVar:
         self._binary_view: tuple[int, ...] | None = None
         self._eq_lits: dict[int, Literal] = {}
         self._cmp_cache: dict[tuple[str, int], Literal] = {}
+
+    def _threshold_ids(self) -> Sequence[int]:
+        bits = self._threshold_lits
+        if isinstance(bits, ThresholdLiterals):
+            return range(bits.start, bits.start + len(bits))
+        return [self._model._lit_to_dimacs(lit) for lit in bits]
 
     def _get_binary_view(self) -> tuple[int, ...]:
         self._binary_view = _binary_view_for(self._encoding_owner())
@@ -1983,15 +1992,12 @@ class IntVector(_BaseVector):
         """Return an all-different constraint supporting ``.iff()`` and ``.implies()``.
 
         Backends:
-            ``auto`` (default): bipartite for 32+ inputs with a sufficient domain span; otherwise pairwise.
+            ``auto`` (default): chooses between pairwise and bipartite encodings.
             ``pairwise``: pairwise integer inequality constraints.
             ``bipartite``: channel to exact-value indicators + column AMOs.
         """
         if backend == "auto":
-            supported = len(self) >= 32 and (
-                max(x.ub for x in self) - min(x.lb for x in self) + 1 >= len(self)
-            )
-            backend = "bipartite" if supported else "pairwise"
+            backend = "bipartite" if _prefer_bipartite_all_different(self._items) else "pairwise"
         if backend == "pairwise":
             builder = self._all_different_pairwise
         elif backend == "bipartite":

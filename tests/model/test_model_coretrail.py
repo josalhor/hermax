@@ -72,3 +72,43 @@ def test_model_coretrail_deadline_can_resume_the_same_incremental_query():
     assert resumed.status == "optimum"
     assert resumed.cost == 0
     assert resumed[x] is True
+
+
+def test_default_maxsat_backend_is_coretrail():
+    from hermax.model.core import DefaultMaxSATSolver
+
+    assert DefaultMaxSATSolver is CoreTrail
+
+
+def test_coretrail_default_options_match_rc2_stratified(monkeypatch):
+    from hermax.core import coretrail_native
+    from hermax.core.coretrail_py import CoreTrailSolver
+
+    captured = {}
+    native = coretrail_native.CoreTrail
+
+    def create(formula, **options):
+        captured.update(options)
+        return native(formula, **options)
+
+    monkeypatch.setattr(coretrail_native, "CoreTrail", create)
+    solver = CoreTrailSolver()
+    try:
+        solver.add_clause([1])
+        solver.set_soft(-1, 3)
+        assert solver.solve()
+        assert solver.get_cost() == 3
+    finally:
+        solver.close()
+    assert captured == dict(solver="g4", adapt=True, exhaust=True, minz=False,
+                            blo="div", trim=0, full_stratified=True, nohard=True)
+
+
+def test_default_maxsat_binding_is_incremental_coretrail():
+    m = Model()
+    x = m.bool()
+    m.obj += x
+    assert m.solve().cost == 0
+    assert isinstance(m._inc_state.ip_solver, CoreTrail)
+    m &= x
+    assert m.solve().cost == 1

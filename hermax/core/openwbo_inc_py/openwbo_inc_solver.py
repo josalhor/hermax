@@ -1,6 +1,7 @@
 import importlib
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 from typing import List, Optional, Callable, Any
+from itertools import chain
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
 from hermax.core.utils import extract_wcnf_data, normalize_wcnf_formula
 
@@ -27,7 +28,7 @@ class OpenWBOIncSolver(IPAMIRSolver):
         if formula is not None:
             data = extract_wcnf_data(formula)
             max_var = data.num_vars
-            all_clauses = [*data.hard, *(c for c, _w in data.soft)]
+            all_clauses = chain(data.hard, (c for c, _w in data.soft))
             for cl in all_clauses:
                 for lit in cl:
                     max_var = max(max_var, abs(lit))
@@ -36,9 +37,9 @@ class OpenWBOIncSolver(IPAMIRSolver):
                 self.new_var()
 
             for clause in data.hard:
-                self.add_clause(clause)
+                self.add_clause(list(clause))
             for clause, weight in data.soft:
-                self.add_clause(clause, weight)
+                self.add_clause(list(clause), weight)
 
     def add_clause(self, clause: List[int], weight: Optional[int] = None) -> None:
         if not isinstance(clause, list):

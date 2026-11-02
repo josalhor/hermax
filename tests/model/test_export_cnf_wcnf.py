@@ -168,8 +168,8 @@ def test_boolean_constants_materialize_internal_reserved_vars_and_expected_claus
 
     # Soft clauses are plain unit clauses over the constants.
     soft_with_w = list(zip(w.soft, w.wght))
-    assert ([t.id], 4) in soft_with_w
-    assert ([f.id], 9) in soft_with_w
+    assert ((t.id,), 4) in soft_with_w
+    assert ((f.id,), 9) in soft_with_w
 
 
 def test_bool_vector_instantiation_allocates_ids_but_emits_no_clauses():

@@ -29,6 +29,7 @@ public:
         TotTree* root{nullptr};
         std::vector<int> rels_used;
         bool amk_cache_hit{false};
+        std::string key;
     };
 
     BuildResult build_counter(
@@ -47,7 +48,7 @@ public:
             throw std::runtime_error("ItotDag::build_counter: empty input set");
         }
 
-        const std::string key = lits_key(inputs);
+        std::string key = lits_key(inputs);
 
         auto it = exact_cache_.find(key);
         if (it != exact_cache_.end()) {
@@ -61,14 +62,14 @@ public:
             append_delta(delta, inc);
 
             validate_counter(root, inputs.size(), rhs, "cached");
-            return {root, std::move(inputs), true};
+            return {root, std::move(inputs), true, std::move(key)};
         }
 
         TotTree* root = build_tree(inputs, rhs, top, delta);
         validate_counter(root, inputs.size(), rhs, "new");
 
         exact_cache_.emplace(key, root);
-        return {root, std::move(inputs), false};
+        return {root, std::move(inputs), false, std::move(key)};
     }
 
     std::unordered_set<int> expand_rel(int lit) const {

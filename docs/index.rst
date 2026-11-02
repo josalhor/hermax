@@ -55,7 +55,7 @@ Start Here
 ----------
 
 * :doc:`quickstart` if you want the fastest path to a working Hermax model and a direct solver example.
-* :doc:`examples` if you want solver examples such as UWrMaxSAT, RC2, graph colouring, scheduling, and CVRP.
+* :doc:`examples` if you want solver examples such as CoreTrail, UWrMaxSAT, RC2, graph colouring, scheduling, and CVRP.
 * :doc:`modeling` if you want the modelling compiler, runnable examples, and advanced modelling tricks.
 
 Useful Next Steps
@@ -93,6 +93,9 @@ If you use Hermax in research, please cite:
      annote = {Keywords: MaxSAT, Incremental Solving, IPAMIR, Python, Constraint modelling}
    }
 
+If you use CoreTrail, please also cite its `solver description <https://hdl.handle.net/10138/640150>`_
+in the MaxSAT Evaluation 2026 proceedings (p. 17).
+
 See :doc:`Acknowledgments <acknowledgments>` for backend solver citations and
 other project references.
 
@@ -107,3 +110,8 @@ other project references.
    changelog
    Developer <developer>
    Citation <acknowledgments>
+
+.. toctree::
+   :maxdepth: 1
+
+   formula

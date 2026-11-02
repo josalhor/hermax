@@ -133,29 +133,15 @@ import getopt
 import itertools
 from math import copysign
 import os
-from pysat.formula import CNFPlus, WCNFPlus
-from pysat.card import ITotalizer
+from hermax.formula import CNFPlus, WCNFPlus
+from hermax.core.utils import normalize_wcnf_formula
+from hermax.encoder.card import ITotalizer
 from pysat.solvers import Solver, SolverNames
 import re
 import six
 from six.moves import range
 import sys
 import random
-try:
-    from pysat.maxpre import preprocess_formula
-except Exception:
-    def preprocess_formula(formula, *args, **kwargs):
-        return formula
-try:
-    from pyprooflogger import VeriPbProoflogger, MaxSATProoflogger, TotalizerProoflogger
-except Exception:
-    class _NoOpProoflogger:
-        def __init__(self, *args, **kwargs):
-            pass
-
-    VeriPbProoflogger = _NoOpProoflogger
-    MaxSATProoflogger = _NoOpProoflogger
-    TotalizerProoflogger = _NoOpProoflogger
 
 
 #
@@ -214,6 +200,11 @@ class RC2(object):
         """
             Constructor.
         """
+        if any(logger is not None for logger in
+               (prooflogger, maxsat_prooflogger, totalizer_prooflogger)):
+            raise NotImplementedError("CGSS proof logging is unsupported in Hermax.")
+        formula = normalize_wcnf_formula(formula)
+
         # saving verbosity level and other options
         self.verbose = verbose
         self.exhaust = exhaust
@@ -357,7 +348,7 @@ class RC2(object):
         # adding native cardinality constraints (if any) as hard clauses
         # this can be done only if the Minicard solver is in use
         # this cannot be done if RC2 is run from the command line
-        if isinstance(formula, WCNFPlus) and formula.atms:
+        if getattr(formula, "atms", None):
             assert self.solver in SolverNames.minicard, \
                 'Only Minicard supports native cardinality constraints. Make sure you use the right type of formula.'
 
@@ -367,7 +358,8 @@ class RC2(object):
         self.UB = 1  # upper bound for cost. not needed here, but RC2WCE can use this, so it is easiest to calculate here. Initial value is larger than the largest possible cost: thus 1
 
         # adding soft clauses to oracle
-        for i, cl in enumerate(formula.soft):
+        for i, source_clause in enumerate(formula.soft):
+            cl = list(source_clause)  # selectors belong to the solver, never to its input
             selv = cl[0]  # if clause is unit, selector variable is its literal
 
             if len(cl) > 1:
@@ -2023,36 +2015,17 @@ def main():
     adapt, block, cmode, add_cores, to_enum, eq_options, verification_solver, incr, blo, minz, maxpre, structure_sharing_opts, no_wce, print_stats, pmres, instant_quit, \
         eqtree, solver, speed_up_assumps, trim, structure_sharing_opts, use_ub, verbose, sdivp, vnew, WCE, exhaust, oldF, clone, files = parse_options()
 
-    newForm = not oldF
     if files:
         # parsing the input formula
         if re.search('\\.wcnf[p|+]?(\\.(gz|bz2|lzma|xz))?$', files[0]):
-            formula = WCNFPlus(from_file=files[0], newFormat=newForm)
+            formula = WCNFPlus(from_file=files[0])
         else:  # expecting '*.cnf[,p,+].*'
             formula = CNFPlus(from_file=files[0]).weighted()
 
-        # initialize prooflogger if proof filename is given as option
         if len(files) >= 2:
-            prooflogger = VeriPbProoflogger()
-            maxsat_prooflogger = MaxSATProoflogger(prooflogger)
-            totalizer_prooflogger = TotalizerProoflogger(prooflogger)
-            prooflogger.init_proof_file(files[1])
-            # PROOF: Write the proof header and initialise the prooflogger
-            nbclause = len(formula.hard) + formula.number_non_unit_soft_clauses
-            nbvariables = formula.nv + formula.number_non_unit_soft_clauses
-            prooflogger.write_proof_header(nbclause, nbvariables)
-        else:
-            prooflogger = None
-            maxsat_prooflogger = None
-            totalizer_prooflogger = None
-
-        if maxpre:
-            # For now we do not have proof logging for MaxPre and warn the user that this is not proof logged
-            if prooflogger:
-                print(
-                    "c Warning: MaxPre cannot be used at the same time! Preprocessing is not proof logged!")
-            formula = preprocess_formula(
-                formula, timelimit=maxpre[0], options=maxpre[1])
+            raise NotImplementedError("CGSS proof logging is unsupported in Hermax.")
+        prooflogger = maxsat_prooflogger = totalizer_prooflogger = None
+        # Legacy preprocessing flags intentionally have no effect: identity only.
 
         if verbose:
             print("c Parsing done")

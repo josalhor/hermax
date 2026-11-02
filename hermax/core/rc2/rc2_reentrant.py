@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 from .rc2 import RC2Stratified
 from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult
@@ -87,28 +87,7 @@ class RC2Reentrant(ReplayFormulaSolverBase):
         return w
 
     def _run_replay_solve(self, assumptions: List[int]) -> ReplaySolveResult:
-        wcnf = WCNF()
-
-        max_var = self._num_vars
-        for cl in self._hard_clauses:
-            wcnf.append([int(x) for x in cl])
-            for lit in cl:
-                max_var = max(max_var, abs(int(lit)))
-
-        for a in assumptions:
-            wcnf.append([int(a)])
-            max_var = max(max_var, abs(int(a)))
-
-        for lit, w in self._soft_unit_by_lit.items():
-            wcnf.append([int(lit)], weight=int(w))
-            max_var = max(max_var, abs(int(lit)))
-
-        for cl, w in self._soft_nonunit:
-            wcnf.append([int(x) for x in cl], weight=int(w))
-            for lit in cl:
-                max_var = max(max_var, abs(int(lit)))
-
-        wcnf.nv = max(int(wcnf.nv), int(max_var))
+        wcnf = self._journal.to_formula(assumptions)
 
         try:
             def report(model):
@@ -119,7 +98,8 @@ class RC2Reentrant(ReplayFormulaSolverBase):
                                              if v not in present)], key=abs)
                 self._incumbent_callback(complete, self._compute_wrapper_cost(complete))
 
-            with RC2Stratified(wcnf, on_model=report if self._incumbent_callback else None) as rc2:
+            with RC2Stratified(wcnf, solver='g4', adapt=True, exhaust=True,
+                               on_model=report if self._incumbent_callback else None) as rc2:
                 # A single weight level has no intermediate stages. Obtain a
                 # feasible fallback before optimization when reporting is enabled.
                 if self._incumbent_callback and rc2.oracle.solve():

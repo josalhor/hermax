@@ -35,6 +35,9 @@ public:
     void interrupt();
     void clear_interrupt();
     void set_interrupt_probe(InterruptProbe probe);
+    void set_termination_callback(void* state, int (*callback)(void*));
+    void clear_termination_request();
+    bool termination_requested() const;
     void reset();
 
 private:

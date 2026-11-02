@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import abc
 from typing import List, Optional
+from itertools import chain
 
-from pysat.formula import WCNF
+from hermax.formula import WCNF
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, is_feasible
 from hermax.core.ipamir_state_mixin import IPAMIRStateMixin
@@ -180,7 +181,7 @@ class NativeIncrementalSolverBase(IPAMIRStateMixin, IPAMIRSolver, InterruptRecov
     def _load_initial_formula(self, formula: WCNF) -> None:
         data = extract_wcnf_data(formula)
         max_var = data.num_vars
-        for cl in [*data.hard, *(clause for clause, _weight in data.soft)]:
+        for cl in chain(data.hard, (clause for clause, _weight in data.soft)):
             for lit in cl:
                 ilit = int(lit)
                 if ilit == 0:

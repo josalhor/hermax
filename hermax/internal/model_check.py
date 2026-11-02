@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence, Tuple
 
+from hermax.internal._clauses import satisfies
+
 
 Clause = Sequence[int]
 WeightedClause = Tuple[Sequence[int], int]
@@ -46,11 +48,7 @@ def clause_satisfied(clause: Clause, model: Iterable[int]) -> bool:
 
 
 def model_satisfies_hard_clauses(hards: Iterable[Clause], model: Iterable[int]) -> bool:
-    model_list = list(model)
-    if not model_is_consistent(model_list):
-        return False
-    s = model_literal_set(model_list)
-    return all(any(_literal(lit, context="hard clause") in s for lit in cl) for cl in hards)
+    return satisfies(hards, model)
 
 
 def normalize_soft_units_last_wins(softs: Iterable[WeightedClause]) -> List[Tuple[List[int], int]]:

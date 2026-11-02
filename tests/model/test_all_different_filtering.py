@@ -1,11 +1,12 @@
 import itertools
 import random
+from types import SimpleNamespace
 
 import pytest
 from pysat.solvers import Solver
 
 from hermax.model import Model
-from hermax.model._all_different import filter_domains
+from hermax.model._all_different import clause_costs, filter_domains, prefer_bipartite
 
 
 def test_matching_filter_matches_exhaustive_supported_values():
@@ -121,3 +122,58 @@ def test_mixed_nullable_enum_filtering_truth_table(backend, mode):
                 expected = (truth if mode == 'plain' else truth == enabled if mode == 'iff'
                             else not enabled or truth if mode == 'only_if' else not truth or enabled)
                 assert solver.solve(assumptions=atoms + [flag.id if enabled else -flag.id]) == expected
+
+
+@pytest.mark.parametrize("size,values,backend", [
+    (9, 9, "pairwise"),
+    (11, 11, "pairwise"),
+    (12, 12, "bipartite"),
+    (12, 24, "pairwise"),  # Equal clause counts keep the smaller variable count.
+    (12, 100, "pairwise"),
+    (13, 100, "bipartite"),
+])
+@pytest.mark.parametrize("mode", ["plain", "only_if", "iff", "implies"])
+def test_auto_all_different_matches_cost_selected_backend(size, values, backend, mode):
+    formulas = []
+    for selected in ("auto", backend):
+        m = Model()
+        xs = m.int_vector("x", size, 0, values - 1)
+        flag = m.bool("flag")
+        constraint = xs.all_different(selected)
+        m &= constraint if mode == "plain" else getattr(constraint, mode)(flag)
+        formulas.append(m.to_cnf())
+    assert formulas[0].nv == formulas[1].nv
+    assert formulas[0].clauses == formulas[1].clauses
+
+
+def test_large_all_different_retains_bipartite_for_sparse_domains():
+    formulas = []
+    for backend in ("auto", "bipartite"):
+        m = Model()
+        xs = m.vector([m.int(f"x{i}", (i // 4) * 100, (i // 4) * 100 + 4)
+                       for i in range(32)])
+        m &= xs.all_different(backend)
+        formulas.append(m.to_cnf())
+    assert formulas[0].nv == formulas[1].nv
+    assert formulas[0].clauses == formulas[1].clauses
+
+
+def test_all_different_costs_match_fresh_encodings():
+    rng = random.Random(41)
+    for _ in range(24):
+        size = rng.randrange(2, 22)
+        bounds = [(rng.randrange(-6, 7), size + rng.randrange(7, 22)) for _ in range(size)]
+        actual = []
+        for backend in ("pairwise", "bipartite"):
+            m = Model()
+            xs = m.vector([m.int(f"x{i}", lo, hi) for i, (lo, hi) in enumerate(bounds)])
+            before = len(m.to_cnf().clauses)
+            m &= xs.all_different(backend)
+            actual.append(len(m.to_cnf().clauses) - before)
+        assert clause_costs(xs._items) == tuple(actual)
+
+
+def test_all_different_costs_do_not_enumerate_domains_or_gaps():
+    items = [SimpleNamespace(lb=i * 10**12, ub=i * 10**12 + 10**9) for i in range(4)]
+    assert clause_costs(items) == (0, 0)
+    assert not prefer_bipartite(items)

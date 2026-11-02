@@ -88,7 +88,7 @@ def prepare_objective(model: "Model", constraint, *, lower=True) -> PBExpr:
     if isinstance(constraint, bool):
         constraint = int(constraint)
     try:
-        expr = PBExpr.from_item(constraint)
+        expr = constraint if lower and isinstance(constraint, IntVar) else PBExpr.from_item(constraint)
     except TypeError as exc:
         raise TypeError(
             "Objective terms must be numeric expressions; reify Boolean constraints with iff() and minimize the resulting literal."

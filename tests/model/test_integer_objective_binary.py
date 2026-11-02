@@ -148,3 +148,38 @@ def test_tier_binary_objective_solves_with_shifted_bound():
     m.tier_obj.add(x, weight=2, tier=0)
     result = m.solve()
     assert result.ok and result[x] == 13
+
+
+@pytest.mark.parametrize("lb,width,cached", [(-7, 32, False), (5, 64, False), (9, 16, True)])
+@pytest.mark.parametrize("style", ["add", "set", "tier"])
+def test_direct_integer_objective_preserves_lazy_thresholds(lb, width, cached, style):
+    m = Model()
+    x = m.int("x", lb, lb + width)
+    if cached:
+        x._get_binary_view()
+    if style == "add":
+        handle = m.obj.add(x, weight=3)
+        m.obj.update(handle, weight=2)
+    elif style == "set":
+        m.obj = x
+    else:
+        m.tier_obj.add(x, weight=2, tier=0)
+    assert not x._threshold_lits._cache
+    if style != "tier":
+        m.to_wcnf()
+        assert not x._threshold_lits._cache
+        result = m.solve()
+        assert result[x] == lb
+        assert result.cost == lb * (2 if style == "add" else 1)
+
+
+@pytest.mark.parametrize("lb,width", [(-11, 32), (7, 1000)])
+def test_direct_integer_objective_has_identical_cnf_to_expanded_objective(lb, width):
+    formulas = []
+    for expanded in (True, False):
+        m = Model()
+        x = m.int("x", lb, lb + width)
+        m.obj += x._as_pbexpr() if expanded else x
+        formula = m.to_wcnf()
+        formulas.append((formula.nv, formula.hard, formula.soft, formula.wght, m._objective_constant))
+    assert formulas[0] == formulas[1]

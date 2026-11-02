@@ -7,14 +7,16 @@ import tempfile
 import time
 import warnings
 from enum import Enum
+from itertools import chain
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Type
 
 from hermax.core.ipamir_solver_interface import IPAMIRSolver, SolveStatus, is_feasible
 from hermax.core.time_limits import validate_time_limit
+from hermax.core.formula_journal import FormulaJournal
 from hermax.core.utils import extract_wcnf_data, normalize_wcnf_formula
 from hermax.internal.maxsat_cli_parse import parse_maxsat_cli_output
-from hermax.internal.model_check import check_model
+from hermax.internal.model_check import check_model, maxsat_cost_of_model
 from hermax.internal.subprocess_oneshot import (
     _dumps_frame,
     _HEADER_STRUCT,
@@ -294,10 +296,7 @@ class PortfolioSolver(IPAMIRSolver):
         self._verbose_invalid = bool(verbose_invalid)
 
         self._closed = False
-        self._num_vars = 0
-        self._ops: list[tuple] = []
-        self._hard_clauses: list[list[int]] = []
-        self._softs: list[tuple[list[int], int]] = []
+        self._journal = FormulaJournal()
 
         self._status = SolveStatus.UNKNOWN
         self._model: Optional[List[int]] = None
@@ -310,6 +309,26 @@ class PortfolioSolver(IPAMIRSolver):
 
         if formula is not None:
             self._load_initial_formula(formula)
+
+    @property
+    def _num_vars(self):
+        return self._journal.num_vars
+
+    @_num_vars.setter
+    def _num_vars(self, value):
+        self._journal.num_vars = value
+
+    @property
+    def _hard_clauses(self):
+        return self._journal.hard_clauses
+
+    @property
+    def _softs(self):
+        return [([lit], weight) for lit, weight in self._journal.soft_units.items()]
+
+    @property
+    def _ops(self):
+        return self._ops_for_worker_replay()
 
     @classmethod
     def is_available(cls) -> bool:
@@ -374,7 +393,6 @@ class PortfolioSolver(IPAMIRSolver):
     def new_var(self) -> int:
         self._require_open()
         self._num_vars += 1
-        self._ops.append(("new_var",))
         self._invalidate()
         return self._num_vars
 
@@ -390,8 +408,7 @@ class PortfolioSolver(IPAMIRSolver):
         for lit in cl:
             while abs(lit) > self._num_vars:
                 self.new_var()
-        self._ops.append(("add_clause", cl))
-        self._hard_clauses.append(cl)
+        self._journal.add_hard(cl)
         self._invalidate()
 
     def set_soft(self, lit: int, weight: int) -> None:
@@ -408,8 +425,7 @@ class PortfolioSolver(IPAMIRSolver):
             raise ValueError("Weight must be non-negative.")
         while abs(lit) > self._num_vars:
             self.new_var()
-        self._ops.append(("set_soft", lit, weight))
-        self._softs.append(([lit], weight))
+        self._journal.set_soft(lit, weight)
         self._invalidate()
 
     def add_soft_unit(self, lit: int, weight: int) -> None:
@@ -451,10 +467,8 @@ class PortfolioSolver(IPAMIRSolver):
         b = abs(relax_var)
         while b > self._num_vars:
             self.new_var()
-        self._ops.append(("add_soft_relaxed", cl, weight, b))
-        # Effect for validation
-        self._hard_clauses.append([*cl, b])
-        self._softs.append(([-b], weight))
+        self._journal.add_hard([*cl, b])
+        self._journal.set_soft(-b, weight)
         self._invalidate()
         return b
 
@@ -468,24 +482,16 @@ class PortfolioSolver(IPAMIRSolver):
         return workers
 
     def _ops_for_worker_replay(self) -> list[tuple]:
-        """Replay ops.
+        """Serialize canonical state, including final relaxation-literal weights.
 
-        Unit-soft updates are last-wins by literal. To avoid depending on
-        backend-specific acceptance of ``set_soft(..., 0)``, replay only the
-        final positive assignments.
+        Replaying operation history can reorder overlapping set_soft and
+        add_soft_relaxed updates. The journal is the single source of truth.
+        Zero-weight removals are already absent, so workers need no special
+        support for resetting a previously installed weight to zero.
         """
-        out: list[tuple] = []
-        unit_soft_last: dict[int, int] = {}
-        for raw in self._ops:
-            op = str(raw[0]) if raw else ""
-            if op == "set_soft":
-                _tag, lit, w = raw
-                unit_soft_last[int(lit)] = int(w)
-                continue
-            out.append(raw)
-        for lit, w in unit_soft_last.items():
-            if int(w) > 0:
-                out.append(("set_soft", int(lit), int(w)))
+        out = [("new_var",) for _ in range(self._num_vars)]
+        out.extend(("add_clause", list(clause)) for clause in self._hard_clauses)
+        out.extend(("set_soft", lit, weight) for lit, weight in self._journal.soft_units.items())
         return out
 
     def _spawn_worker(self, cls: type, assumptions: list[int], now: Optional[float] = None) -> Optional[_WorkerProc]:
@@ -501,7 +507,7 @@ class PortfolioSolver(IPAMIRSolver):
             incumbent_path = incumbent_file.name
         req = {
             "solver_class_path": worker_class_path,
-            "ops": self._ops_for_worker_replay(),
+            "snapshot": self._journal.snapshot(),
             "assumptions": [int(a) for a in assumptions],
             "incumbent_path": incumbent_path,
         }
@@ -617,7 +623,7 @@ class PortfolioSolver(IPAMIRSolver):
         if self._validate_model and any(lit == 0 or abs(lit) > self._num_vars for lit in model):
             return False, None, "model contains literals outside the declared variable range"
         assumptions_hard = [[int(a)] for a in w.request_assumptions]
-        chk = check_model(model, self._hard_clauses + assumptions_hard, self._softs, reported_cost=cost)
+        chk = check_model(model, chain(self._hard_clauses, assumptions_hard), self._softs, reported_cost=cost)
         if self._validate_model and not chk.hards_ok:
             return False, None, "model violates hard clauses"
         final_cost = cost
@@ -649,22 +655,23 @@ class PortfolioSolver(IPAMIRSolver):
                     report = _loads_frame_from_bytes(header + payload)
                     model = report["model"]
                     cost = report["cost"]
-                    if not isinstance(model, list) or any(
-                        isinstance(lit, bool) or not isinstance(lit, int) or lit == 0
-                        for lit in model
-                    ) or isinstance(cost, bool) or not isinstance(cost, int):
+                    if not isinstance(model, list) or isinstance(cost, bool) or not isinstance(cost, int):
                         raise ValueError("invalid incumbent model or cost")
-                    valid, final_cost, reason = self._validate_candidate(
-                        w, SolveStatus.INTERRUPTED_SAT, model, cost
-                    )
-                    if not valid:
-                        self._handle_invalid(w.solver_name, reason or "invalid incumbent")
-                        continue
-                    candidates.append({"solver": w.solver_name, "status": SolveStatus.INTERRUPTED_SAT,
-                                       "cost": final_cost, "model": model})
+                    actual_cost = maxsat_cost_of_model(model, self._softs)
+                    rank = actual_cost if self._recompute_cost else cost
+                    candidates.append((rank, model, cost))
                 except (KeyError, TypeError, ValueError) as exc:
                     self._handle_invalid(w.solver_name, str(exc))
-        return candidates
+        # Only the best valid report in this batch can affect the result.
+        for _, model, cost in sorted(candidates, key=lambda item: item[0]):
+            valid, final_cost, reason = self._validate_candidate(
+                w, SolveStatus.INTERRUPTED_SAT, model, cost
+            )
+            if valid:
+                return [{"solver": w.solver_name, "status": SolveStatus.INTERRUPTED_SAT,
+                         "cost": final_cost, "model": model}]
+            self._handle_invalid(w.solver_name, reason or "invalid incumbent")
+        return []
 
     def _handle_invalid(self, solver_name: str, reason: str) -> None:
         if self._invalid_result_policy == "ignore":
@@ -1105,9 +1112,7 @@ class PortfolioSolver(IPAMIRSolver):
 
     def close(self) -> None:
         self._closed = True
-        self._ops.clear()
-        self._hard_clauses.clear()
-        self._softs.clear()
+        self._journal.clear()
         self._invalidate()
 
     def _load_initial_formula(self, formula) -> None:

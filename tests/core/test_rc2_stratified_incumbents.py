@@ -56,15 +56,16 @@ def test_rc2_wrapper_uses_stratified_solver(monkeypatch):
     real_solver = rc2_reentrant.RC2Stratified
 
     def construct(*args, **kwargs):
-        constructions.append(True)
-        return real_solver(*args, **kwargs)
+        instance = real_solver(*args, **kwargs)
+        constructions.append((type(instance.oracle.solver).__name__, instance.adapt, instance.exhaust))
+        return instance
 
     monkeypatch.setattr(rc2_reentrant, "RC2Stratified", construct)
     solver = RC2Reentrant()
     try:
         solver.add_soft_unit(1, 1)
         assert solver.solve()
-        assert constructions == [True]
+        assert constructions == [("Glucose4", True, True)]
     finally:
         solver.close()
 
@@ -185,18 +186,47 @@ def test_portfolio_waits_for_full_report_and_rejects_invalid_incumbent():
                          stdout_file=tempfile.TemporaryFile(), stderr_file=tempfile.TemporaryFile(),
                          start_s=0, deadline_s=1, timeout_s=1, grace_s=0,
                          request_assumptions=[], incumbent_path=path)
-    frame = _dumps_frame({"model": [1], "cost": 0})
+    frame = _dumps_frame({"model": [-1], "cost": 0})
     try:
         with open(path, "ab") as stream:
             stream.write(frame[:5])
         assert solver._read_incumbents(worker) == []
         with open(path, "ab") as stream:
             stream.write(frame[5:])
-            stream.write(_dumps_frame({"model": [-1], "cost": 0}))
+            stream.write(_dumps_frame({"model": [1], "cost": 0}))
         with warnings.catch_warnings(record=True) as caught:
             candidates = solver._read_incumbents(worker)
         assert len(candidates) == 1 and candidates[0]["model"] == [1]
         assert caught
+        assert solver._read_incumbents(worker) == []
+    finally:
+        worker.cleanup()
+        solver.close()
+
+
+def test_queued_incumbents_check_best_actual_cost_first(monkeypatch):
+    solver = PortfolioSolver([RC2Reentrant], invalid_result_policy="drop", verbose_invalid=False)
+    solver.add_clause([1])
+    solver.add_soft_unit(-2, 10)
+    with tempfile.NamedTemporaryFile(delete=False) as stream:
+        path = stream.name
+        # Cheapest assignment is invalid; claimed costs must not determine order.
+        for model, cost in [([1, 2], -100), ([-1, -2], 0), ([1, -2], 999)]:
+            stream.write(_dumps_frame({"model": model, "cost": cost}))
+    worker = _WorkerProc(solver_name="test", worker_class_path="test", proc=None,
+                         stdout_file=tempfile.TemporaryFile(), stderr_file=tempfile.TemporaryFile(),
+                         start_s=0, deadline_s=1, timeout_s=1, grace_s=0,
+                         request_assumptions=[], incumbent_path=path)
+    original = solver._validate_candidate
+    seen = []
+    def validate(w, status, model, cost):
+        seen.append(model)
+        return original(w, status, model, cost)
+    monkeypatch.setattr(solver, "_validate_candidate", validate)
+    try:
+        candidates = solver._read_incumbents(worker)
+        assert [(c["model"], c["cost"]) for c in candidates] == [([1, -2], 0)]
+        assert seen == [[-1, -2], [1, -2]]
         assert solver._read_incumbents(worker) == []
     finally:
         worker.cleanup()

@@ -1,7 +1,5 @@
 """Private storage for DIMACS clauses."""
 
-from pysat.formula import CNF, WCNF
-
 from hermax.internal._clauses import Storage
 
 
@@ -31,14 +29,25 @@ class ClauseStorage:
         del self._storage[index]
 
     def __eq__(self, other):
-        if isinstance(other, ClauseStorage):
-            other = list(other)
-        return list(self) == other
+        try:
+            return [tuple(row) for row in self] == [tuple(row) for row in other]
+        except TypeError:
+            return False
 
     def __add__(self, other):
         if not isinstance(other, ClauseStorage):
-            return NotImplemented
+            other = ClauseStorage(other)
         return self._wrap(self._storage + other._storage)
+
+    def __radd__(self, other):
+        return ClauseStorage(other) + self
+
+    def __contains__(self, clause):
+        value = tuple(clause)
+        return any(tuple(row) == value for row in self)
+
+    def clear(self):
+        del self._storage[:]
 
     def append(self, clause):
         self._storage.append(clause)
@@ -62,12 +71,18 @@ class ClauseStorage:
 
 
 def to_cnf(clauses):
+    from hermax.formula import CNF
+
     result = CNF()
-    result.clauses, result.nv = clauses._storage.export()
+    result.clauses = clauses
+    result.nv = clauses.max_var
     return result
 
 
 def to_wcnf(clauses):
+    from hermax.formula import WCNF
+
     result = WCNF()
-    result.hard, result.nv = clauses._storage.export()
+    result.hard = clauses
+    result.nv = clauses.max_var
     return result

@@ -31,3 +31,26 @@ def test_add_soft_unit_still_rejects_zero_weight():
         pass
     else:
         raise AssertionError("add_soft_unit must reject zero weight")
+
+
+def test_hard_clause_replay_owns_input_and_rejects_invalid_updates_atomically():
+    from hermax.core.rc2 import RC2Reentrant
+    import pytest
+
+    solver = RC2Reentrant()
+    clause = [1, -2]
+    try:
+        solver.add_clause(clause)
+        clause[:] = [-1]
+        before = solver._snapshot()
+        for invalid in ([3, 0], [3, True], [3, 2**31]):
+            with pytest.raises((TypeError, ValueError)):
+                solver.add_clause(invalid)
+            assert solver._snapshot() == before
+        assert solver.solve(assumptions=[-1])
+        assert -2 in solver.get_model()
+        assert solver._snapshot() == before
+        assert solver.solve(assumptions=[1, 2])
+        assert solver._snapshot() == before
+    finally:
+        solver.close()

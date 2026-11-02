@@ -130,7 +130,7 @@ import collections
 import getopt
 from math import copysign
 import os
-from pysat.formula import CNFPlus, WCNFPlus, IDPool
+from hermax.formula import CNFPlus, WCNFPlus
 from hermax.encoder.card import ITotalizer
 from hermax.core.utils import normalize_wcnf_formula
 from pysat.solvers import Solver, SolverNames
@@ -147,6 +147,16 @@ blomap = {'none': 0, 'basic': 1, 'div': 3, 'cluster': 5, 'full': 7}
 
 #
 #==============================================================================
+class _VariableCounter:
+    """RC2's anonymous variable allocator, synchronized with totalizer IDs."""
+    def __init__(self, start_from):
+        self.top = start_from - 1
+
+    def id(self):
+        self.top += 1
+        return self.top
+
+
 class RC2(object):
     """
         Implementation of the basic RC2 algorithm. Given a (weighted)
@@ -215,7 +225,7 @@ class RC2(object):
         self.sels, self.smap, self.sall, self.s2cl, self.sneg = [], {}, [], {}, set([])
 
         # other MaxSAT related stuff
-        self.pool = IDPool(start_from=formula.nv + 1)
+        self.pool = _VariableCounter(start_from=formula.nv + 1)
         self.wght = {}  # weights of soft clauses
         self.sums = []  # totalizer sum assumptions
         self.bnds = {}  # a mapping from sum assumptions to totalizer bounds
@@ -285,7 +295,7 @@ class RC2(object):
         # adding native cardinality constraints (if any) as hard clauses
         # this can be done only if the Minicard solver is in use
         # this cannot be done if RC2 is run from the command line
-        if isinstance(formula, WCNFPlus) and formula.atms:
+        if getattr(formula, "atms", None):
             # we are using CaDiCaL195 and it can use external linear engine
             if self.solver in SolverNames.cadical195:
                 self.oracle.activate_atmost()
@@ -297,7 +307,8 @@ class RC2(object):
                 self.oracle.add_atmost(*atm)
 
         # adding soft clauses to oracle
-        for i, cl in enumerate(formula.soft):
+        for i, source_clause in enumerate(formula.soft):
+            cl = list(source_clause)  # selectors belong to the solver, never to its input
             selv = cl[0]  # if clause is unit, selector variable is its literal
 
             if len(cl) > 1:

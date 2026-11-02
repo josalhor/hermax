@@ -3,6 +3,8 @@
 from functools import cache
 from math import isqrt
 
+from hermax.internal import _encoding_policy as limits
+
 
 def modulo_size(count: int, bound: int) -> tuple[int, int]:
     # Size-only recurrence of cardenc/mto.hh's quotient/remainder merges.
@@ -71,8 +73,16 @@ def _modulo_equality_size(count, bound):
 
 
 def prefer_shared_equality(count: int, bound: int) -> bool:
-    return min(bound, count - bound) >= 2 and _dominates(
-        shared_equality_size(count, bound), _modulo_equality_size(count, bound),
+    if min(bound, count - bound) < 2:
+        return False
+    candidate = shared_equality_size(count, bound)
+    compact = _modulo_equality_size(count, bound)
+    if _dominates(candidate, compact):
+        return True
+    variables, clauses = candidate
+    _, compact_clauses = compact
+    return not limits.exceeds_limits(
+        states=variables, clauses=max(0, clauses - compact_clauses),
     )
 
 

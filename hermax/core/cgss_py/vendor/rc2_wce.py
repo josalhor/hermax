@@ -132,10 +132,6 @@ import itertools
 from math import copysign
 import os
 from pysat.solvers import Solver, SolverNames
-try:
-    from pysat.card import SSEncoder  # available only in CGSS-custom pysat
-except Exception:
-    SSEncoder = None
 import re
 import six
 from six.moves import range
@@ -167,6 +163,9 @@ class RC2WCE(rc2.RC2, object):
             Constructor.
         """
 
+        if structure_sharing_opts:
+            raise NotImplementedError("The structure-sharing encoder is unsupported in Hermax.")
+
         # calling the constructor for the basic version
         super(RC2WCE, self).__init__(formula, solver=solver, adapt=adapt, exhaust=exhaust, incr=incr, minz=minz, trim=trim,
                                      verbose=verbose, add_cores=add_cores, speed_up_assumps=speed_up_assumps, verification_solver=verification_solver, prooflogger=prooflogger, maxsat_prooflogger=maxsat_prooflogger, totalizer_prooflogger=totalizer_prooflogger)
@@ -179,27 +178,13 @@ class RC2WCE(rc2.RC2, object):
             self.add_partial_equivalences = True
             self.add_eq_options = eq_opts
 
-        if structure_sharing_opts:
-            self.ss_separate_relax = False
-            self.ss_options = structure_sharing_opts
-            self.use_ss = True
-        else:
-            self.ss_separate_relax = True
-            self.ss_options = (0, 1000000)
-            self.use_ss = False
+        self.ss_separate_relax = True
+        self.ss_options = (0, 1000000)
+        self.use_ss = False
 
         self.use_upper_bounds = use_upper_bounds
 
         self.pmres = pmres
-        if self.use_ss:
-            if SSEncoder is None:
-                raise RuntimeError("SSEncoder is unavailable in this pysat build")
-            if self.prooflogger:
-                self.ssenc = SSEncoder(self.ss_options[0], self.ss_options[1], None,
-                                       pmres, self.add_eq_options[0], self.add_eq_options[1], self.eqtree, with_proof=True, veriPB_PL=self.prooflogger, totalizer_PL=self.totalizer_prooflogger)
-            else:
-                self.ssenc = SSEncoder(self.ss_options[0], self.ss_options[1], None,
-                                       pmres, self.add_eq_options[0], self.add_eq_options[1], self.eqtree)
 
         self.wcores = []
 

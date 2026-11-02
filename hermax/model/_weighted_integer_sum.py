@@ -1,4 +1,4 @@
-"""Preserve small weighted PB encodings; use cached binary views on budget overflow."""
+"""Weighted integer constraints over thresholds and reusable binary views."""
 from functools import reduce
 from math import gcd
 from itertools import chain
@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from hermax.encoder._integer_sum import weighted
 from .expressions import ClauseGroup
 from ._integer_sum import compile_binary_sum
+from ._integer_views import binary_view_ready
 
 if TYPE_CHECKING:
     from .core import Model
@@ -35,7 +36,7 @@ def compile_weighted_sum(
         return ClauseGroup._from_dimacs_trusted(model, [[]] if impossible else [])
 
     chains = [
-        [model._lit_to_dimacs(lit) for lit in owner._threshold_lits]
+        owner._threshold_ids()
         for owner, _ in items
     ]
     reason = None
@@ -61,9 +62,21 @@ def compile_weighted_sum(
         except weighted.BudgetExceeded as error:
             reason = f"budget={error}"
         else:
+            path = "thresholds"
+            if all(binary_view_ready(x) for x, _ in items):
+                try:
+                    candidate = weighted.encode_binary_views(
+                        [x._get_binary_view() for x, _ in items], coefficients,
+                        bound, comparator, model._top_id(), _packed=True,
+                    )
+                except weighted.BudgetExceeded:
+                    pass
+                else:
+                    if candidate.nv <= cnf.nv and 2 * len(candidate.clauses) <= len(cnf.clauses):
+                        cnf, path = candidate, "cached_binary_bdd"
             model._debug(
                 model.DEBUG_COMPILE,
-                f"encode path=weighted_integer_thresholds op={comparator} clauses={len(cnf.clauses)}",
+                f"encode path=weighted_integer_{path} op={comparator} clauses={len(cnf.clauses)}",
             )
             return model._cnfplus_to_clausegroup(cnf)
 
