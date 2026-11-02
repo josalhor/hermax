@@ -12,6 +12,7 @@ set(PBAMO_CORE_SOURCES
     "${PBAMO_SRC_DIR}/mdd.cpp"
     "${PBAMO_SRC_DIR}/gswc.cpp"
     "${PBAMO_SRC_DIR}/ggpw.cpp"
+    "${PBAMO_SRC_DIR}/glpw.cpp"
     "${PBAMO_SRC_DIR}/gmto.cpp"
     "${PBAMO_SRC_DIR}/rggt.cpp"
     "${PBAMO_SRC_DIR}/rggt_equality.cpp"

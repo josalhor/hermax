@@ -39,6 +39,7 @@ def _build_pbamo() -> None:
         ROOT / "encodings" / "pbamo" / "src" / "mdd.cpp",
         ROOT / "encodings" / "pbamo" / "src" / "gswc.cpp",
         ROOT / "encodings" / "pbamo" / "src" / "ggpw.cpp",
+        ROOT / "encodings" / "pbamo" / "src" / "glpw.cpp",
         ROOT / "encodings" / "pbamo" / "src" / "gmto.cpp",
         ROOT / "encodings" / "pbamo" / "src" / "rggt.cpp",
         ROOT / "encodings" / "pbamo" / "src" / "rggt_equality.cpp",
@@ -51,7 +52,7 @@ def _build_pbamo() -> None:
     include_dir = ROOT / "encodings" / "pbamo" / "include"
     py_paths = sysconfig.get_paths()
     include_flags = []
-    for inc in [str(include_dir), py_paths.get("include"), py_paths.get("platinclude")]:
+    for inc in [str(include_dir), str(ROOT / "hermax" / "internal"), py_paths.get("include"), py_paths.get("platinclude")]:
         if inc:
             include_flags.extend(["-I", str(inc)])
     cmd = [

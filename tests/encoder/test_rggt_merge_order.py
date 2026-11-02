@@ -10,7 +10,7 @@ from hermax.internal import _pbamo
 
 
 @pytest.mark.parametrize("n,bound,method,nv,count,digest", [
-    (8, 0, "encode_leq", 103, 24, "40f48aa6682024bf081e92ff7e9fb1e473f55db5c09b62f2bbf4e51ebb9a228d"),
+    (8, 0, "encode_leq", 100, 20, "2436a8ae70bb56d98edddcc645981115895fa051d5b04fa16a265190f396df47"),
     (8, 0, "encode_eq", 100, 20, "2436a8ae70bb56d98edddcc645981115895fa051d5b04fa16a265190f396df47"),
     (16, 9, "encode_leq", 114, 91, "3f1c2ca74b80949db522dd0c2e592d4c83d1fc078f3fbbd0a5ca8b45701b0c49"),
     (16, 9, "encode_eq", 119, 138, "9f21e76ed26e32f0752c8dd82c51c660b43d1f713c8267876afcfdf224c22f27"),

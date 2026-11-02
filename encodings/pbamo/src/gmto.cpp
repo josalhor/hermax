@@ -1,4 +1,5 @@
 #include "amo.hpp"
+#include "structuredpb/mdd.hpp"
 #include "structuredpb/gmto.hpp"
 
 #include <algorithm>
@@ -100,38 +101,25 @@ std::vector<int> weight_digits(Weight value, const std::vector<int>& base) {
 int select_radix(const std::vector<Weight>& quotients) {
     // Zero quotients contribute equally to every candidate. Any winning
     // radix >= 2 must divide at least one positive quotient.
-    std::unordered_map<Weight, std::size_t> divisor_counts;
-    for (Weight q : quotients) {
-        if (q < 2) {
-            continue;
-        }
-        for (Weight divisor = 1; divisor <= q / divisor; ++divisor) {
-            if (q % divisor != 0) {
-                continue;
-            }
-            if (divisor >= 2) {
-                ++divisor_counts[divisor];
-            }
-            const Weight other = q / divisor;
-            if (other >= 2 && other != divisor) {
-                ++divisor_counts[other];
-            }
-        }
-    }
-
-    int best_radix = 0;
+    // Bounded candidates avoid factoring large coefficients and huge digit arrays.
+    int best_radix = 2;
     std::size_t best_count = 0;
-    for (const auto& entry : divisor_counts) {
-        const int radix = static_cast<int>(entry.first);
-        if (entry.second > best_count || (entry.second == best_count && radix > best_radix)) {
-            best_count = entry.second;
+    for (int radix = 2; radix <= 256; ++radix) {
+        std::size_t count = 0;
+        for (Weight q : quotients) {
+            if (q != 0 && q % static_cast<Weight>(radix) == 0) ++count;
+        }
+        if (count > best_count || (count == best_count && count > 0 && radix > best_radix)) {
+            best_count = count;
             best_radix = radix;
         }
     }
-    return best_radix > 1 ? best_radix : 2;
+    return best_radix;
 }
 
-std::vector<int> select_base_greedy(const GroupedLeqConstraint& constraint) {
+std::vector<int> select_base_greedy(const GroupedLeqConstraint& constraint,
+                                    const std::vector<std::vector<int>>& groups,
+                                    const std::unordered_map<int, Weight>& weights) {
     std::vector<int> base;
     if (constraint.bound <= 1) {
         return base;
@@ -139,8 +127,8 @@ std::vector<int> select_base_greedy(const GroupedLeqConstraint& constraint) {
 
     std::vector<Weight> reduced;
     reduced.reserve(constraint.terms.size());
-    for (const auto& term : constraint.terms) {
-        reduced.push_back(term.weight);
+    for (const auto& group : groups) {
+        for (int lit : group) reduced.push_back(weights.at(lit));
     }
 
     Weight product = 1;
@@ -535,10 +523,13 @@ void add_comparator(Node* root,
 EncodeResult GmtoEncoder::encode(const GroupedLeqConstraint& constraint,
                                  const EncodeOptions& options) const {
     constraint.validate();
+    if (constraint.bound == std::numeric_limits<Weight>::max())
+        return MddEncoder().encode(constraint, options);
+    const int top_id = constraint.effective_top_id(options.top_id);
 
     EncodeResult result(options.clause_memory);
-    VariableManager vm(options.top_id);
-    result.cnf.num_vars = options.top_id;
+    VariableManager vm(top_id);
+    result.cnf.num_vars = top_id;
 
     add_amo_groups(constraint, result.cnf, vm);
     const auto weight_by_lit = make_weight_map(constraint);
@@ -546,19 +537,19 @@ EncodeResult GmtoEncoder::encode(const GroupedLeqConstraint& constraint,
 
     if (groups.empty()) {
         result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
-        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
+        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - top_id);
         result.stats.clauses = result.cnf.clauses.size();
         return result;
     }
 
     if (grouped_capacity(groups, weight_by_lit) <= constraint.bound) {
         result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
-        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
+        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - top_id);
         result.stats.clauses = result.cnf.clauses.size();
         return result;
     }
 
-    const auto base = select_base_greedy(constraint);
+    const auto base = select_base_greedy(constraint, groups, weight_by_lit);
 
     const int true_lit = make_true_var(result.cnf, vm);
 
@@ -575,7 +566,7 @@ EncodeResult GmtoEncoder::encode(const GroupedLeqConstraint& constraint,
     add_comparator(root, base, constraint.bound, result.cnf);
 
     result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
-    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
+    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - top_id);
     result.stats.clauses = result.cnf.clauses.size();
     return result;
 }

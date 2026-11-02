@@ -48,6 +48,25 @@ Node* merge_min_ratio_tree(std::vector<Node*> nodes, Score score, Merge merge) {
         return id;
     };
     for (std::size_t i = 0; i < nodes.size(); ++i) register_node(i);
+    // Full minRatio requires a quadratic candidate queue. For unusually many
+    // distinct domains, use a balanced tree instead of exhausting memory;
+    // all totalizer invariants hold for either binary tree shape.
+#ifndef STRUCTUREDPB_RATIO_DOMAIN_LIMIT
+#define STRUCTUREDPB_RATIO_DOMAIN_LIMIT 512
+#endif
+    constexpr std::size_t kMaxRatioDomains = STRUCTUREDPB_RATIO_DOMAIN_LIMIT;
+    if (domains.size() > kMaxRatioDomains) {
+        while (nodes.size() > 1) {
+            std::vector<Node*> next;
+            next.reserve((nodes.size() + 1) / 2);
+            for (std::size_t i = 0; i < nodes.size(); i += 2) {
+                if (i + 1 == nodes.size()) next.push_back(nodes[i]);
+                else next.push_back(merge(nodes[i], nodes[i + 1]));
+            }
+            nodes = std::move(next);
+        }
+        return nodes.front();
+    }
     auto count = [&](std::size_t id) { return domains[id].members.size() - domains[id].head; };
     const auto missing = std::numeric_limits<std::size_t>::max();
     auto representative = [&](std::size_t a, std::size_t b) {
@@ -65,7 +84,7 @@ Node* merge_min_ratio_tree(std::vector<Node*> nodes, Score score, Merge merge) {
                      nodes[pair.first]->vals.size() * nodes[pair.second]->vals.size(), pair.first, pair.second};
     };
     std::vector<Entry> initial;
-    initial.reserve((domains.size() - 1) * (domains.size() - 1));
+    initial.reserve(domains.size() * (domains.size() + 1) / 2);
     for (std::size_t a = 0; a < domains.size(); ++a) {
         for (std::size_t b = a; b < domains.size(); ++b) {
             if (representative(a, b).first != missing) initial.push_back(candidate(a, b));

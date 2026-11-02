@@ -1,8 +1,10 @@
 #include "amo.hpp"
+#include "structuredpb/mdd.hpp"
 #include "structuredpb/ggpw.hpp"
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -104,10 +106,12 @@ std::vector<int> totalizer_encode(
 EncodeResult GgpwEncoder::encode(const GroupedLeqConstraint& constraint,
                                  const EncodeOptions& options) const {
     constraint.validate();
+    if (constraint.bound > std::numeric_limits<Weight>::max() - (Weight{1} << 63)) return MddEncoder().encode(constraint, options);
+    const int top_id = constraint.effective_top_id(options.top_id);
 
     EncodeResult result(options.clause_memory);
-    VariableManager vm(options.top_id);
-    result.cnf.num_vars = options.top_id;
+    VariableManager vm(top_id);
+    result.cnf.num_vars = top_id;
     add_amo_groups(constraint, result.cnf, vm);
     const auto weights = make_weight_map(constraint);
 
@@ -192,7 +196,7 @@ EncodeResult GgpwEncoder::encode(const GroupedLeqConstraint& constraint,
     }
 
     result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
-    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
+    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - top_id);
     result.stats.clauses = result.cnf.clauses.size();
     return result;
 }

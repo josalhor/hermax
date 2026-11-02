@@ -16,7 +16,7 @@ import pytest
 from pysat.solvers import Solver
 
 
-DATA = Path(__file__).parent / "data"
+DATA = Path(__file__).parent / "fixtures"
 
 
 def _records(filename):
@@ -103,16 +103,42 @@ def test_encoding_does_not_mutate_caller_inputs(pbamo_module, operation, unit_we
     "record", _records("pbamo_preprocessing_cnf.jsonl"), ids=lambda row: row["name"],
 )
 def test_preprocessing_preserves_exact_existing_cnf(pbamo_module, record):
-    # These snapshots test preprocessing with the original RGGT backend,
-    # independently of changes to the automatic encoder selector.
+    # Fix the structured encoder choice so snapshots capture preprocessing
+    # and cardinality routing independently of the structured selector.
     cnf = getattr(pbamo_module.PBAMOEnc, record["operation"])(
         **record["input"], structured_encoding=pbamo_module.EncType.rggt,
     )
-    serialized = json.dumps(cnf.clauses, separators=(",", ":")).encode()
+    # Snapshot the clause contents independently of their storage representation.
+    serialized = json.dumps(list(cnf.clauses), separators=(",", ":")).encode()
 
     assert cnf.nv == record["variables"]
     assert len(cnf.clauses) == record["clauses"]
     assert hashlib.sha256(serialized).hexdigest() == record["sha256"]
+
+
+@pytest.mark.parametrize(
+    "record", _records("pbamo_preprocessing_cnf.jsonl"), ids=lambda row: row["name"],
+)
+def test_snapshot_formulas_match_arithmetic(pbamo_module, sat_solver_name, record):
+    args = record["input"]
+    lits, weights, bound = args["lits"], args["weights"], args["bound"]
+    explicit_groups = args.get("groups", [])
+    amo_groups = explicit_groups + args.get("amo_groups", [])
+    eo_groups = args.get("eo_groups", [])
+    cnf = getattr(pbamo_module.PBAMOEnc, record["operation"])(
+        **args, structured_encoding=pbamo_module.EncType.rggt,
+    )
+    # Explicit partitions describe AMOs already enforced by the caller.
+    external = [[-a, -b] for group in explicit_groups for a, b in itertools.combinations(group, 2)]
+    with Solver(name=sat_solver_name, bootstrap_with=list(cnf.clauses) + external) as solver:
+        for values in itertools.product((False, True), repeat=len(lits)):
+            selected = dict(zip(lits, values))
+            total = sum(weight for lit, weight in zip(lits, weights) if selected[lit])
+            expected = total <= bound if record["operation"] == "auto_leq" else total == bound
+            expected &= all(sum(selected[lit] for lit in group) <= 1 for group in amo_groups)
+            expected &= all(sum(selected[lit] for lit in group) == 1 for group in eo_groups)
+            assumptions = [lit if value else -lit for lit, value in zip(lits, values)]
+            assert solver.solve(assumptions=assumptions) == expected, assumptions
 
 
 @pytest.mark.parametrize("operation", ["auto_leq", "auto_eq"])

@@ -1,13 +1,17 @@
 #include "amo.hpp"
+#include "preprocess_leq.hpp"
+#include "structuredpb/mdd.hpp"
 #include "structuredpb/rggt.hpp"
 
 #include "min_ratio_tree.hpp"
 
 #include <algorithm>
 #include <cstddef>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -53,14 +57,86 @@ void sort_unique(std::vector<Weight>& vals) {
 
 
 std::vector<Weight> combine_vals(const std::vector<Weight>& left, const std::vector<Weight>& right, Weight cap) {
+    // Small products sort faster in a contiguous buffer. Larger products
+    // avoid storing duplicate sums, especially the many clipped overflow sums.
+#ifndef STRUCTUREDPB_MERGE_PRODUCT_LIMIT
+#define STRUCTUREDPB_MERGE_PRODUCT_LIMIT 262144
+#endif
+    constexpr std::size_t kSmallProduct = STRUCTUREDPB_MERGE_PRODUCT_LIMIT;
+    const bool small = left.size() <= kSmallProduct / right.size();
     std::vector<Weight> out;
-    out.reserve(left.size() * right.size());
-    for (Weight l : left) {
-        for (Weight r : right) {
-            out.push_back(clip_sum(l, r, cap));
+    if (small) {
+        out.reserve(left.size() * right.size());
+        for (Weight l : left) for (Weight r : right) out.push_back(clip_sum(l, r, cap));
+        sort_unique(out);
+        return out;
+    }
+#ifndef STRUCTUREDPB_MERGE_BITMAP_LIMIT
+#define STRUCTUREDPB_MERGE_BITMAP_LIMIT 2000000
+#endif
+    constexpr Weight kMaxBitmap = STRUCTUREDPB_MERGE_BITMAP_LIMIT;
+    if (cap <= kMaxBitmap) {
+        std::vector<unsigned char> present(static_cast<std::size_t>(cap) + 1, 0);
+        for (Weight l : left) {
+            if (l >= cap) { present[static_cast<std::size_t>(cap)] = 1; continue; }
+            const Weight limit = cap - l;
+            for (Weight r : right) {
+                if (r >= limit) { present[static_cast<std::size_t>(cap)] = 1; break; }
+                present[static_cast<std::size_t>(l + r)] = 1;
+            }
+        }
+        for (std::size_t i = 0; i < present.size(); ++i) {
+            if (present[i]) out.push_back(static_cast<Weight>(i));
+        }
+        return out;
+    }
+    // Even with a large absolute bound, nonzero sums can occupy a short
+    // interval (for example, coefficients clustered around one million).
+    // Handle zero rows separately and use an offset bitmap for that interval.
+    if (left.size() > 1 && right.size() > 1) {
+        const Weight low = clip_sum(left[1], right[1], cap);
+        const Weight high = clip_sum(left.back(), right.back(), cap);
+        if (high - low <= kMaxBitmap) {
+            std::vector<unsigned char> present(static_cast<std::size_t>(high - low) + 1, 0);
+            for (std::size_t i = 1; i < left.size(); ++i) {
+                const Weight l = left[i];
+                if (l >= cap) { present[static_cast<std::size_t>(cap - low)] = 1; continue; }
+                const Weight limit = cap - l;
+                for (std::size_t j = 1; j < right.size(); ++j) {
+                    const Weight r = right[j];
+                    if (r >= limit) { present[static_cast<std::size_t>(cap - low)] = 1; break; }
+                    present[static_cast<std::size_t>(l + r - low)] = 1;
+                }
+            }
+            out.insert(out.end(), left.begin(), left.end());
+            out.insert(out.end(), right.begin(), right.end());
+            for (std::size_t i = 0; i < present.size(); ++i)
+                if (present[i]) out.push_back(low + static_cast<Weight>(i));
+            sort_unique(out);
+            return out;
         }
     }
-    sort_unique(out);
+    struct Entry {
+        Weight sum;
+        std::size_t row, col;
+        bool operator>(const Entry& other) const { return sum > other.sum; }
+    };
+    // Keep the heap on the smaller dimension. Each row is sorted, so
+    // duplicate values can be discarded as soon as they are produced.
+    const auto& rows = left.size() <= right.size() ? left : right;
+    const auto& cols = left.size() <= right.size() ? right : left;
+    std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> pending;
+    for (std::size_t i = 0; i < rows.size(); ++i)
+        pending.push({clip_sum(rows[i], cols.front(), cap), i, 0});
+    while (!pending.empty()) {
+        const Entry item = pending.top();
+        pending.pop();
+        if (out.empty() || out.back() != item.sum) out.push_back(item.sum);
+        if (item.sum == cap) break;  // All remaining sums clip to cap.
+        const auto next = item.col + 1;
+        if (next < cols.size())
+            pending.push({clip_sum(rows[item.row], cols[next], cap), item.row, next});
+    }
     return out;
 }
 
@@ -389,29 +465,38 @@ void encode_internal(Node* node,
 EncodeResult RggtEncoder::encode(const GroupedLeqConstraint& constraint,
                                  const EncodeOptions& options) const {
     constraint.validate();
+    if (constraint.bound == std::numeric_limits<Weight>::max()) return MddEncoder().encode(constraint, options);
+    const int top_id = constraint.effective_top_id(options.top_id);
 
     EncodeResult result(options.clause_memory);
-    VariableManager vm(options.top_id);
-    result.cnf.num_vars = options.top_id;
+    VariableManager vm(top_id);
+    result.cnf.num_vars = top_id;
     add_amo_groups(constraint, result.cnf, vm);
 
-    const Weight cap = constraint.bound + 1;
-    const auto built = build_reduced_tree(constraint, cap);
+    const auto prepared = detail::preprocess_leq(constraint, result.cnf);
+    if (prepared.redundant) {
+        result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
+        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - top_id);
+        result.stats.clauses = result.cnf.clauses.size();
+        return result;
+    }
+    const Weight cap = prepared.constraint.bound + 1;
+    const auto built = build_reduced_tree(prepared.constraint, cap);
     if (built.root == nullptr || built.groups.empty()) {
         result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
-        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
+        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - top_id);
         result.stats.clauses = result.cnf.clauses.size();
         return result;
     }
 
     if (built.root->leaf) {
         for (const auto& term : built.root->terms) {
-            if (term.weight > constraint.bound) {
+            if (term.weight > prepared.constraint.bound) {
                 result.cnf.add_clause({-term.lit});
             }
         }
         result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
-        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
+        result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - top_id);
         result.stats.clauses = result.cnf.clauses.size();
         return result;
     }
@@ -433,7 +518,7 @@ EncodeResult RggtEncoder::encode(const GroupedLeqConstraint& constraint,
     }
 
     result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
-    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
+    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - top_id);
     result.stats.clauses = result.cnf.clauses.size();
     return result;
 }

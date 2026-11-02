@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "structuredpb/ggpw.hpp"
+#include "structuredpb/glpw.hpp"
 #include "structuredpb/gmto.hpp"
 #include "structuredpb/gswc.hpp"
 #include "structuredpb/mdd.hpp"
@@ -20,6 +21,9 @@ std::unique_ptr<Encoder> make_encoder(std::string_view name) {
     if (name == "ggpw") {
         return std::make_unique<GgpwEncoder>();
     }
+    if (name == "glpw") {
+        return std::make_unique<GlpwEncoder>();
+    }
     if (name == "gmto") {
         return std::make_unique<GmtoEncoder>();
     }
@@ -30,7 +34,7 @@ std::unique_ptr<Encoder> make_encoder(std::string_view name) {
 }
 
 std::vector<std::string> available_encoders() {
-    return {"mdd", "gswc", "ggpw", "gmto", "rggt"};
+    return {"mdd", "gswc", "ggpw", "glpw", "gmto", "rggt"};
 }
 
 }  // namespace structuredpb

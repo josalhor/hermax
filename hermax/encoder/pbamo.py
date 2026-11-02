@@ -32,6 +32,7 @@ class EncType:
     mdd = "mdd"
     gswc = "gswc"
     ggpw = "ggpw"
+    glpw = "glpw"
     gmto = "gmto"
     rggt = "rggt"
 

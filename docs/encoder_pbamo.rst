@@ -56,10 +56,12 @@ Arguments:
   specialized structured API.
 * ``groups``: disjoint AMO partition over ``lits``
 * ``bound``: right-hand side of ``sum(w_i * x_i) <= bound``
-* ``encoding``: one of ``mdd``, ``gswc``, ``ggpw``, ``gmto``, ``rggt``, or
+* ``encoding``: one of ``mdd``, ``gswc``, ``ggpw``, ``glpw``, ``gmto``, ``rggt``, or
   ``best``
-* ``emit_amo``: whether the returned CNF also includes pairwise AMO clauses
+* ``emit_amo``: whether the returned CNF also includes AMO clauses
   for the partition (enabled by default)
+  When disabled, the caller must enforce those AMO constraints separately;
+  the PB encoding relies on them.
 
 Automatic Overlap API
 ---------------------

@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Version 1.3.1
+-------------
+
+Highlights
+~~~~~~~~~~
+* Added the generalized local polynomial watchdog (``glpw``) PBAMO encoder
+* Other improvements to PBAMO encoder
+
 Version 1.3.0
 -------------
 

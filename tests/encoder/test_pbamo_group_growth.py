@@ -77,7 +77,7 @@ def test_model_large_amo_eo_uses_linear_candidate_encoding(kind):
         assert solver.solve(assumptions=[-lit.id for lit in bits]) == (kind == "at_most_one")
 
 
-@pytest.mark.parametrize("encoder", ["mdd", "gswc", "ggpw", "gmto", "rggt"])
+@pytest.mark.parametrize("encoder", ["mdd", "gswc", "ggpw", "glpw", "gmto", "rggt"])
 def test_native_group_emission_is_compact_and_exact(encoder):
     from hermax.internal import _pbamo
 

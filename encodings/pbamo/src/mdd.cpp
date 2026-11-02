@@ -1,4 +1,5 @@
 #include "amo.hpp"
+#include "preprocess_leq.hpp"
 #include "structuredpb/mdd.hpp"
 
 #include <algorithm>
@@ -13,6 +14,10 @@ namespace {
 
 constexpr int kTrueTerminal = -1;
 constexpr int kFalseTerminal = -2;
+#ifndef STRUCTUREDPB_MDD_RECURSIVE_LIMIT
+#define STRUCTUREDPB_MDD_RECURSIVE_LIMIT 512
+#endif
+constexpr std::size_t kRecursiveLimit = STRUCTUREDPB_MDD_RECURSIVE_LIMIT;
 
 using Arc = std::pair<int, int>;
 
@@ -110,6 +115,8 @@ private:
         const auto known = states_.find(key);
         if (known != states_.end()) return known->second;
 
+        if (layer >= kRecursiveLimit) return build_iterative(layer, remaining);
+
         const int else_child = build(layer + 1, remaining);
         std::vector<Arc> arcs;
         arcs.reserve(groups_[layer].terms.size());
@@ -121,6 +128,72 @@ private:
         const int result = arcs.empty() ? else_child : intern(else_child, std::move(arcs));
         states_.emplace(key, result);
         return result;
+    }
+
+    // Continue the same depth-first traversal on a heap stack when the
+    // native call stack approaches its conservative depth limit.
+    int build_iterative(std::size_t layer, Weight remaining) {
+        struct Frame {
+            std::size_t layer;
+            Weight remaining;
+            std::size_t next = 0;
+            int else_child = kTrueTerminal;
+            bool have_else = false;
+            std::vector<Arc> arcs;
+        };
+        std::vector<Frame> stack;
+        stack.push_back(Frame{layer, remaining});
+        int completed = kTrueTerminal;
+        bool returning = false;
+        while (!stack.empty()) {
+            auto& frame = stack.back();
+            if (returning) {
+                if (!frame.have_else) {
+                    frame.else_child = completed;
+                    frame.have_else = true;
+                } else {
+                    const auto& term = groups_[frame.layer].terms[frame.next++];
+                    if (completed != frame.else_child) frame.arcs.emplace_back(term.lit, completed);
+                }
+                returning = false;
+                continue;
+            }
+            if (!frame.have_else) {
+                if (frame.layer == groups_.size() ||
+                    (!suffix_[frame.layer].overflow && frame.remaining >= suffix_[frame.layer].value)) {
+                    completed = kTrueTerminal;
+                    stack.pop_back();
+                    returning = true;
+                    continue;
+                }
+                const auto it = states_.find(StateKey{frame.layer, frame.remaining});
+                if (it != states_.end()) {
+                    completed = it->second;
+                    stack.pop_back();
+                    returning = true;
+                    continue;
+                }
+                frame.arcs.reserve(groups_[frame.layer].terms.size());
+                stack.push_back(Frame{frame.layer + 1, frame.remaining});
+                continue;
+            }
+            if (frame.next < groups_[frame.layer].terms.size()) {
+                const auto& term = groups_[frame.layer].terms[frame.next];
+                if (term.weight > frame.remaining) {
+                    completed = kFalseTerminal;
+                    returning = true;
+                } else {
+                    stack.push_back(Frame{frame.layer + 1, frame.remaining - term.weight});
+                }
+                continue;
+            }
+            const StateKey key{frame.layer, frame.remaining};
+            completed = frame.arcs.empty() ? frame.else_child : intern(frame.else_child, std::move(frame.arcs));
+            states_.emplace(key, completed);
+            stack.pop_back();
+            returning = true;
+        }
+        return completed;
     }
 
     int intern(int else_child, std::vector<Arc> arcs) {
@@ -175,14 +248,18 @@ private:
 EncodeResult MddEncoder::encode(const GroupedLeqConstraint& constraint,
                                 const EncodeOptions& options) const {
     constraint.validate();
+    const int top_id = constraint.effective_top_id(options.top_id);
     EncodeResult result(options.clause_memory);
-    result.cnf.num_vars = options.top_id;
-    VariableManager variables(options.top_id);
+    result.cnf.num_vars = top_id;
+    VariableManager variables(top_id);
     add_amo_groups(constraint, result.cnf, variables);
-    const auto groups = make_ordered_groups(constraint);
-    Diagram(groups, variables).encode(constraint.bound, result.cnf);
+    const auto prepared = detail::preprocess_leq(constraint, result.cnf);
+    if (!prepared.redundant) {
+        const auto groups = make_ordered_groups(prepared.constraint);
+        Diagram(groups, variables).encode(prepared.constraint.bound, result.cnf);
+    }
     result.cnf.num_vars = std::max(result.cnf.num_vars, variables.max_var());
-    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
+    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - top_id);
     result.stats.clauses = result.cnf.clauses.size();
     return result;
 }

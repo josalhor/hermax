@@ -9,7 +9,7 @@ from hermax.encoder.card import CardEnc, EncType as CardType
 from hermax.internal import _pbamo, _pblib
 
 
-STRUCTURED = ["mdd", "gswc", "ggpw", "gmto", "rggt"]
+STRUCTURED = ["mdd", "gswc", "ggpw", "glpw", "gmto", "rggt"]
 
 
 def structured(lits, weights, groups, bound, encoder, emit_amo=True):

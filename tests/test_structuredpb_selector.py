@@ -19,7 +19,7 @@ def test_pbamo_best_uses_propagation_weighted_tree(pbamo_module) -> None:
 
 def test_pbamo_available_encoders_include_new_ones(pbamo_module) -> None:
     names = set(pbamo_module.available_encoders())
-    assert {"best", "mdd", "gswc", "ggpw", "gmto", "rggt"} <= names
+    assert {"best", "mdd", "gswc", "ggpw", "glpw", "gmto", "rggt"} <= names
 
 
 def test_pbamo_best_smoke_matches_baseline(

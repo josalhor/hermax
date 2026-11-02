@@ -334,6 +334,10 @@ PyMODINIT_FUNC PyInit__pbamo(void) {
         Py_DECREF(m);
         return nullptr;
     }
+    if (PyModule_AddStringConstant(m, "ENC_GLPW", "glpw") < 0) {
+        Py_DECREF(m);
+        return nullptr;
+    }
     if (PyModule_AddStringConstant(m, "ENC_GMTO", "gmto") < 0) {
         Py_DECREF(m);
         return nullptr;

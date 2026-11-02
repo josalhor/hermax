@@ -2,6 +2,8 @@
 #define STRUCTUREDPB_TYPES_HPP
 
 #include <cstdint>
+#include <limits>
+#include <algorithm>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
@@ -26,7 +28,7 @@ struct GroupedLeqConstraint {
         std::unordered_map<int, Weight> weights_by_lit;
         weights_by_lit.reserve(terms.size());
         for (const auto& term : terms) {
-            if (term.lit == 0) {
+            if (term.lit == 0 || term.lit == std::numeric_limits<int>::min()) {
                 throw std::invalid_argument("structuredpb: literal id 0 is invalid");
             }
             if (term.weight == 0) {
@@ -54,6 +56,12 @@ struct GroupedLeqConstraint {
         if (seen.size() != terms.size()) {
             throw std::invalid_argument("structuredpb: every weighted literal must appear in exactly one AMO group");
         }
+    }
+
+    int effective_top_id(int top_id) const {
+        if (top_id < 0) throw std::invalid_argument("structuredpb: top_id must be non-negative");
+        for (const auto& term : terms) top_id = std::max(top_id, term.lit < 0 ? -term.lit : term.lit);
+        return top_id;
     }
 
     Weight weight_of(int lit) const {

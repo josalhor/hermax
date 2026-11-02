@@ -252,9 +252,10 @@ void encode_tree(Node& node, VariableManager& vm, CnfFormula& cnf) {
 
 EncodeResult encode_rggt_equality(const GroupedLeqConstraint& sum, const EncodeOptions& options) {
     sum.validate();
+    const int top_id = sum.effective_top_id(options.top_id);
     EncodeResult result(options.clause_memory);
-    result.cnf.num_vars = options.top_id;
-    VariableManager vm(options.top_id);
+    result.cnf.num_vars = top_id;
+    VariableManager vm(top_id);
     add_amo_groups(sum, result.cnf, vm);
     auto tree = build_tree(sum);
     if (!tree.root) {
@@ -267,7 +268,7 @@ EncodeResult encode_rggt_equality(const GroupedLeqConstraint& sum, const EncodeO
         encode_tree(*tree.root, vm, result.cnf);
     }
     result.cnf.num_vars = std::max(result.cnf.num_vars, vm.max_var());
-    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - options.top_id);
+    result.stats.auxiliary_variables = static_cast<std::size_t>(result.cnf.num_vars - top_id);
     result.stats.clauses = result.cnf.clauses.size();
     return result;
 }
