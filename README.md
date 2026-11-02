@@ -8,9 +8,9 @@
   <a href="https://hermax.readthedocs.io/en/latest/"><img alt="Documentation Status" src="https://img.shields.io/readthedocs/hermax?version=latest"></a>
   <br>
   <a href="https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.SAT.2026.41"><img alt="Paper: SAT 2026" src="https://img.shields.io/badge/Paper-SAT%202026-007C7A"></a>
-  <img alt="Windows supported" src="https://img.shields.io/badge/Windows-supported-0078D6?logo=windows">
-  <img alt="Linux supported" src="https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&amp;logoColor=black">
-  <img alt="macOS supported" src="https://img.shields.io/badge/macOS-supported-000000?logo=apple">
+  <img alt="Windows x86 supported" src="https://img.shields.io/badge/Windows-x86%20supported-0078D6?logo=windows">
+  <img alt="Linux x86 and ARM supported" src="https://img.shields.io/badge/Linux-x86%20%26%20ARM%20supported-FCC624?logo=linux&amp;logoColor=black">
+  <img alt="macOS x86 and ARM supported" src="https://img.shields.io/badge/macOS-x86%20%26%20ARM%20supported-000000?logo=apple">
 </p>
 
 ![Hermax Banner](https://raw.githubusercontent.com/josalhor/hermax/main/images/banner.png)

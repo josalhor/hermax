@@ -34,7 +34,7 @@ HERMAX_REUSE_NATIVE_CORES = "1"
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
 # MSYS2 requires full upgrades when refreshing package databases.
-before-all = "C:\\msys64\\usr\\bin\\bash -lc \"pacman -Syu --noconfirm --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils mingw-w64-x86_64-make mingw-w64-x86_64-zlib mingw-w64-x86_64-gmp mingw-w64-x86_64-tools\""
+before-all = "C:\\msys64\\usr\\bin\\bash -lc \"pacman -Syu --noconfirm --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils mingw-w64-x86_64-make mingw-w64-x86_64-zlib mingw-w64-x86_64-gmp\""
 before-build = "uv pip install cmake pybind11 setuptools wheel delvewheel"
 repair-wheel-command = "uv run --active python -m delvewheel repair --add-path C:\\msys64\\mingw64\\bin -w {dest_dir} {wheel}"
 
