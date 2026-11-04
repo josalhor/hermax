@@ -118,7 +118,7 @@ int32_t AdderEncoding::HA_sum ( int32_t a, int32_t b ) // a XOR b
   return x;
 }
 
-void AdderEncoding::adderTree ( vector< queue< int32_t > > & buckets, vector< int32_t >& result ) {
+void AdderEncoding::adderTree ( vector< queue< int32_t > > & buckets, vector< int32_t >& result, int omit_low ) {
   int32_t x,y,z;
 
   for ( int i = 0; i < buckets.size(); i++ ) {
@@ -137,6 +137,12 @@ void AdderEncoding::adderTree ( vector< queue< int32_t > > & buckets, vector< in
 	  buckets[i].pop();
 	  z = buckets[i].front();
 	  buckets[i].pop();
+	  // The final sum bit is irrelevant when every lower bound bit is 1.
+	  // Its carry is still required by the higher bits.
+	  if (i < omit_low && buckets[i].empty()) {
+	    buckets[i+1].push(FA_carry(x,y,z));
+	    break;
+	  }
 	  int32_t xs = FA_sum ( x,y,z );
 	  int32_t xc = FA_carry ( x,y,z );
 	  buckets[i  ].push ( xs );
@@ -149,13 +155,16 @@ void AdderEncoding::adderTree ( vector< queue< int32_t > > & buckets, vector< in
 	  buckets[i].pop();
 	  y = buckets[i].front();
 	  buckets[i].pop();
-	  buckets[i  ].push ( HA_sum ( x,y ) );
+	  if (i >= omit_low)
+	    buckets[i].push ( HA_sum ( x,y ) );
 	  buckets[i+1].push ( HA_carry ( x,y ) );
 	  }
 
 
-      result[i] = buckets[i].front();
-      buckets[i].pop();
+      if (!buckets[i].empty()) {
+        result[i] = buckets[i].front();
+        buckets[i].pop();
+      }
       }
 
   }
@@ -336,7 +345,12 @@ void AdderEncoding::encode ( const SimplePBConstraint& pbconstraint, ClauseDatab
 
     vector<int32_t> kBits;
 
-    adderTree ( buckets, result );
+    int omit_low = 0;
+    if (!isInc && pbconstraint.getComparator() == PBLib::LEQ) {
+      uint64_t bound = static_cast<uint64_t>(pbconstraint.getLeq());
+      while (bound & 1) { ++omit_low; bound >>= 1; }
+    }
+    adderTree ( buckets, result, omit_low );
 
     numToBits ( kBits, buckets.size(), pbconstraint.getLeq() );
 

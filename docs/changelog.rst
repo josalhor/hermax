@@ -1,6 +1,24 @@
 Changelog
 =========
 
+Version 1.3.2
+-------------
+
+Highlights
+~~~~~~~~~~
+* Fixed edge cases in upstream PyCard and PbLib, specially around overflows and memory leaks
+* Improved integer Big-M inequalities.
+* Improved cumulative encodings when tasks >= capacity.
+* Added direct threshold encodings for addition equalities with up to 32 values.
+* Added automatic selection between existing integer-sum encodings.
+* Added binary integers for wide domains used automatically for domains with at least 64 values.
+* Added a new PBLib mode `bounded`
+* Added explicit integer and Boolean products with ``model.product()``.
+* Added exact absolute values with ``model.abs()`` and lazy ``abs(expr)``.
+* Added ``model.all_different_except()``, ``model.all_equal_except()``, ``model.precedence()``, ``model.regular()``, ``model.mdd()``, ``model.no_overlap()`` 
+* Added integer membership with ``IntVar.is_in()``.
+* Added ``IntVector.lexicographic_less_or_equal()``.
+
 Version 1.3.1
 -------------
 

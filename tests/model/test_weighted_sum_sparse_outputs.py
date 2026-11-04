@@ -6,7 +6,7 @@ from hermax.model.expressions import sum_expr
 
 
 def test_sparse_weighted_output_does_not_create_predicates_for_gaps():
-    m=Model();bits=list(m.bool_vector('b',12));total=m.int('total',0,1200)
+    m=Model(); m.set_integer_binary_threshold(None);bits=list(m.bool_vector('b',12));total=m.int('total',0,1200)
     before=len(m.to_cnf().clauses)
     m &= total==sum_expr(100*b for b in bits)
     assert len(m.to_cnf().clauses)-before<500

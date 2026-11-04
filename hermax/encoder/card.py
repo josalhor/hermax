@@ -93,7 +93,8 @@
 
 #
 #==============================================================================
-import math
+from hermax.encoder._vpool import update_vids
+
 from hermax.formula import CNF, CNFPlus
 from threading import current_thread, main_thread
 import hermax_pycard as pycard
@@ -195,55 +196,8 @@ class CardEnc(object):
     """
 
     @classmethod
-    def _update_vids(cls, cnf, inp, vpool):
-        """
-            Update variable ids in the given formula and id pool. The literals
-            serving as the input to the cardinality constraint are not
-            updated.
-
-            :param cnf: a list of literals in the sum.
-            :param inp: the list of input literals
-            :param vpool: the value of bound :math:`k`.
-
-            :type cnf: :class:`.formula.CNFPlus`
-            :type inp: list(int)
-            :type vpool: :class:`.formula.IDPool`
-        """
-
-        top, vmap = max(inp + [vpool.top]), {}  # current top and variable mapping
-
-        # we are going to use this to check if literals are input
-        inp = set([abs(l) for l in inp])
-
-        # creating a new variable mapping, taking into
-        # account variables marked as "occupied"
-        while top < cnf.nv:
-            top += 1
-
-            # skipping the input literals
-            if top in inp:
-                vmap[top] = top
-                continue
-
-            vpool.top += 1
-
-            while vpool._occupied and vpool.top >= vpool._occupied[0][0]:
-                if vpool.top <= vpool._occupied[0][1] + 1:
-                    vpool.top = vpool._occupied[0][1] + 1
-
-                vpool._occupied.pop(0)
-
-            # mapping this literal to a free one
-            vmap[top] = vpool.top
-
-        # updating the clauses
-        cnf.clauses = [
-            [vmap[abs(l)] * (1 if l > 0 else -1) if abs(l) in vmap else l for l in cl]
-            for cl in cnf.clauses
-        ]
-
-        # updating the number of variables
-        cnf.nv = vpool.top
+    def _update_vids(cls, cnf, top, vpool):
+        update_vids(cnf, top, vpool)
 
     _new_cnf = CNFPlus
 
@@ -286,8 +240,9 @@ class CardEnc(object):
         # we are going to return this formula
         ret = cls._new_cnf()
 
-        # if the list of literals is empty, return empty formula
+        # An empty formula still preserves the caller's variable-ID floor.
         if not lits:
+            ret.nv = vpool.top if vpool else (top_id if top_id is not None else 0)
             return ret
 
         # obtaining the top id from the variable pool
@@ -297,9 +252,12 @@ class CardEnc(object):
         # choosing the maximum id among the current top and the list of literals
         top_id = max(map(lambda x: abs(x), lits + [top_id if top_id != None else 0]))
 
+        ret.nv = top_id
         # MiniCard's native representation is handled separately
         if encoding == 9:
-            ret.atmosts, ret.nv = [(lits, bound)], top_id
+            ret.atmosts = [(lits, bound)]
+            if vpool:
+                cls._update_vids(ret, top_id, vpool)
             return ret
 
         res = cls._encode_atmost_native(lits, bound, top_id, encoding,
@@ -308,14 +266,9 @@ class CardEnc(object):
         if res:
             ret.clauses, ret.nv = res
 
-            # updating vpool if necessary
-            if vpool:
-                if vpool._occupied and vpool.top <= vpool._occupied[0][0] <= ret.nv:
-                    cls._update_vids(ret, lits, vpool)
-                else:
-                    # here, ret.nv id is assumed to be larger than the top id
-                    vpool.top = ret.nv - 1
-                    vpool._next()
+        # Reserve input IDs even if the constraint generated no clauses.
+        if vpool:
+            cls._update_vids(ret, top_id, vpool)
 
         return ret
 
@@ -389,8 +342,9 @@ class CardEnc(object):
         # we are going to return this formula
         ret = cls._new_cnf()
 
-        # if the list of literals is empty, return empty formula
+        # An empty formula still preserves the caller's variable-ID floor.
         if not lits:
+            ret.nv = vpool.top if vpool else (top_id if top_id is not None else 0)
             return ret
 
         # obtaining the top id from the variable pool
@@ -400,9 +354,12 @@ class CardEnc(object):
         # choosing the maximum id among the current top and the list of literals
         top_id = max(map(lambda x: abs(x), lits + [top_id if top_id != None else 0]))
 
+        ret.nv = top_id
         # Minicard's native representation is handled separately
         if encoding == 9:
-            ret.atmosts, ret.nv = [([-l for l in lits], len(lits) - bound)], top_id
+            ret.atmosts = [([-l for l in lits], len(lits) - bound)]
+            if vpool:
+                cls._update_vids(ret, top_id, vpool)
             return ret
 
         res = cls._encode_atleast_native(lits, bound, top_id, encoding,
@@ -411,14 +368,9 @@ class CardEnc(object):
         if res:
             ret.clauses, ret.nv = res
 
-            # updating vpool if necessary
-            if vpool:
-                if vpool._occupied and vpool.top <= vpool._occupied[0][0] <= ret.nv:
-                    cls._update_vids(ret, lits, vpool)
-                else:
-                    # here, ret.nv id is assumed to be larger than the top id
-                    vpool.top = ret.nv - 1
-                    vpool._next()
+        # Reserve input IDs even if the constraint generated no clauses.
+        if vpool:
+            cls._update_vids(ret, top_id, vpool)
 
         return ret
 

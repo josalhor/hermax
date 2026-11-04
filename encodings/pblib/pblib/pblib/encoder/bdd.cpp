@@ -32,7 +32,8 @@ void BDD_Encoder::iterativeEncoding(const SimplePBConstraint& pbconstraint, Clau
 
   while (index >= 0)
   {
-    if (!noLimit && maxClauses < 0)
+    if (!noLimit && (maxClauses < 0 ||
+        (auxiliary_limit >= 0 && auxvars.getBiggestReturnedAuxVar() > auxiliary_limit)))
     {
       canceled = true;
       return;
@@ -284,9 +285,11 @@ int64_t BDD_Encoder::encodingValue(const SimplePBConstraint& pbconstraint, int64
 
 
 
-void BDD_Encoder::bddEncode(const SimplePBConstraint& pbconstraint, ClauseDatabase& formula, AuxVarManager& auxvars, bool noLimit, int64_t maxClauses)
+void BDD_Encoder::bddEncode(const SimplePBConstraint& pbconstraint, ClauseDatabase& formula, AuxVarManager& auxvars, bool noLimit, int64_t maxClauses, int64_t maxAuxiliaries)
 {
   canceled = false;
+  auxiliary_limit = maxAuxiliaries < 0 ? -1 :
+      static_cast<int64_t>(auxvars.getBiggestReturnedAuxVar()) + maxAuxiliaries;
 
   sumHistory.clear();
   nodeHistory.clear();

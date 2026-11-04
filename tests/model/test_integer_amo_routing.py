@@ -73,6 +73,8 @@ def test_amo_weighted_integer_route_is_direct_and_exact(
 
 @pytest.mark.parametrize("strategy", ["whole", "binary"])
 def test_uniform_integer_amo_sums_keep_the_existing_selector(strategy, monkeypatch):
+    # Force this test's selected native backend rather than an outer alternative.
+    monkeypatch.setattr("hermax.model._integer_sum.choose_sum_encoding", lambda *args: ("current", None))
     m = Model()
     xs = [m.int(f"x{i}", 0, 3) for i in range(3)]
     bs = m.bool_vector("b", 2)

@@ -2,6 +2,23 @@
 
 #include <vector>
 #include <numeric>
+#include <stdexcept>
+
+namespace {
+int64_t checked_add(int64_t a, int64_t b)
+{
+  if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b))
+    throw std::overflow_error("PB coefficient arithmetic exceeds signed 64-bit range");
+  return a + b;
+}
+
+int64_t checked_negate(int64_t value)
+{
+  if (value == INT64_MIN)
+    throw std::overflow_error("PB coefficient arithmetic exceeds signed 64-bit range");
+  return -value;
+}
+}
 
 using namespace PBLib;
 using namespace std;
@@ -23,16 +40,16 @@ void PreEncoder::init_and_normalize(PBCon const & pbconstraint, ClauseDatabase& 
   if (comparator == GEQ)
   { // normalize to LEQ by negation
     comparator = LEQ;
-    leq = -geq;
+    leq = checked_negate(geq);
     for (int i = 0; i < (int)literals.size(); ++i)
-      literals[i].weight = -literals[i].weight;
+      literals[i].weight = checked_negate(literals[i].weight);
   }
 
   join_duplicat_literals();
   normalize_variables();
 
-  leq += bound_offset;
-  geq += bound_offset;
+  leq = checked_add(leq, bound_offset);
+  geq = checked_add(geq, bound_offset);
 
   if (reduce_coefficients)
     divide_out_common_factor();
@@ -93,7 +110,7 @@ void PreEncoder::remove_lits_with_w_greater_leq_and_check_isamk(ClauseDatabase& 
       continue;
     }
 
-    max_sum += tmpWeight;
+    max_sum = checked_add(max_sum, tmpWeight);
 
     if (isAMK && tmpWeight != 1)
     {
@@ -130,8 +147,8 @@ void PreEncoder::normalize_variables()
 
     if (tmpWeight < 0) // if the weight is negative, normalize literal
     {
-      tmpWeight = -tmpWeight; // results in a positive weight
-      bound_offset += tmpWeight; // adjust bound offset (for leq / geq lateron)
+      tmpWeight = checked_negate(tmpWeight); // results in a positive weight
+      bound_offset = checked_add(bound_offset, tmpWeight); // adjust bound offset
       literals[i].weight = tmpWeight; // save new (positive) weight
       literals[i].lit = -literals[i].lit; // save the complement of the literal
     }
@@ -147,13 +164,13 @@ void PreEncoder::join_duplicat_literals()
   {
     if (literals[i].lit == literals[i-1].lit)
     {
-      literals[i].weight += literals[i-1].weight;
+      literals[i].weight = checked_add(literals[i].weight, literals[i-1].weight);
       del_element.push_back(i-1);
     }
     else if (literals[i].lit == -literals[i-1].lit)
     {
-      bound_offset -= literals[i-1].weight;
-      literals[i].weight += -literals[i-1].weight;
+      bound_offset = checked_add(bound_offset, checked_negate(literals[i-1].weight));
+      literals[i].weight = checked_add(literals[i].weight, checked_negate(literals[i-1].weight));
       del_element.push_back(i-1);
     }
   }

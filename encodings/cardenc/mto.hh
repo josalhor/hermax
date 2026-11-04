@@ -9,6 +9,7 @@
 #define MTO_HH_
 
 #include <cmath>
+#include <utility>
 #include "common.hh"
 #include "ptypes.hh"
 #include "utils.hh"
@@ -48,13 +49,9 @@ inline void to_TO(
 	vector<int>& invars
 )
 {
-	size_t n = invars.size();
-
+	const size_t n = invars.size();
 	if (n < 2) {
-		outvars.resize(n);
-		for (size_t i = 0; i < n; i++)
-			outvars[i] = invars[i];
-
+		outvars = invars;
 		return;
 	}
 
@@ -62,62 +59,31 @@ inline void to_TO(
 	for (size_t i = 0; i < n; i++)
 		outvars[i] = ++top_id;
 
-	vector<pair<vector<int> *, vector<int> *> > stack;
-
-	vector<int> *ilst = new vector<int>; ilst->resize(n);
-	vector<int> *olst = new vector<int>; olst->resize(n);
-	for (size_t i = 0; i < n; i++) {
-		(*ilst)[i] =  invars[i];
-		(*olst)[i] = outvars[i];
-	}
-
-	pair<vector<int> *, vector<int> *> bottom (ilst, olst);
-	stack.push_back(bottom);
-
+	struct Frame {
+		vector<int> inputs;
+		vector<int> outputs;
+	};
+	vector<Frame> stack;
+	stack.push_back(Frame{invars, outvars});
 	while (!stack.empty()) {
-		ilst = stack.back().first;
-		olst = stack.back().second;
+		Frame current = std::move(stack.back());
 		stack.pop_back();
 
-		n = ilst->size();
-		size_t half = n - (n >> 1);
+		const size_t size = current.inputs.size();
+		const size_t half = size - (size >> 1);
+		vector<int> left(current.inputs.begin(), current.inputs.begin() + half);
+		vector<int> right(current.inputs.begin() + half, current.inputs.end());
+		vector<int> left_out(half), right_out(size - half);
 
-		vector<int> *fsthalf = new vector<int>(half);
-		for (size_t i = 0; i < half; i++)
-			(*fsthalf)[i] = (*ilst)[i];
+		if (half < 2) left_out = left;
+		else for (int& lit : left_out) lit = ++top_id;
+		if (right.size() < 2) right_out = right;
+		else for (int& lit : right_out) lit = ++top_id;
 
-		vector<int> *outfsthalf = new vector<int>(half);
-		if (half < 2)
-			for (size_t i = 0; i < half; i++)
-				(*outfsthalf)[i] = (*fsthalf)[i];
-		else {
-			for (unsigned i = 0; i < half; i++)
-				(*outfsthalf)[i] = ++top_id;
-			pair<vector<int> *, vector<int> *> next(fsthalf, outfsthalf);
-			stack.push_back(next);
-		}
-
-		vector<int> *sndhalf = new vector<int>(n - half);
-		for (size_t i = 0; i < n - half; i++)
-			(*sndhalf)[i] = (*ilst)[half + i];
-
-		vector<int> *outsndhalf= new vector<int>(n - half);
-		if (n - half < 2) {
-			for (size_t i = 0; i < n - half; i++)
-				(*outsndhalf)[i] = (*sndhalf)[i];
-		}
-		else {
-			for (size_t i = 0; i < n - half; i++)
-				(*outsndhalf)[i] = ++top_id;
-
-			pair<vector<int> *, vector<int> *> next(sndhalf, outsndhalf);
-			stack.push_back(next);
-		}
-
-		to_UA(top_id, clset, *olst, *outfsthalf, *outsndhalf);
-
-		delete ilst;
-		delete olst;
+		to_UA(top_id, clset, current.outputs, left_out, right_out);
+		// Push left first so right is processed first, preserving clause order.
+		if (half >= 2) stack.push_back(Frame{std::move(left), std::move(left_out)});
+		if (right.size() >= 2) stack.push_back(Frame{std::move(right), std::move(right_out)});
 	}
 }
 
@@ -280,116 +246,61 @@ inline void mto_MTO_A(
 	int k = -1)
 {
 	if (is.size() < p) {
-		us.resize(0);
+		us.clear();
 		to_TO(top_id, clset, ls, is);
 		return;
 	}
 
 	size_t un = is.size() / p;
-	if (k >= 0 && k / p < un)
-		un = k / p;
-
+	if (k >= 0 && k / p < un) un = k / p;
 	us.resize(un);
-	for (size_t i = 0; i < un; i++)
-		us[i] = ++top_id;
-
+	for (int& lit : us) lit = ++top_id;
 	ls.resize(p - 1);
-	for (size_t i = 0; i < p - 1; i++)
-		ls[i] = ++top_id;
+	for (int& lit : ls) lit = ++top_id;
 
-	vector<int> *ilst = new vector<int>(is);
-	vector<int> *ulst = new vector<int>(us);
-	vector<int> *llst = new vector<int>(ls);
-
-	pair<vector<int> *, pair<vector<int> *, vector<int> *> > bottom;
-	bottom.first = ilst;
-	bottom.second.first  = ulst;
-	bottom.second.second = llst;
-
-	vector<pair<vector<int> *, pair<vector<int> *, vector<int> *> > > stack;
-	stack.push_back(bottom);
-
+	struct Frame {
+		vector<int> inputs;
+		vector<int> upper;
+		vector<int> lower;
+	};
+	vector<Frame> stack;
+	stack.push_back(Frame{is, us, ls});
 	while (!stack.empty()) {
-		ilst = stack.back().first;
-		ulst = stack.back().second.first;
-		llst = stack.back().second.second;
+		Frame current = std::move(stack.back());
 		stack.pop_back();
-
-		vector<int> *ufsthalf;
-		vector<int> *lfsthalf;
-		vector<int> *usndhalf;
-		vector<int> *lsndhalf;
-
-		size_t ni   = ilst->size();
-		size_t half = ni - (ni >> 1);
-
-		vector<int> *fsthalf = new vector<int>(half);
-		for (size_t i = 0; i < half; i++)
-			(*fsthalf)[i] = (*ilst)[i];
+		const size_t size = current.inputs.size();
+		const size_t half = size - (size >> 1);
+		vector<int> left(current.inputs.begin(), current.inputs.begin() + half);
+		vector<int> right(current.inputs.begin() + half, current.inputs.end());
+		vector<int> left_upper, left_lower, right_upper, right_lower;
 
 		if (half < p) {
-			ufsthalf = new vector<int>(0);
-			lfsthalf = new vector<int>();
-
-			to_TO(top_id, clset, *lfsthalf, *fsthalf);
-		}
-		else {
+			to_TO(top_id, clset, left_lower, left);
+		} else {
 			un = half / p;
-			if (k >= 0 && k / p < un)
-				un = k / p;
-
-			ufsthalf = new vector<int>(un);
-			for (size_t i = 0; i < un; i++)
-				(*ufsthalf)[i] = ++top_id;
-
-			lfsthalf = new vector<int>(p - 1);
-			for (size_t i = 0; i < p - 1; i++)
-				(*lfsthalf)[i] = ++top_id;
-
-			pair<vector<int> *, pair<vector<int> *, vector<int> *> > next;
-			next.first = fsthalf;
-			next.second.first  = ufsthalf;
-			next.second.second = lfsthalf;
-
-			stack.push_back(next);
+			if (k >= 0 && k / p < un) un = k / p;
+			left_upper.resize(un);
+			for (int& lit : left_upper) lit = ++top_id;
+			left_lower.resize(p - 1);
+			for (int& lit : left_lower) lit = ++top_id;
+		}
+		if (right.size() < p) {
+			to_TO(top_id, clset, right_lower, right);
+		} else {
+			un = right.size() / p;
+			if (k >= 0 && k / p < un) un = k / p;
+			right_upper.resize(un);
+			for (int& lit : right_upper) lit = ++top_id;
+			right_lower.resize(p - 1);
+			for (int& lit : right_lower) lit = ++top_id;
 		}
 
-		vector<int> *sndhalf = new vector<int>(ni - half);
-		for (size_t i = 0; i < ni - half; i++)
-			(*sndhalf)[i] = (*ilst)[i + half];
-
-		if (ni - half < p) {
-			usndhalf = new vector<int>(0);
-			lsndhalf = new vector<int>();
-
-			to_TO(top_id, clset, *lsndhalf, *sndhalf);
-		}
-		else {
-			un = (ni - half) / p;
-			if (k >= 0 && k / p < un)
-				un = k / p;
-
-			usndhalf = new vector<int>(un);
-			for (size_t i = 0; i < un; i++)
-				(*usndhalf)[i] = ++top_id;
-
-			lsndhalf = new vector<int>(p - 1);
-			for (size_t i = 0; i < p - 1; i++)
-				(*lsndhalf)[i] = ++top_id;
-
-			pair<vector<int> *, pair<vector<int> *, vector<int> *> > next;
-			next.first = sndhalf;
-			next.second.first  = usndhalf;
-			next.second.second = lsndhalf;
-			stack.push_back(next);
-		}
-
-		mto_MUA_A(top_id, clset, *ulst, *llst, *ufsthalf, *lfsthalf,
-				*usndhalf, *lsndhalf, p);
-
-		delete ilst;
-		delete ulst;
-		delete llst;
+		mto_MUA_A(top_id, clset, current.upper, current.lower,
+				left_upper, left_lower, right_upper, right_lower, p);
+		if (half >= p)
+			stack.push_back(Frame{std::move(left), std::move(left_upper), std::move(left_lower)});
+		if (right.size() >= p)
+			stack.push_back(Frame{std::move(right), std::move(right_upper), std::move(right_lower)});
 	}
 }
 

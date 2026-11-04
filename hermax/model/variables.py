@@ -38,6 +38,7 @@ from .expressions import (
     _deferred_constant_constraint,
 )
 from ._int_thresholds import ThresholdLiterals
+from . import _binary_integer
 from ._all_different import (
     filter_domains as _filter_all_different_domains,
     prefer_bipartite as _prefer_bipartite_all_different,
@@ -200,7 +201,7 @@ class IntSetVar:
         definition = self._model._compile_pb_compare(
             PBExpr.from_item(out), "==", self.cardinality()
         )
-        self._model._register_literal_definition(out._threshold_lits[0], definition)
+        out._register_value_definition(definition)
 
         return out
 
@@ -744,11 +745,11 @@ class _VectorElementBool(_BooleanComposition):
 
 
 class IntVar:
-    """Bounded integer variable with ladder/order encoding.
+    """Bounded integer variable with order or binary primary encoding.
 
     The domain is ``[lb, ub]`` and includes both bounds.
     """
-    __slots__ = ("_model", "name", "lb", "ub", "_threshold_lits", "_eq_lits", "_cmp_cache", "_is_view", "_binary_view")
+    __slots__ = ("_model", "name", "lb", "ub", "_threshold_lits", "_eq_lits", "_cmp_cache", "_is_view", "_binary_view", "_binary_primary", "_encoding_source", "_binary_comparisons")
 
     def __init__(self, model: "Model", name: str, lb: int, ub: int):
         if (
@@ -763,6 +764,11 @@ class IntVar:
         count = ub - lb
         if not count:
             self._initialize(model, name, lb, ub, [], is_view=False)
+            return
+        binary = model._binary_min_domain is not None and count + 1 >= model._binary_min_domain
+        if binary:
+            self._initialize(model, name, lb, ub, _binary_integer.NoOrderThresholds(), is_view=False)
+            _binary_integer.initialize(self)
             return
         start = model._next_id
         if model._inc_state.bound:
@@ -783,9 +789,12 @@ class IntVar:
         self.ub = ub
         self._threshold_lits = thresholds
         self._is_view = is_view
+        self._binary_primary = False
+        self._encoding_source = None
         self._binary_view: tuple[int, ...] | None = None
         self._eq_lits: dict[int, Literal] = {}
         self._cmp_cache: dict[tuple[str, int], Literal] = {}
+        self._binary_comparisons = None
 
     def _threshold_ids(self) -> Sequence[int]:
         bits = self._threshold_lits
@@ -793,11 +802,28 @@ class IntVar:
             return range(bits.start, bits.start + len(bits))
         return [self._model._lit_to_dimacs(lit) for lit in bits]
 
+    @property
+    def encoding(self) -> str:
+        """Primary representation: ``order`` or ``binary``."""
+        return "binary" if self._binary_primary else "order"
+
+    def _value_literals(self):
+        if self._binary_primary:
+            return [self._model._dimacs_to_lit(bit) for bit in self._binary_view]
+        return self._threshold_lits
+
+    def _register_value_definition(self, definition):
+        literals = self._value_literals()
+        for literal in literals if self._binary_primary else literals[:1]:
+            self._model._register_literal_definition(literal, definition)
+
     def _get_binary_view(self) -> tuple[int, ...]:
         self._binary_view = _binary_view_for(self._encoding_owner())
         return self._binary_view
 
     def _encoding_owner(self) -> "IntVar":
+        if self._binary_primary:
+            return self if self._encoding_source is None else self._encoding_source
         if self._is_view and isinstance(self._threshold_lits, ThresholdLiterals):
             return self._model._intvar_threshold_owner_by_litid[self._threshold_lits.start][0]
         return self
@@ -811,6 +837,10 @@ class IntVar:
             model, name, source.lb + offset, source.ub + offset,
             source._threshold_lits, is_view=True,
         )
+        if source._binary_primary:
+            out._binary_primary = True
+            out._binary_view = source._binary_view
+            out._encoding_source = source._encoding_owner()
         return out
 
     @classmethod
@@ -857,6 +887,8 @@ class IntVar:
         return self.ub
 
     def _as_pbexpr(self) -> PBExpr:
+        if self._binary_primary:
+            return _binary_integer.as_pbexpr(self)
         # Ladder/order encoding: sum(threshold bits) == (value - lb).
         # To keep true integer arithmetic in mixed PB expressions, we carry
         # the hidden lower-bound offset internally as a PBExpr constant.
@@ -864,6 +896,10 @@ class IntVar:
 
     def __neg__(self):
         return -1 * self
+
+    def __abs__(self):
+        from .expressions import AbsExpr
+        return AbsExpr(self)
 
     def __mul__(self, other):
         if isinstance(other, (Literal, Term, PBExpr, IntVar, _LazyIntExpr)):
@@ -990,6 +1026,8 @@ class IntVar:
         return expr
 
     def _cmp_lit(self, tag: str, value: int) -> Literal:
+        if self._binary_primary:
+            return _binary_integer.comparison(self, tag, value)
         key = (tag, value)
         cache = self._cmp_cache
         if key in cache:
@@ -1054,6 +1092,13 @@ class IntVar:
 
     def _order_implications(self, other: "IntVar", shift: int = 0) -> list[Clause]:
         """Encode self <= other + shift, skipping constant threshold regions."""
+        if self._binary_primary or other._binary_primary:
+            group = _binary_integer.order_relation(self, other, shift)
+            if group is None:
+                group = self._model._compile_pb_compare(
+                    PBExpr.from_item(self), "<=", PBExpr.from_item(other) + shift
+                )
+            return [Clause._from_dimacs_trusted(self._model, row) for row in group.iter_dimacs()]
         if self._threshold_lits is other._threshold_lits:
             return [] if self.lb <= other.lb + shift else [Clause(self._model, [])]
         if self.ub <= other.lb + shift:
@@ -1084,6 +1129,9 @@ class IntVar:
         # except span=1 where the only value is tautologically true).
         if value < self.lb or value > self.ub:
             raise ValueError(f"value {value} is outside domain [{self.lb}, {self.ub}]")
+        if self._binary_primary:
+            return [self._model._dimacs_to_lit(bit if (value - self.lb) & (1 << i) else -bit)
+                    for i, bit in enumerate(self._binary_view)]
         span = self._span()
         if span == 1:
             return []
@@ -1140,6 +1188,18 @@ class IntVar:
         if hi == self.ub:
             return Clause(m, [self < lo])
         return Clause(m, [self < lo, self >= hi + 1])
+
+    def is_in(self, values: Iterable[int]) -> ClauseGroup:
+        """Return membership in integer values, encoded using interval gaps.
+
+        Values outside this variable's domain are ignored. The returned
+        constraint supports conditional enforcement and reification.
+        """
+        from numbers import Integral
+        values = tuple(values)
+        if any(isinstance(v, bool) or not isinstance(v, Integral) for v in values):
+            raise TypeError("Integer membership requires integer values.")
+        return self._allowed_values(int(v) for v in values if self.lb <= v <= self.ub)
 
     def _allowed_values(self, values: Iterable[int]) -> ClauseGroup:
         """Encode membership in validated domain values using forbidden runs."""
@@ -1335,6 +1395,8 @@ class IntVar:
         if isinstance(value, int):
             if value < self.lb or value > self.ub:
                 return _deferred_constant_constraint(self._model, False)
+            if self._binary_primary:
+                return _binary_integer.equality(self, value)
             if value not in self._eq_lits:
                 k = value - self.lb
                 ts = self._threshold_lits
@@ -1369,6 +1431,11 @@ class IntVar:
             return self._eq_lits[value]
         if isinstance(value, IntVar):
             _ensure_same_model_pair_fast(self, value)
+            if self._binary_primary or value._binary_primary:
+                group = _binary_integer.equal_relation(self, value)
+                if group is None:
+                    group = self._model._compile_pb_compare(PBExpr.from_item(self), "==", PBExpr.from_item(value))
+                return IntRelation(self._model, list(group), self, value, "==", 0)
             clauses = self._order_implications(value)
             clauses.extend(value._order_implications(self))
             if any(not clause.dimacs for clause in clauses):
@@ -1391,6 +1458,11 @@ class IntVar:
             if self._threshold_lits is value._threshold_lits:
                 clauses = [] if self.lb != value.lb else [Clause(self._model, [])]
                 return IntRelation(self._model, clauses, self, value, "!=", 0)
+            if self._binary_primary or value._binary_primary:
+                group = _binary_integer.equal_relation(self, value, negate=True)
+                if group is None:
+                    group = self._model._compile_pb_compare(PBExpr.from_item(self), "!=", PBExpr.from_item(value))
+                return IntRelation(self._model, list(group), self, value, "!=", 0)
             clauses: list[Clause] = []
             lo = max(self.lb, value.lb)
             hi = min(self.ub, value.ub)
@@ -1539,6 +1611,10 @@ class _BaseVector:
         if len({id(item) for item in self}) < len(self):
             return ClauseGroup(model, [Clause(model, [])])
         integers = isinstance(self._items[0], IntVar)
+        if integers and any(item._binary_primary for item in self):
+            # Avoid value-column enumeration for binary domains.
+            return ClauseGroup(model, [clause for i, left in enumerate(self._items)
+                                      for right in self._items[i + 1:] for clause in left != right])
         domains = ([range(x.lb, x.ub + 1) for x in self] if integers else
                    [tuple(x.choices) + ((None,) if x.nullable else ()) for x in self])
         analysis = _filter_all_different_domains(domains)
@@ -1986,6 +2062,8 @@ class IntVector(_BaseVector):
         return self._build_all_different(bipartite=True)
 
     def _not_all_different_bipartite(self) -> ClauseGroup:
+        if any(x._binary_primary for x in self):
+            return self._not_all_different()
         return self._not_all_different_columns(self._all_different_columns())
 
     def all_different(self, backend: str = "auto") -> ClauseGroup:
@@ -1997,7 +2075,8 @@ class IntVector(_BaseVector):
             ``bipartite``: channel to exact-value indicators + column AMOs.
         """
         if backend == "auto":
-            backend = "bipartite" if _prefer_bipartite_all_different(self._items) else "pairwise"
+            backend = "pairwise" if any(x._binary_primary for x in self) else (
+                "bipartite" if _prefer_bipartite_all_different(self._items) else "pairwise")
         if backend == "pairwise":
             builder = self._all_different_pairwise
         elif backend == "bipartite":
@@ -2015,6 +2094,14 @@ class IntVector(_BaseVector):
             rel = self._items[i]._relop_intvar(self._items[i + 1], "<=")
             clauses.extend(rel)
         return ClauseGroup(self._model, clauses)
+
+    def lexicographic_less_or_equal(self, other: "IntVector") -> ClauseGroup:
+        """Return non-strict lexicographic ordering using the strict encoder."""
+        if not isinstance(other, IntVector):
+            raise TypeError("lexicographic_less_or_equal expects IntVector")
+        return other.lexicographic_less_than(self).implies(
+            self._model._get_bool_constant_literal(False)
+        )
 
     def lexicographic_less_than(self, other: "IntVector") -> ClauseGroup:
         """Return strict lexicographic ordering constraint ``self <lex other``."""
@@ -2305,6 +2392,15 @@ class AssignmentView:
         return truth if literal.polarity else not truth
 
     def _decode_integer(self, integer: IntVar) -> int:
+        if integer._binary_primary:
+            for bit in integer._binary_view:
+                self._check_snapshot(bit)
+            for value, literal in integer._eq_lits.items():
+                if literal.id <= self._top_id and self._true_vars.get(literal.id, False):
+                    return value
+            value = integer.lb + sum(1 << i for i, bit in enumerate(integer._binary_view)
+                                     if self._true_vars.get(bit, False))
+            return min(value, integer.ub)
         bits = integer._threshold_lits
         if isinstance(bits, ThresholdLiterals):
             self._check_snapshot(bits.start)
@@ -2342,6 +2438,8 @@ class AssignmentView:
                                               for term in expression.terms)
                     + sum(coefficient * self.val(value)
                           for coefficient, value in expression.int_terms))
+        if isinstance(expression, AbsExpr):
+            return abs(self.val(expression._src))
         if isinstance(expression, DivExpr):
             return self.val(expression._src) // expression._divisor
         if isinstance(expression, ModExpr):
@@ -2351,7 +2449,7 @@ class AssignmentView:
         if isinstance(expression, MaxExpr):
             realized = expression._realized
             if expression._kind in {"upper_bound", "lower_bound"} and realized is not None:
-                if realized.lb == realized.ub or realized._threshold_lits[0].id <= self._top_id:
+                if realized.lb == realized.ub or realized._value_literals()[0].id <= self._top_id:
                     return self.val(realized)
             values = [self.val(x) for x in expression._items]
             return max(values) if expression._kind in {"max", "upper_bound"} else min(values)

@@ -65,7 +65,8 @@
 
 #
 #==============================================================================
-import math
+from hermax.encoder._vpool import update_vids
+
 from hermax.formula import CNFPlus
 
 # checking whether or not internal pblib bindings are available
@@ -105,6 +106,7 @@ class EncType(object):
             binmerge   = 5
             native     = 6
             lpw        = 7
+            bounded    = 8
 
         The desired encoding can be selected either directly by its integer
         identifier, e.g. ``2``, or by its alphabetical name, e.g.
@@ -116,6 +118,10 @@ class EncType(object):
         Note that the encoding type can be set to ``best``, in which case the
         encoder selects one of the other encodings from the list (in most
         cases, this invokes the ``bdd`` encoder).
+
+        ``bounded`` tries BDD with at most four times the adder's clauses and
+        eight times its auxiliary variables, otherwise using the adder. Trials
+        are counted in C++ and abandoned when their budget is exceeded.
     """
 
     best       = 0
@@ -126,6 +132,7 @@ class EncType(object):
     binmerge   = 5
     native     = 6
     lpw        = 7
+    bounded    = 8  # BDD within 4x adder clauses and 8x adder auxiliaries.
 
     if pblib_present:
         _to_pbenc = {
@@ -135,7 +142,8 @@ class EncType(object):
                 sortnetwrk: pblib.PB_SORTINGNETWORKS,
                 adder:      pblib.PB_ADDER,
                 binmerge:   pblib.PB_BINARY_MERGE,
-                lpw:        pblib.PB_LPW
+                lpw:        pblib.PB_LPW,
+                bounded:    pblib.PB_BOUNDED
             }
 
         _to_pbcmp = {
@@ -177,55 +185,8 @@ class PBEnc(object):
     """
 
     @classmethod
-    def _update_vids(cls, cnf, inp, vpool):
-        """
-            Update variable ids in the given formula and id pool. The literals
-            serving as the input to the cardinality constraint are not
-            updated.
-
-            :param cnf: a list of literals in the sum.
-            :param inp: the list of input literals
-            :param vpool: the value of bound :math:`k`.
-
-            :type cnf: :class:`.formula.CNFPlus`
-            :type inp: list(int)
-            :type vpool: :class:`.formula.IDPool`
-        """
-
-        top, vmap = max(inp + [vpool.top]), {}  # current top and variable mapping
-
-        # we are going to use this to check if literals are input
-        inp = set([abs(l) for l in inp])
-
-        # creating a new variable mapping, taking into
-        # account variables marked as "occupied"
-        while top < cnf.nv:
-            top += 1
-
-            # skipping the input literals
-            if top in inp:
-                vmap[top] = top
-                continue
-
-            vpool.top += 1
-
-            while vpool._occupied and vpool.top >= vpool._occupied[0][0]:
-                if vpool.top <= vpool._occupied[0][1] + 1:
-                    vpool.top = vpool._occupied[0][1] + 1
-
-                vpool._occupied.pop(0)
-
-            # mapping this literal to a free one
-            vmap[top] = vpool.top
-
-        # updating the clauses
-        cnf.clauses = [
-            [vmap[abs(l)] * (1 if l > 0 else -1) if abs(l) in vmap else l for l in cl]
-            for cl in cnf.clauses
-        ]
-
-        # updating the number of variables
-        cnf.nv = vpool.top
+    def _update_vids(cls, cnf, top, vpool):
+        update_vids(cnf, top, vpool)
 
     _new_cnf = CNFPlus
 
@@ -270,7 +231,7 @@ class PBEnc(object):
             raise TypeError("PB bound must be an integer.")
         if isinstance(encoding, bool) or not isinstance(encoding, int):
             raise TypeError("PB encoding must be an integer.")
-        if encoding < 0 or encoding > 7:
+        if encoding < 0 or encoding > 8:
             raise(NoSuchEncodingError(encoding))
 
         # checking if the bound is meaningless for any encoding
@@ -304,7 +265,7 @@ class PBEnc(object):
             else:  # comparator == '='
                 satisfied = bound == 0
             ret.nv = max(
-                [abs(int(top_id)) if top_id is not None else 0]
+                [vpool.top if vpool else (abs(int(top_id)) if top_id is not None else 0)]
                 + [abs(lit) for lit in conditionals]
             )
             if not satisfied:
@@ -312,6 +273,8 @@ class PBEnc(object):
                     ret.clauses.append([-lit for lit in conditionals])
                 else:
                     ret.clauses.append([])
+            if vpool:
+                cls._update_vids(ret, ret.nv, vpool)
             return ret
 
         # preparing weighted literals
@@ -356,6 +319,8 @@ class PBEnc(object):
                 ret.atmosts = [(lits, bound, weights),
                         (list(map(lambda l: -l, lits)), sum(weights) - bound, weights)]
 
+            if vpool:
+                cls._update_vids(ret, top_id, vpool)
             return ret
 
         assert pblib_present, 'Internal package \'hermax.internal._pblib\' is unavailable. Check your installation.'
@@ -372,11 +337,7 @@ class PBEnc(object):
 
         # updating vpool if necessary
         if vpool:
-            if vpool._occupied and vpool.top <= vpool._occupied[0][0] <= ret.nv:
-                cls._update_vids(ret, lits, vpool)
-            else:
-                vpool.top = ret.nv - 1
-                vpool._next()
+            cls._update_vids(ret, top_id, vpool)
 
         return ret
 

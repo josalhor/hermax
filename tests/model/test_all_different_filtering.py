@@ -76,6 +76,7 @@ def test_unchanged_permutations_keep_original_encoding_size(kind, n, variables, 
 
 def test_hall_filter_reduces_encoding_without_mutating_variables():
     m = Model()
+    m.set_integer_binary_threshold(None)
     xs = m.vector([m.int(f'x{i}', 0, 31 if i < 32 else 63) for i in range(64)])
     m &= xs.all_different()
     cnf = m.to_cnf()

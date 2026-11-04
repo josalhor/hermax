@@ -14,7 +14,7 @@ def test_common_branch_bound_propagates_without_assigning_flag():
 
 
 def test_common_branch_clauses_reduce_encoding_size():
-    m=Model();x=m.int('x',0,1000);y=m.int('y',0,1000);flag=m.bool('flag')
+    m=Model(); m.set_integer_binary_threshold(None);x=m.int('x',0,1000);y=m.int('y',0,1000);flag=m.bool('flag')
     before=len(m.to_cnf().clauses)
     m &= 10*x+11*y+flag<=10500
     assert len(m.to_cnf().clauses)-before==1001

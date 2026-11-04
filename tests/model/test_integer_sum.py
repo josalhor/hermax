@@ -22,6 +22,8 @@ KINDS = [LEAF, WHOLE, BINARY]
 
 @pytest.fixture(params=KINDS)
 def strategy(request, monkeypatch):
+    # These tests exercise the existing native encoders, below the new selector.
+    monkeypatch.setattr("hermax.model._integer_sum.choose_sum_encoding", lambda *a: ("current", None))
     calls = []
 
     def choose(*args, **kwargs):
@@ -117,6 +119,7 @@ def test_conditional_and_full_reification(strategy, comparator, reification):
 def test_binary_views_are_cached_once_and_comparisons_keep_literal_identity(
     monkeypatch,
 ):
+    monkeypatch.setattr("hermax.model._integer_sum.choose_sum_encoding", lambda *a: ("current", None))
     monkeypatch.setattr(selection, "choose", lambda *a, **k: BINARY)
     m = Model()
     xs = [m.int(f"x{i}", 0, 5) for i in range(4)]
@@ -165,6 +168,7 @@ def test_model_solving_and_decoding(strategy, soft):
 
 
 def test_incremental_solving_can_add_a_binary_view_after_binding(monkeypatch):
+    monkeypatch.setattr("hermax.model._integer_sum.choose_sum_encoding", lambda *a: ("current", None))
     requested = [LEAF]
     monkeypatch.setattr(selection, "choose", lambda *a, **k: requested[0])
     m = Model()

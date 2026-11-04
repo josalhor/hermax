@@ -54,9 +54,10 @@ def _nonlinear_error(lhs=None, rhs=None, op: str = "*") -> TypeError:
         return f"<{typ}>"
 
     return TypeError(
-        "Non-linear arithmetic is not supported in Model expressions. "
+        "Non-linear arithmetic requires an explicit Model operation. "
         f"Unsupported arithmetic: {_label(lhs)} {op} {_label(rhs)}. "
-        "Only scalar*Literal and scalar*Int-like products are allowed."
+        "Only scalar*Literal and scalar*Int-like products are allowed with '*'. "
+        "Use model.product(x, y) for variable products."
     )
 
 
@@ -946,6 +947,9 @@ class Literal:
     def __rmul__(self, other):
         return self.__mul__(other)
 
+    def __abs__(self):
+        return AbsExpr(self)
+
     def __add__(self, other):
         return PBExpr.from_item(self).__add__(other)
 
@@ -1014,6 +1018,13 @@ class _PBComparable:
     """Comparison operators shared by numeric PB-compatible expressions."""
 
     __slots__ = ()
+
+    def __abs__(self):
+        if isinstance(self, PBExpr) and self._model is None:
+            from ._nonlinear import expression_bounds
+            expression_bounds(self)
+            return abs(self.constant)
+        return AbsExpr(self)
 
     def _finalize_compare(self, op: str, rhs) -> "ClauseGroup":
         result = _compare_pb_operands(self, op, rhs)
@@ -1122,6 +1133,9 @@ class _LazyIntExpr(_PBComparable):
     def __rmul__(self, other):
         return self.__mul__(other)
 
+    def __neg__(self):
+        return -1 * self
+
     def __add__(self, other):
         return self._as_pbexpr().__add__(other)
 
@@ -1175,6 +1189,40 @@ class _LazyIntExpr(_PBComparable):
     def ub(self) -> int:  # pragma: no cover - overridden by subclasses
         """Upper bound for this lazy integer expression."""
         raise NotImplementedError
+
+
+class AbsExpr(_LazyIntExpr):
+    """Lazy exact absolute value of an integer expression."""
+
+    __slots__ = ("_src", "_lb", "_ub")
+
+    def __init__(self, source):
+        from ._nonlinear import expression_bounds
+        lo, hi = expression_bounds(source)
+        model = source.literal._model if isinstance(source, Term) else source._model
+        super().__init__(model)
+        if isinstance(source, PBExpr):
+            source = PBExpr._from_terms_trusted(model, list(source.terms), source.constant,
+                                               int_terms=list(source.int_terms), collapsed=True)
+        self._src = source
+        self._lb = lo if lo >= 0 else -hi if hi <= 0 else 0
+        self._ub = max(abs(lo), abs(hi))
+
+    @property
+    def lb(self):
+        return self._lb
+
+    @property
+    def ub(self):
+        return self._ub
+
+    def __abs__(self):
+        return self
+
+    def _realize(self):
+        if self._realized is None:
+            self._realized = self._model.abs(self._src)
+        return self._realized
 
 
 class DivExpr(_LazyIntExpr):

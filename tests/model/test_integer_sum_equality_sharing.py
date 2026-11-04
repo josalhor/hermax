@@ -5,6 +5,12 @@ from hermax.model import Model
 from hermax.model import _integer_sum as sums
 
 
+@pytest.fixture(autouse=True)
+def existing_encoder_only(monkeypatch):
+    # Binary equality sharing is tested below the three-way policy.
+    monkeypatch.setattr(sums, 'choose_sum_encoding', lambda *a: ('current', None))
+
+
 @pytest.mark.parametrize('choices,expected',[(('binary','binary'),['==']), (('whole','whole'),[]), (('binary','whole'),['<=']), (('whole','binary'),['>='])])
 def test_equality_shares_only_two_binary_selections(monkeypatch,choices,expected):
     calls=[];iterator=iter(choices)

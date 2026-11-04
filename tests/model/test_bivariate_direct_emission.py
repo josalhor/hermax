@@ -25,7 +25,7 @@ def test_direct_boundary_emission_matches_arithmetic(coefficients,target,op,reif
 
 
 def test_repeated_rounded_bounds_need_only_the_weakest_implications():
-    m=Model();x=m.int('x',0,10000);y=m.int('y',0,10000)
+    m=Model(); m.set_integer_binary_threshold(None);x=m.int('x',0,10000);y=m.int('y',0,10000)
     before=len(m.to_cnf().clauses);top=m._top_id()
     m &= x+1000*y<=5000000
     cnf=m.to_cnf()

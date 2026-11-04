@@ -67,9 +67,8 @@ Create a bounded integer in range ``[lb, ub]``:
 
    x = model.int("x", lb=0, ub=10)
 
-``IntVar`` uses a **ladder / order encoding** internally. This is part of the
-model contract.
-
+Integers use order encoding for domains with fewer than 64 values and binary
+encoding otherwise.
 Examples:
 
 * ``lb=0, ub=10`` -> values ``0..10``
@@ -94,7 +93,7 @@ Scalar comparisons return Boolean literals:
    model &= (x > 1)
    model &= (x == 3)
 
-These literals are exact and tied to the ladder encoding.
+These literals are exact. 
 
 The model implements exact integer relations across int variables:
 
@@ -129,17 +128,6 @@ Equality is also supported:
 
 This uses ladder relation clauses in both directions, with
 no PB/Card encoder dispatch being used for this reification shape.
-
-Performance notes
------------------
-
-These relations are implemented to respect the ladder encoding:
-
-* ``x == y`` is linear in the domain cut span
-* ``x <= y`` / ``x >= y`` are linear in the domain cut span
-* ``x != y`` is linear in overlap size and introduces no new variables
-
-This avoids naive quadratic approaches.
 
 Ladder constraints
 -------------------------
@@ -345,6 +333,31 @@ compiler may still optimize PB comparisons containing scaled integers (for
 example ``2*x + 3*y <= 17``) using internal ladder fast paths.
 
 Unary ``-x`` is equivalent to ``-1 * x`` and also returns a ``PBExpr``.
+
+Explicit products and absolute values
+-------------------------------------
+
+Use ``model.product(x, y)`` for an exact product of integer expressions or a
+Boolean literal and an integer. It returns a derived integer and supports
+signed domains:
+
+.. code-block:: python
+
+   total = model.product(quantity, price, name="total")
+   optional = model.product(enabled, quantity)
+
+.. warning::
+
+   Products can introduce substantial circuits. MaxSAT is not the best domain to express non linearities. You are warned if you use this feature.
+
+``model.abs(expr)`` materializes the exact absolute value. Python's
+``abs(expr)`` is its lazy equivalent:
+
+.. code-block:: python
+
+   deviation = abs(actual - target)
+   model &= deviation <= tolerance
+   model.obj += deviation
 
 Constant division via ``//``
 ------------------------------------------

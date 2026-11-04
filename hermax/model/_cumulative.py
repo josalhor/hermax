@@ -43,8 +43,27 @@ class _CumulativeEncoding:
         )
         self._positive = None
         self._negative = None
+        self._variable_events = any(start._binary_primary for start, _, _ in jobs)
+        self._point_loads = {}
 
     def _load(self, time):
+        if isinstance(time, IntVar):
+            key = id(time)
+            if key not in self._point_loads:
+                terms = []
+                m = self.model
+                for start, duration, demand in self.jobs:
+                    if start is time:
+                        terms.append(demand)
+                        continue
+                    active = m._predicate_bool(
+                        lambda result, s=start, d=duration: result[s] <= result[time] < result[s] + d
+                    )
+                    present = start._relop_intvar(time, "<=") & time._relop_intvar(start, "<", -duration)
+                    m._register_literal_definition(active, present.iff(active))
+                    terms.append(demand * active)
+                self._point_loads[key] = sum_expr(terms)
+            return self._point_loads[key]
         terms = []
         m = self.model
         true = m._get_bool_constant_literal(True)
@@ -58,6 +77,15 @@ class _CumulativeEncoding:
         return sum_expr(terms)
 
     def _events(self):
+        if self._variable_events:
+            # Any overload begins at an actual task start. Compare against
+            # those variable-valued events instead of enumerating wide times.
+            seen = set()
+            for start, _, _ in self.jobs:
+                if id(start) not in seen:
+                    seen.add(id(start))
+                    yield start
+            return
         if self.backend == "time":
             yield from range(self.begin, self.end)
             return
@@ -73,7 +101,7 @@ class _CumulativeEncoding:
                 lower, upper = lo, hi
         yield from range(lower, upper + 1)
 
-    def positive_parts(self):
+    def positive_parts(self, *, pairwise_only=False):
         if self._positive is not None:
             return self._positive
         m, parts = self.model, []
@@ -99,6 +127,15 @@ class _CumulativeEncoding:
                     else:
                         selector = m.bool()
                         parts.extend((left.only_if(selector), right.only_if(~selector)))
+        if pairwise_only and all(r <= self.capacity for _, _, r in self.jobs) and all(
+            ri + rj > self.capacity
+            for i, (_, _, ri) in enumerate(self.jobs)
+            for _, _, rj in self.jobs[i + 1 :]
+        ):
+            # Pairwise exclusion is sufficient when every pair overloads.
+            # Do not cache this posting-only form: reification retains load
+            # circuits so overload can propagate to its result literal.
+            return parts
         # A load increase can occur only at an actual job start, which is
         # included in the union of possible start times.
         for time in self._events():
@@ -132,9 +169,9 @@ class _CumulativeConstraint(_BooleanComposition):
         self._conditions = conditions
         super().__init__(encoding.model, self._positive_group, self._negative_group)
 
-    def _parts(self):
+    def _parts(self, *, pairwise_only=False):
         m = self._model
-        for part in self._encoding.positive_parts():
+        for part in self._encoding.positive_parts(pairwise_only=pairwise_only):
             for condition in self._conditions:
                 part = (
                     part.only_if(condition)
@@ -144,7 +181,7 @@ class _CumulativeConstraint(_BooleanComposition):
             yield part
 
     def _posting_parts(self):
-        return self._parts() if self._compiled is None else None
+        return self._parts(pairwise_only=not self._conditions) if self._compiled is None else None
 
     def _positive_group(self):
         return _parts_group(self._model, self._parts())

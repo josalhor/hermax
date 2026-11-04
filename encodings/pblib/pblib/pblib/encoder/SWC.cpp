@@ -38,38 +38,54 @@ void SWC_Encoder::encode_intern(const SimplePBConstraint& pbconstraint, ClauseDa
 
   vector<WeightedLit> const & lits = pbconstraint.getWeightedLiterals();
 
-  vector<vector<int> > s(n+1, vector<int>(k+1,0));
-
-
-  for (int i = 1; i <= n; ++i) for (int j = 1; j <= k; ++j)
+  // A prefix cannot reach a threshold larger than the sum of its weights.
+  // Store only reachable thresholds; an absent entry represents false.
+  vector<vector<int> > s(n+1);
+  int64_t prefix = 0;
+  for (int i = 1; i <= n; ++i)
+  {
+    prefix = min(k, prefix + lits[i-1].weight);
+    s[i].resize(prefix + 1, 0);
+    for (int64_t j = 1; j <= prefix; ++j)
       s[i][j] = auxvars.getVariable();
+  }
+  const auto cell = [&s](int i, int64_t j) -> int {
+    return j > 0 && j < static_cast<int64_t>(s[i].size()) ? s[i][j] : 0;
+  };
 
 
 
-  for (int i = 2; i <= n; ++i) for (int j = 1; j <= k; ++j)
+  for (int i = 2; i <= n; ++i) for (int j = 1; j < s[i-1].size(); ++j)
     formula.addClause(-s[i-1][j],s[i][j]);
 
   for (int i = 1; i <= n; ++i) for (int j = 1; j <= lits[i-1].weight; ++j)
     formula.addClause(-lits[i-1].lit, s[i][j]);
 
-  for (int i = 2; i <= n; ++i) for (int j = 1; j <= (k-lits[i-1].weight); ++j)
+  for (int i = 2; i <= n; ++i) for (int j = 1; j < s[i-1].size() && j <= (k-lits[i-1].weight); ++j)
     formula.addClause(-s[i-1][j],-lits[i-1].lit, s[i][j+lits[i-1].weight]);
 
 
   if (encodeComplete)
   {
-    for (int i = 2; i <= (int)n; ++i) for (int j = 1; j <= k; ++j)
-	formula.addClause(-s[i][j], lits[i-1].lit, s[i-1][j]);
+    for (int i = 2; i <= (int)n; ++i) for (int j = 1; j < s[i].size(); ++j)
+    {
+        int previous = cell(i-1, j);
+        if (previous) formula.addClause(-s[i][j], lits[i-1].lit, previous);
+        else formula.addClause(-s[i][j], lits[i-1].lit);
+    }
 
-    for (int i = 2; i <= (int)n; ++i)  for (int j = lits[i-1].weight + 1; j <= k; ++j)
-	formula.addClause(-s[i][j], s[i-1][j], s[i-1][j-lits[i-1].weight]);
+    for (int i = 2; i <= (int)n; ++i)  for (int j = lits[i-1].weight + 1; j < s[i].size(); ++j)
+    {
+        int previous = cell(i-1, j);
+        int reduced = cell(i-1, j-lits[i-1].weight);
+        if (previous && reduced) formula.addClause(-s[i][j], previous, reduced);
+        else if (previous || reduced) formula.addClause(-s[i][j], previous ? previous : reduced);
+        else formula.addClause(-s[i][j]);
+    }
 
     for (int j = 1; j <= lits[0].weight; ++j)
 	formula.addClause(-s[1][j], lits[0].lit);
   }
-
-  for (int j = lits[0].weight + 1; j <= k; ++j)
-	      formula.addClause(-s[1][j]);
 
   if (isInc)
   {
@@ -83,7 +99,10 @@ void SWC_Encoder::encode_intern(const SimplePBConstraint& pbconstraint, ClauseDa
   formula.addConditionals(pbconstraint.getConditionals());
 
   for (int i = 2; i <= n; ++i)
-    formula.addClause(-s[i-1][k+1-lits[i-1].weight], -lits[i-1].lit);
+  {
+    int threshold = cell(i-1, k+1-lits[i-1].weight);
+    if (threshold) formula.addClause(-threshold, -lits[i-1].lit);
+  }
 
   if (pbconstraint.getComparator() == BOTH)
   {

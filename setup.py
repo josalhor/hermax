@@ -41,8 +41,31 @@ def _run_logged(cmd, *, cwd, env, log_path):
 
 
 class CMakeBuild(build_ext):
+    @staticmethod
+    def _is_encoder_extension(ext):
+        return ext.name in {
+            "hermax.internal._pblib", "hermax.internal._pbamo",
+            "hermax.internal._integer_sum_native",
+        }
+
+    @staticmethod
+    def _encoder_lto_args(env):
+        value = env.get("HERMAX_ENCODER_LTO", "auto").strip().lower()
+        if value == "auto":
+            return []
+        if value in {"1", "on", "true"}:
+            return ["-DHERMAX_ENCODER_LTO=ON"]
+        if value in {"0", "off", "false"}:
+            return ["-DHERMAX_ENCODER_LTO=OFF"]
+        raise ValueError("HERMAX_ENCODER_LTO must be auto, on, or off.")
+
+    @staticmethod
+    def _unoptimized_flags(flags):
+        flags = re.sub(r"(?<!\S)-O(?:[0-3sgz]|fast)?(?=\s|$)", "", flags)
+        return f"{flags} -O0 -UNDEBUG".strip()
+
     def _native_core_reuse_enabled(self):
-        """Reuse non-Python solver archives only when wheel builds opt in."""
+        """Reuse native core archives only when wheel builds opt in."""
         return os.environ.get("HERMAX_REUSE_NATIVE_CORES", "").strip() == "1"
 
     def _native_core_cache_dir(self, env):
@@ -77,6 +100,9 @@ class CMakeBuild(build_ext):
             "msystem": env.get("MSYSTEM", ""),
             "mingw_prefix": env.get("MINGW_PREFIX", ""),
         }
+        if env.get("HERMAX_ENCODER_CACHE_POLICY"):
+            fingerprint["encoder_policy"] = env["HERMAX_ENCODER_CACHE_POLICY"]
+            fingerprint["encoder_lto"] = env.get("HERMAX_ENCODER_LTO", "auto").strip().lower()
         encoded = json.dumps(fingerprint, sort_keys=True).encode("utf-8")
         key = hashlib.sha256(encoded).hexdigest()[:20]
         path = Path(tempfile.gettempdir()) / "hermax-native-cores" / key
@@ -168,9 +194,11 @@ class CMakeBuild(build_ext):
         return None
 
     def _prepare_cmake_native_core(self, ext, env):
-        """Build a solver-only CMake target once per platform/toolchain."""
+        """Build a CMake core target once per platform/toolchain."""
         spec = CMAKE_NATIVE_CORE_SPECS.get(ext.name)
         if spec is None or not self._native_core_reuse_enabled():
+            return None
+        if self.debug and self._is_encoder_extension(ext):
             return None
 
         source_roots = [os.path.abspath(path) for path in spec["source_roots"]]
@@ -202,6 +230,8 @@ class CMakeBuild(build_ext):
             f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS', '')}",
             f"-DCMAKE_C_FLAGS={env.get('CFLAGS', '')}",
         ]
+        if self._is_encoder_extension(ext):
+            cmake_args.extend(self._encoder_lto_args(env))
         subprocess.check_call(["cmake", *cmake_args], cwd=build_dir, env=env)
         subprocess.check_call(
             ["cmake", "--build", ".", "--target", spec["target"], "--config", "Release", "-j"],
@@ -396,6 +426,16 @@ if %errorlevel%==0 (
     def build_extension(self, ext):
         # Support regular setuptools Extension modules alongside CMake ones.
         if not isinstance(ext, CMakeExtension):
+            if self.debug and ext.name in {"hermax.internal._clauses", "hermax_pycard"}:
+                previous = ext.extra_compile_args
+                if platform.system() == "Windows":
+                    ext.extra_compile_args = [f for f in previous if f not in {"/O2", "/DNDEBUG", "-DNDEBUG"}] + ["/Od", "/UNDEBUG"]
+                else:
+                    ext.extra_compile_args = self._unoptimized_flags(" ".join(previous)).split()
+                try:
+                    return build_ext.build_extension(self, ext)
+                finally:
+                    ext.extra_compile_args = previous
             return build_ext.build_extension(self, ext)
 
         abi_tag = sysconfig.get_config_var("SOABI") or f"cp{sys.version_info.major}{sys.version_info.minor}"
@@ -412,6 +452,11 @@ if %errorlevel%==0 (
         
         cfg = "Debug" if self.debug else "Release"
         env = self.get_base_env()
+        if self._is_encoder_extension(ext):
+            env["HERMAX_ENCODER_CACHE_POLICY"] = "hidden-release-ipo-v1"
+            if self.debug and (platform.system() != "Windows" or self._is_mingw_toolchain(env)):
+                for key in ("CFLAGS", "CXXFLAGS"):
+                    env[key] = self._unoptimized_flags(env.get(key, ""))
 
         if platform.system() == "Windows" and "openwbo" in ext.name and not self._is_mingw_toolchain(env):
             raise RuntimeError(
@@ -438,6 +483,8 @@ if %errorlevel%==0 (
             f"-DCMAKE_C_FLAGS={env.get('CFLAGS', '')}",
         ]
         core_archive = self._prepare_cmake_native_core(ext, env)
+        if self._is_encoder_extension(ext):
+            cmake_args.extend(self._encoder_lto_args(env))
         if core_archive:
             cmake_args.append(f"-DHERMAX_CORE_ARCHIVE={core_archive}")
         if ext.name == "hermax.internal._pblib":
@@ -1771,12 +1818,12 @@ CMAKE_NATIVE_CORE_SPECS = {
     "hermax.internal._pblib": {
         "component": "pblib",
         "target": "pblib_core",
-        "source_roots": ["encodings/pblib"],
+        "source_roots": ["encodings/pblib", "encodings/common"],
     },
     "hermax.internal._pbamo": {
         "component": "pbamo",
         "target": "pbamo_core",
-        "source_roots": ["encodings/pbamo", "hermax/internal/native"],
+        "source_roots": ["encodings/pbamo", "encodings/common", "hermax/internal/native"],
     },
     CORETRAIL_EXTENSION_NAME: {
         "component": "coretrail",
@@ -1813,7 +1860,7 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
 
 setup(
     name="hermax",
-    version="1.3.1",
+    version="1.3.2",
     author="Josep Maria Salvia Hornos",
     author_email="josh.salvia@gmail.com",
     description="A Python library of incremental MaxSAT solvers",

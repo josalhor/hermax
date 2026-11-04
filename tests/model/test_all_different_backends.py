@@ -310,6 +310,7 @@ def test_mixed_integer_all_different_avoids_pairwise_growth(reified):
     from hermax.model import IntVector
 
     m = Model()
+    m.set_integer_binary_threshold(None)
     xs = IntVector(m, "xs", [m.int(f"x{i}", 0, 100 + (i == 0)) for i in range(64)])
     condition = xs.all_different()
     m &= condition.iff(m.bool("flag")) if reified else condition

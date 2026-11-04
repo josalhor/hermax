@@ -13,6 +13,7 @@ from hermax.internal import _encoding_policy as policy
 from ._counting import count_thresholds, count_clause_upper, merge_thresholds, _append_implication
 from ._weighted_integer_sum import compile_weighted_sum
 from ._integer_affine import extract_integer_sum
+from ._binary_integer import uses_binary_integer, compile_pb as compile_binary_integer_pb
 from hermax.internal.pb_normalize import normalize_signed_terms
 
 from typing import TYPE_CHECKING, Any
@@ -510,7 +511,7 @@ class _EncoderDispatch:
 
     @staticmethod
     def _try_unary_adder_eq_fastpath(model: "Model", lhs: PBExpr, op: str, rhs: PBExpr) -> ClauseGroup | None:
-        """Detect and compile ``x + y == z`` (affine-shifted) via unary merge network."""
+        """Compile shifted addition using direct thresholds or a unary merge."""
         if op != "==":
             return None
         addition = _EncoderDispatch._extract_addition(model, lhs, op, rhs)
@@ -527,6 +528,9 @@ class _EncoderDispatch:
         #   sum(c_i * (cnt_i + lb_i)) + (loff - roff) == 0
         # -> sum(c_i * cnt_i) == - (sum(c_i * lb_i) + (loff - roff))
         delta = target - x.lb - y.lb + z.lb
+        # Up to 32 values per operand: favor stronger propagation and no auxiliaries.
+        if max(nx, ny, nz) <= 31:
+            return _EncoderDispatch._compile_addition_eq_direct(model, x, y, z, delta)
         if addition_encoding(nx, ny, nz, delta, equality=True) == 'general':
             return compile_sum(model, coeff_items, -delta, "==")
 
@@ -563,6 +567,37 @@ class _EncoderDispatch:
             model, x, y, z, target, equality=True
         ))
         return ClauseGroup(model, clauses)
+
+    @staticmethod
+    def _compile_addition_eq_direct(model, x, y, z, delta):
+        """Encode addition with no auxiliaries, using minimal violating triples."""
+        rows = [list(variable._threshold_ids()) for variable in (x, y, z)]
+        # x_count + y_count - z_count == delta. Complement z so all
+        # three counts increase in the same direction.
+        rows[2] = [-lit for lit in reversed(rows[2])]
+        bound = delta + len(rows[2])
+        total = sum(map(len, rows))
+        clauses = []
+        for chains, limit in (
+            (rows, bound),
+            ([[-lit for lit in reversed(row)] for row in rows], total - bound),
+        ):
+            if limit < 0:
+                return ClauseGroup._from_dimacs_trusted(model, [[]])
+            if limit >= total:
+                continue
+            chains = sorted(chains, key=len)
+            a, b, c = map(len, chains)
+            # Each triple sums to limit+1: these are precisely the minimal
+            # violations of the bound. Count zero is constant true.
+            for i in range(a + 1):
+                for j in range(max(0, limit + 1 - i - c), min(b, limit + 1 - i) + 1):
+                    k = limit + 1 - i - j
+                    clauses.append([
+                        -row[count - 1]
+                        for row, count in zip(chains, (i, j, k)) if count
+                    ])
+        return ClauseGroup._from_dimacs_trusted(model, clauses)
 
 
     @staticmethod
@@ -925,6 +960,51 @@ class _EncoderDispatch:
             return result
         swapped = {"<=": ">=", "<": ">", ">=": "<=", ">": "<"}
         return compile_oriented(rhs, swapped[op], lhs)
+
+    @staticmethod
+    def _try_integer_sum_bigm_fastpath(model, lhs, op, rhs):
+        """Split a domain-extremal branch from an unconditional integer bound."""
+        if op not in ("<=", "<", ">=", ">"):
+            return None
+
+        def oriented(main, comparison, affine):
+            indicator = _EncoderDispatch._extract_single_weighted_bool_affine(model, affine)
+            if indicator is None:
+                return None
+            extracted = _EncoderDispatch._extract_multi_int_affine(model, main)
+            if extracted is None:
+                return None
+            items, offset = extracted
+            if len(items) < 2:
+                return None
+            flag, weight, constant = indicator
+            sign = 1 if comparison in ("<=", "<") else -1
+            strict = int(comparison in ("<", ">"))
+            minimum = sign * offset + sum(
+                sign * c * (x.lb if sign * c > 0 else x.ub)
+                for x, c in items
+            )
+            false_bound = sign * constant - strict
+            true_bound = false_bound + sign * weight
+            lower, upper = sorted((false_bound, true_bound))
+            if lower != minimum or upper == lower:
+                return None
+            gate = ~flag if false_bound == lower else flag
+            # Both branches obey the relaxed bound. The tighter branch equals
+            # the domain minimum, so every term must attain its endpoint.
+            group = _EncoderDispatch.compile(
+                model, main * sign, "<=", PBExpr.from_item(upper),
+            )
+            for x, coefficient in items:
+                endpoint = x.lb if sign * coefficient > 0 else x.ub
+                group = group & (x == endpoint).only_if(gate)
+            return group
+
+        result = oriented(lhs, op, rhs)
+        if result is not None:
+            return result
+        flipped = {"<=": ">=", "<": ">", ">=": "<=", ">": "<"}
+        return oriented(rhs, flipped[op], lhs)
 
     @staticmethod
     def _affine_leq_cuts(width_x, step_x, width_y, step_y, bound):
@@ -1501,6 +1581,8 @@ class _EncoderDispatch:
         """Compile a PB comparison with fast paths and PB/Card fallback."""
         lhs = lhs._realize_int_terms(model)
         rhs = rhs._realize_int_terms(model)
+        if uses_binary_integer(model, lhs, rhs):
+            return compile_binary_integer_pb(model, lhs, op, rhs)
         unary_adder_eq_fast = _EncoderDispatch._try_unary_adder_eq_fastpath(model, lhs, op, rhs)
         if unary_adder_eq_fast is not None:
             model._debug(model.DEBUG_COMPILE, f"encode path=fast_unary_adder_eq op={op} clauses={len(unary_adder_eq_fast)}")
@@ -1520,6 +1602,9 @@ class _EncoderDispatch:
         if mixed_bigm_fast is not None:
             model._debug(model.DEBUG_COMPILE, f"encode path=fast_mixed_bigm op={op} clauses={len(mixed_bigm_fast)}")
             return mixed_bigm_fast
+        integer_bigm_fast = _EncoderDispatch._try_integer_sum_bigm_fastpath(model, lhs, op, rhs)
+        if integer_bigm_fast is not None:
+            return integer_bigm_fast
         affine_fast = _EncoderDispatch._try_small_integer_fastpath(model, lhs, op, rhs)
         if affine_fast is not None:
             model._debug(model.DEBUG_COMPILE, f"encode path=fast_integer op={op} clauses={len(affine_fast)}")

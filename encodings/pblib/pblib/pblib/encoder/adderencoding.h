@@ -53,7 +53,7 @@ private:
   Lit HA_carry(Lit a, Lit b);
   void FA_extra( Lit xc, Lit xs, Lit a, Lit b, Lit c );
 
-  void adderTree(std::vector<std::queue<Lit>> & buckets, std::vector<Lit> & result);
+  void adderTree(std::vector<std::queue<Lit>> & buckets, std::vector<Lit> & result, int omit_low);
 
   static void lessThanOrEqual(std::vector< Lit >& xs, std::vector< int32_t >& ys, ClauseDatabase & formula);
 //   static void greaterThanOrEqual(std::vector< Lit >& xs, std::vector< int32_t >& ys, ClauseDatabase & formula);

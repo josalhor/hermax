@@ -10,6 +10,7 @@ from hermax.model import Model, PBExpr
 @pytest.mark.parametrize("reverse", [False, True])
 def test_zero_integer_product_does_not_materialize_thresholds(reverse):
     m = Model()
+    m.set_integer_binary_threshold(None)
     x = m.int("x", -7, 9993)
     before = m._top_id(), len(m._hard)
     expression = 0 * x if reverse else x * 0
@@ -27,6 +28,7 @@ def test_zero_integer_product_does_not_materialize_thresholds(reverse):
 @pytest.mark.parametrize("weighted", [False, True])
 def test_zero_bound_integer_sums_use_one_boundary_unit_per_integer(weighted):
     m = Model()
+    m.set_integer_binary_threshold(None)
     xs = m.int_vector("x", 6, 0, 1000)
     before = m._top_id(), len(m._hard)
     expression = sum((i + 1 if weighted else 1) * x for i, x in enumerate(xs))
@@ -40,6 +42,7 @@ def test_zero_bound_integer_sums_use_one_boundary_unit_per_integer(weighted):
 @pytest.mark.parametrize("form", ["plus_zero", "difference"])
 def test_arithmetic_comparisons_at_touching_domains_use_only_two_units(form):
     m = Model()
+    m.set_integer_binary_threshold(None)
     x, y = m.int("x", 1000, 2000), m.int("y", 0, 1000)
     before = m._top_id(), len(m._hard)
     m &= x + 0 <= y if form == "plus_zero" else x - y <= 0
@@ -70,6 +73,7 @@ def test_zero_bound_signed_cuts_and_plain_booleans_propagate_when_enabled():
 @pytest.mark.parametrize("negative_domains", [False, True])
 def test_weighted_comparisons_merge_equivalent_impossible_consequences(negative_domains):
     m = Model()
+    m.set_integer_binary_threshold(None)
     if negative_domains:
         x, y = m.int("x", -1500, -500), m.int("y", -1000, 0)
         expression = -3 * x + 2 * y

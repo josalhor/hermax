@@ -59,6 +59,7 @@ public:
     int commander_encoding_k = 3;
     int64_t MAX_CLAUSES_PER_CONSTRAINT = 1000000;
     bool use_formula_cache = false;
+    bool use_bounded_bdd_adder = false;
     bool print_used_encodings = false;
     bool check_for_dup_literals = false;
     bool use_gac_binary_merge = false;

@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(hermax_pbamo LANGUAGES CXX)
+include(../common/CompilerOptions.cmake)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,6 +25,7 @@ if(HERMAX_CORE_ARCHIVE)
 else()
     add_library(pbamo_core STATIC ${PBAMO_CORE_SOURCES})
     target_include_directories(pbamo_core PUBLIC "${PBAMO_INCLUDE_DIR}" "${PBAMO_SRC_DIR}" "${HERMAX_NATIVE_INCLUDE_DIR}")
+    hermax_encoder_options(pbamo_core)
 endif()
 
 if(HERMAX_CORE_ONLY)
@@ -40,6 +42,7 @@ if(NOT PYTHON_EXTENSION_SUFFIX)
 endif()
 
 add_library(_pbamo MODULE src/pbamo_capi.cpp)
+hermax_encoder_options(_pbamo)
 target_include_directories(_pbamo PRIVATE "${PBAMO_INCLUDE_DIR}" "${PBAMO_SRC_DIR}" "${HERMAX_NATIVE_INCLUDE_DIR}")
 target_link_libraries(_pbamo PRIVATE Python3::Module pbamo_core)
 set_target_properties(_pbamo PROPERTIES

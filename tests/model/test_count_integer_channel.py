@@ -14,7 +14,7 @@ def test_narrow_total_uses_bounded_counter():
 def test_impossible_upper_region_needs_one_boundary_cut():
     counts=[]
     for upper in (100,1000):
-        m=Model();bits=m.bool_vector('b',8);total=m.int('total',0,upper)
+        m=Model(); m.set_integer_binary_threshold(None);bits=m.bool_vector('b',8);total=m.int('total',0,upper)
         before=len(m.to_cnf().clauses)
         m &= total==sum_expr(bits)
         counts.append(len(m.to_cnf().clauses)-before)

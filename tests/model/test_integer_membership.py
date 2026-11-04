@@ -51,6 +51,7 @@ def test_integer_membership_preserves_boolean_contexts(path, mode, allowed):
 @pytest.mark.parametrize("path", ["table", "lookup"])
 def test_integer_membership_excludes_whole_gaps_without_helpers(path):
     model = Model()
+    model.set_integer_binary_threshold(None)
     x = model.int("x", 0, 1000)
     before = model._top_id(), len(model._hard)
     model &= _membership(model, x, range(200, 801), path)

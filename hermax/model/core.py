@@ -43,6 +43,7 @@ from hermax.internal._clause_storage import (
 )
 from hermax.internal.operation_cache import OperationCache, _Identity, cached_operation
 from ._cumulative import cumulative_constraint
+from ._binary_integer import uses_binary_integer
 from ._objective import (
     ObjectiveTerm,
     apply_soft_weights,
@@ -914,6 +915,8 @@ class Model:
         "_debug_level",
         "_debug_stream",
         "_encoding_profile",
+        "_binary_min_domain",
+        "_binary_int_bits",
     )
 
     # Global default policy (instance copies this value at construction).
@@ -927,6 +930,8 @@ class Model:
     DEBUG_VERBOSE = 3
 
     def __init__(self):
+        self._binary_min_domain = 64
+        self._binary_int_bits: set[int] = set()
         self._next_id = 1
         self._registry: dict[str, Literal] = {}
         self._lits_by_id: dict[int, Literal] = {}
@@ -984,6 +989,19 @@ class Model:
             raise ValueError("debug level must be a non-negative integer.")
         self._debug_level = int(level)
         self._debug_stream = stream
+
+    def set_integer_binary_threshold(self, min_domain: int | None = 64) -> None:
+        """Use binary for new integer domains of at least this many values.
+
+        ``None`` selects order encoding for new integers. Existing integers
+        and views retain their representation. The setting also applies to
+        integers created by vectors, matrices, and derived operations.
+        """
+        if min_domain is not None and (
+            isinstance(min_domain, bool) or not isinstance(min_domain, int) or min_domain < 2
+        ):
+            raise ValueError("min_domain must be an integer >= 2 or None.")
+        self._binary_min_domain = min_domain
 
     def set_merge_pb_optimization(self, enabled: bool = True) -> None:
         """Enable or disable deferred PB batch merge optimization."""
@@ -1588,7 +1606,7 @@ class Model:
         return EnumVar(self, name, choices=choices, nullable=nullable)
 
     def int(self, name: str, lb: int, ub: int) -> IntVar:
-        """Create a ladder-encoded bounded integer variable over domain ``[lb, ub]``."""
+        """Create an integer over ``[lb, ub]`` using the automatic model policy."""
         self._validate_int_domain(lb, ub)
         self._reserve_container_name(name)
         return IntVar(self, name, lb=lb, ub=ub)
@@ -1636,6 +1654,23 @@ class Model:
         self._reserve_container_name(name)
         return IntSetVar(self, name, universe)
 
+    def product(self, x, y, name: Optional[str] = None) -> IntVar:
+        """Return the exact product of two bounded integer expressions.
+
+        Boolean factors use direct gating.
+        """
+        from ._nonlinear import product
+        return product(self, x, y, name=name)
+
+    def abs(self, expr, name: Optional[str] = None) -> IntVar:
+        """Return an exact absolute-value integer, independent of the objective.
+
+        ``abs(expr)`` is the lazy equivalent. Known signs fold to a linear
+        expression; mixed signs use two guarded equalities.
+        """
+        from ._nonlinear import absolute
+        return absolute(self, expr, name=name)
+
     @cached_operation(normalize={"x": _realize_integer_source})
     def floor_div(self, x: IntVar | _LazyIntExpr, divisor: int, name: Optional[str] = None) -> IntVar:
         """Materialize a quotient integer ``x // divisor`` using ladder threshold ties."""
@@ -1657,6 +1692,15 @@ class Model:
         out_name = self._reserve_name(None) if name is None else name
         self._reserve_container_name(out_name)
         out = IntVar(self, out_name, lb=out_lb, ub=out_ub)
+
+        if x._binary_primary or out._binary_primary:
+            if out_lb != out_ub:
+                remainder = self.int(self._reserve_name(None), 0, divisor - 1)
+                definition = self._compile_pb_compare(
+                    PBExpr.from_item(x), "==", PBExpr.from_item(divisor * out + remainder)
+                )
+                out._register_value_definition(definition)
+            return out
 
         clauses = []
         for q_val in range(out.lb + 1, out.ub + 1):
@@ -1688,6 +1732,13 @@ class Model:
         out_name = self._reserve_name(None) if name is None else name
         self._reserve_container_name(out_name)
         out = IntVar(self, out_name, lb=out_lb, ub=out_ub)
+
+        if x._binary_primary or out._binary_primary:
+            if out_lb != out_ub:
+                out._register_value_definition(self._compile_pb_compare(
+                    PBExpr.from_item(out), "==", PBExpr.from_item(factor * x)
+                ))
+            return out
 
         clauses = []
         for k in range(x.lb + 1, x.ub + 1):
@@ -1733,6 +1784,12 @@ class Model:
         out_name = self._reserve_name(None) if name is None else name
         out = self.int(out_name, expr.lb, expr.ub)
         if out.lb == out.ub:
+            return out
+        if x._binary_primary or out._binary_primary:
+            quotient = self.int(self._reserve_name(None), x.lb // divisor, x.ub // divisor)
+            out._register_value_definition(self._compile_pb_compare(
+                PBExpr.from_item(x), "==", PBExpr.from_item(divisor * quotient + out)
+            ))
             return out
         clauses = []
         # An input value is the interval between two neighboring thresholds.
@@ -1787,6 +1844,15 @@ class Model:
         out_name = self._reserve_name(None) if name is None else name
         z = self.int(out_name, lb=out_lb, ub=out_ub)
         is_max = kind == "max"
+        if z._binary_primary or any(x._binary_primary for x in items):
+            witnesses = []
+            for item in items:
+                self &= (item <= z) if is_max else (z <= item)
+                witness = self.bool()
+                self &= (z == item).only_if(witness)
+                witnesses.append(witness)
+            self &= Clause(self, witnesses)
+            return z
         for k in range(z.lb + 1, z.ub + 1):
             zk = z >= k
             sources = [x >= k for x in items if x.lb < k <= x.ub]
@@ -2021,12 +2087,24 @@ class Model:
         if name is not None:
             self._assert_names_available(*(f"{name}_step{i}" for i in range(len(items_list) - 1)))
 
+        out_lb = sum(item.lb for item in items_list)
+        out_ub = sum(item.ub for item in items_list)
+        fixed_sum = sum(item.lb != item.ub for item in items_list) <= 1
+        binary = not fixed_sum and (any(item._binary_primary for item in items_list) or (
+            self._binary_min_domain is not None and out_ub - out_lb + 1 >= self._binary_min_domain
+        ))
+        if binary:
+            out_name = f"{name}_step{len(items_list) - 2}" if name is not None else None
+            out = self.int(self._reserve_name(out_name), out_lb, out_ub)
+            self &= compile_binary_sum(self, [(item, 1) for item in items_list] + [(out, -1)], 0, "==")
+            return out
+
         countable = all(item.ub - item.lb == 1 for item in items_list)
         if countable:
             expression = sum_expr(items_list)
             count = _EncoderDispatch._extract_unit_bool_sum_affine(self, expression)
             countable = count is not None and len(count[0]) == len(items_list)
-        compact = not countable and sum_tree_exceeds_limit(
+        compact = not fixed_sum and not countable and sum_tree_exceeds_limit(
             item.ub - item.lb for item in items_list
         )
         if countable or compact:
@@ -2046,7 +2124,7 @@ class Model:
         from heapq import heapify, heappop, heappush
 
         def _ladder_width(v: IntVar) -> int:
-            return len(v._threshold_lits)
+            return v.ub - v.lb
 
         heap: list[tuple[int, int, IntVar]] = [
             (_ladder_width(v), idx, v) for idx, v in enumerate(items_list)
@@ -2070,6 +2148,40 @@ class Model:
             step += 1
 
         return heap[0][2]
+
+    def all_equal_except(self, items, excluded=(0,)):
+        """Return equality of all items whose values are not excluded.
+
+        Post the returned constraint with ``model &=``. Excluded values may
+        occur freely; conditional enforcement is supported with ``only_if``.
+        """
+        from ._globals import all_equal_except
+        return all_equal_except(self, items, excluded)
+
+    def all_different_except(self, items, excluded=(0,)):
+        """Return distinctness except for repeatable excluded integer values."""
+        from ._globals import all_different_except
+        return all_different_except(self, items, excluded)
+
+    def precedence(self, items, values):
+        """Return value precedence using shared prefix signals."""
+        from ._globals import precedence
+        return precedence(self, items, values)
+
+    def regular(self, items, transitions, start, accepting):
+        """Return finite-automaton membership; transitions are (source, value, target)."""
+        from ._globals import regular
+        return regular(self, items, transitions, start, accepting)
+
+    def mdd(self, items, transitions, start):
+        """Return membership in a deterministic layered MDD with one terminal."""
+        from ._globals import mdd
+        return mdd(self, items, transitions, start)
+
+    def no_overlap(self, starts, durations, *, backend="auto"):
+        """Return non-overlap of fixed nonnegative durations; zero occupies no time."""
+        starts = tuple(starts)
+        return self.cumulative(starts, durations, [1] * len(starts), 1, backend=backend)
 
     def cumulative(
         self,
@@ -2716,6 +2828,12 @@ class Model:
             self._validate_integral_pbexpr(lhs_r)
             self._validate_integral_pbexpr(rhs_r)
 
+            if uses_binary_integer(self, lhs_r, rhs_r):
+                group = self._compile_pb_compare(lhs_r, constraint._op, rhs_r)
+                for condition in constraint._conditions:
+                    group = group.only_if(condition)
+                return group
+
             eager_fast = None
             for fast_try in (
                 _EncoderDispatch._try_unary_adder_eq_fastpath,
@@ -2723,6 +2841,7 @@ class Model:
                 _EncoderDispatch._try_int_equals_unit_bool_sum_fastpath,
                 _EncoderDispatch._try_boolsum_bigm_fastpath,
                 _EncoderDispatch._try_mixed_int_boolsum_bigm_fastpath,
+                _EncoderDispatch._try_integer_sum_bigm_fastpath,
                 _EncoderDispatch._try_small_integer_fastpath,
             ):
                 out = fast_try(self, lhs_r, constraint._op, rhs_r)

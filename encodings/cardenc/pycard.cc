@@ -290,10 +290,12 @@ PyMODINIT_FUNC inithermax_pycard(void)
 //=============================================================================
 static bool pyiter_to_vector(PyObject *obj, vector<int>& vect)
 {
-	// Fast path for sequences (list/tuple and sequence-like objects).
-	// This avoids iterator protocol overhead and allows up-front reservation.
-	PyObject *seq = PySequence_Fast(obj, NULL);
-	if (seq != NULL) {
+	// Lists and tuples can be inspected without consuming a one-shot iterator.
+	// For other iterables, stream below so iteration errors are never discarded.
+	if (PyList_Check(obj) || PyTuple_Check(obj)) {
+		PyObject *seq = PySequence_Fast(obj, "iterable expected");
+		if (seq == NULL)
+			return false;
 		Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
 		if (n > 0)
 			vect.reserve(vect.size() + (size_t)n);
@@ -321,29 +323,17 @@ static bool pyiter_to_vector(PyObject *obj, vector<int>& vect)
 		return true;
 	}
 
-	// If this failed because object is not a sequence, continue with iterator path.
-	PyErr_Clear();
-
 	PyObject *i_obj = PyObject_GetIter(obj);
+	if (i_obj == NULL)
+		return false;
 
-	if (i_obj == NULL) {
-		PyErr_SetString(PyExc_RuntimeError,
-				"Object does not seem to be an iterable.");
+	const Py_ssize_t hint = PyObject_LengthHint(i_obj, 0);
+	if (hint < 0) {
+		Py_DECREF(i_obj);
 		return false;
 	}
-
-	PyObject *hint_obj = PyObject_CallMethod(i_obj, "__length_hint__", NULL);
-	if (hint_obj != NULL) {
-		if (pyint_check(hint_obj)) {
-			int hint = pyint_to_cint(hint_obj);
-			if (hint > 0)
-				vect.reserve(vect.size() + (size_t)hint);
-		}
-		Py_DECREF(hint_obj);
-	}
-	else {
-		PyErr_Clear();
-	}
+	if (hint > 0)
+		vect.reserve(vect.size() + static_cast<size_t>(hint));
 
 	PyObject *l_obj;
 	while ((l_obj = PyIter_Next(i_obj)) != NULL) {

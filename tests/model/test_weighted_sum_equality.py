@@ -18,6 +18,7 @@ from hermax.model.expressions import PBExpr
 
 def assignment():
     model = Model()
+    model.set_integer_binary_threshold(None)
     x = model.bool_matrix('x', 4, 4)
     for i in range(4):
         model &= sum(x[i, j] for j in range(4)) == 1
@@ -98,6 +99,7 @@ def test_fast_path_is_deterministic():
 
 def test_public_value_exclusions_propagate_through_the_graph():
     model = Model()
+    model.set_integer_binary_threshold(None)
     bits = [model.bool() for _ in range(3)]
     total = model.int('t', 0, 68)
     weights = [13, 21, 34]
@@ -196,6 +198,7 @@ def test_grouped_sum_with_signed_inputs_and_optional_guard(reverse, conditional)
 
 def test_equal_weights_use_the_counting_fast_path():
     model = Model()
+    model.set_integer_binary_threshold(None)
     bits = [model.bool() for _ in range(64)]
     total = model.int('t', 0, 128)
     with patch.object(PBEnc, 'equals', side_effect=AssertionError('PB encoded')):
@@ -214,6 +217,7 @@ def test_equal_weights_use_the_counting_fast_path():
 def test_count_network_public_value_propagation():
     for size in (8, 16, 32):
         model = Model()
+        model.set_integer_binary_threshold(None)
         bits = [model.bool() for _ in range(size)]
         total = model.int('t', 0, 4*size)
         model &= total == sum(4*bit for bit in bits)

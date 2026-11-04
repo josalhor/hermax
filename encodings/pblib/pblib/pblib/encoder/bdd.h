@@ -28,6 +28,7 @@ class BDD_Encoder : public Encoder
 {
 private:
   bool canceled = false;
+  int64_t auxiliary_limit = -1;
 
   struct build_data
   {
@@ -58,7 +59,7 @@ private:
 
 public:
   bool wasToBig() const;
-  void bddEncode(const SimplePBConstraint& pbconstraint, ClauseDatabase & formula, AuxVarManager & auxvars, bool noLimit = true, int64_t maxClauses = 0);
+  void bddEncode(const SimplePBConstraint& pbconstraint, ClauseDatabase & formula, AuxVarManager & auxvars, bool noLimit = true, int64_t maxClauses = 0, int64_t maxAuxiliaries = -1);
   void encode(const SimplePBConstraint& pbconstraint, ClauseDatabase& formula, AuxVarManager& auxvars);
 
   int64_t encodingValue(const SimplePBConstraint& pbconstraint);

@@ -18,6 +18,8 @@ def compile_weighted_sum(
     model: "Model", items: list[tuple["IntVar", int]], bound: int, comparator: str
 ) -> ClauseGroup:
     """Compile weighted integer counts, retaining any separate AMO/EO clauses."""
+    if any(owner._binary_primary for owner, _ in items):
+        return compile_binary_sum(model, items, bound, comparator)
     divisor = reduce(gcd, (abs(c) for _, c in items))
     if comparator == "==" and bound % divisor:
         return ClauseGroup._from_dimacs_trusted(model, [[]])

@@ -34,6 +34,7 @@ def test_large_weighted_equality_delegates_before_allocating_value_helpers(warm)
 
 def test_sparse_large_weights_keep_the_cheap_specialized_construction():
     model = Model()
+    model.set_integer_binary_threshold(None)
     bits = model.bool_vector("b", 8)
     weights = [1001, 1002] * 4
     total = model.int("total", 0, sum(weights))
@@ -72,6 +73,7 @@ def test_weighted_growth_fallback_preserves_gating_and_reification(warm, monkeyp
 @pytest.mark.parametrize("equality", [False, True])
 def test_narrow_large_addition_stays_small(equality):
     model = Model()
+    model.set_integer_binary_threshold(None)
     x, y = model.int("x", 0, 2048), model.int("y", 0, 2048)
     z = model.int("z", 0, 1)
     before = len(model.to_cnf().clauses)

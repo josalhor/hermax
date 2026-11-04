@@ -20,6 +20,7 @@ def test_declaration_and_decode_do_not_materialize_threshold_literals(monkeypatc
 
     monkeypatch.setattr(Literal, "__init__", record)
     model = Model()
+    model.set_integer_binary_threshold(None)
     value = model.int("value", -2, 98)
     assert calls == []
     assert model.decode_model([1, -2, 3, -100]).val(value) == 0

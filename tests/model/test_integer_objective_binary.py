@@ -154,6 +154,7 @@ def test_tier_binary_objective_solves_with_shifted_bound():
 @pytest.mark.parametrize("style", ["add", "set", "tier"])
 def test_direct_integer_objective_preserves_lazy_thresholds(lb, width, cached, style):
     m = Model()
+    m.set_integer_binary_threshold(None)
     x = m.int("x", lb, lb + width)
     if cached:
         x._get_binary_view()

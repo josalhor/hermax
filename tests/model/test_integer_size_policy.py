@@ -12,6 +12,8 @@ from hermax.model import _integer_sum
 
 @pytest.mark.parametrize("comparison,estimate", [("<=", 40000), ("<=", 40001), ("==", 20000), ("==", 20001)])
 def test_order_limit_counts_the_complete_equality(monkeypatch, comparison, estimate):
+    # Exercise the native encoder's budget boundary, below the three-way policy.
+    monkeypatch.setattr(_integer_sum, "choose_sum_encoding", lambda *args: ("current", None))
     monkeypatch.setattr(_integer_sum, "assess", lambda *args: Costs(Size(0, estimate), Size(0, estimate), 2))
     monkeypatch.setattr(_integer_sum.selection, "choose", lambda *args, **kwargs: WHOLE)
     routes = []
@@ -53,7 +55,7 @@ def test_compact_weighted_route_matches_arithmetic(monkeypatch, context, op):
                 atoms = [atom for x, value in zip(xs, values) for atom in x._exact_value_atoms(value)]
                 atoms.append(gate if enabled else ~gate)
                 assert solver.solve(assumptions=[m._lit_to_dimacs(atom) for atom in atoms]) == expected
-    assert encodings and all(encoding == EncType.adder for encoding in encodings)
+    assert encodings and all(encoding == EncType.bounded for encoding in encodings)
 
 
 def test_sum_var_total_tree_limit_preserves_name_and_semantics(monkeypatch):
@@ -237,6 +239,7 @@ def test_compact_boolean_count_preserves_shifted_comparisons(monkeypatch, contex
 
 def test_large_set_cardinality_uses_guarded_compiler():
     m = Model()
+    m.set_integer_binary_threshold(None)
     s = m.int_set("s", lb=0, ub=2047)
     before = len(m._hard)
     total = s.card()

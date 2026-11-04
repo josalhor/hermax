@@ -161,6 +161,10 @@ static PyObject* encode_pb(PyObject* args, PyObject* kwargs, bool packed) {
         PyErr_SetString(PyExc_TypeError, "wlits must be a list of (lit, weight) pairs");
         return nullptr;
     }
+    if (top_id < 0) {
+        PyErr_SetString(PyExc_ValueError, "top_id must be non-negative");
+        return nullptr;
+    }
 
     if (conditionals_obj == Py_None) {
         conditionals_obj = PyList_New(0);
@@ -190,9 +194,15 @@ static PyObject* encode_pb(PyObject* args, PyObject* kwargs, bool packed) {
                 return nullptr;
             }
 
-            long lit = PyLong_AsLong(PyTuple_GET_ITEM(item, 0));
+            long long lit = PyLong_AsLongLong(PyTuple_GET_ITEM(item, 0));
             if (PyErr_Occurred()) {
                 Py_DECREF(conditionals_obj);
+                return nullptr;
+            }
+            if (lit == 0 || lit < -static_cast<long long>(INT32_MAX) || lit > INT32_MAX ||
+                lit > top_id || lit < -static_cast<long long>(top_id)) {
+                Py_DECREF(conditionals_obj);
+                PyErr_SetString(PyExc_ValueError, "PB literal must be nonzero and within top_id and signed 32-bit range");
                 return nullptr;
             }
             long long weight = PyLong_AsLongLong(PyTuple_GET_ITEM(item, 1));
@@ -200,7 +210,6 @@ static PyObject* encode_pb(PyObject* args, PyObject* kwargs, bool packed) {
                 Py_DECREF(conditionals_obj);
                 return nullptr;
             }
-
             wlits.emplace_back((int32_t)lit, (int64_t)weight);
         }
 
@@ -210,9 +219,15 @@ static PyObject* encode_pb(PyObject* args, PyObject* kwargs, bool packed) {
         conditionals.reserve((size_t)PyList_GET_SIZE(conditionals_obj));
         for (Py_ssize_t i = 0; i < PyList_GET_SIZE(conditionals_obj); ++i) {
             PyObject* lit_obj = PyList_GET_ITEM(conditionals_obj, i);  // borrowed
-            long lit = PyLong_AsLong(lit_obj);
+            long long lit = PyLong_AsLongLong(lit_obj);
             if (PyErr_Occurred()) {
                 Py_DECREF(conditionals_obj);
+                return nullptr;
+            }
+            if (lit == 0 || lit < -static_cast<long long>(INT32_MAX) || lit > INT32_MAX ||
+                lit > top_id || lit < -static_cast<long long>(top_id)) {
+                Py_DECREF(conditionals_obj);
+                PyErr_SetString(PyExc_ValueError, "conditional literal must be nonzero and within top_id and signed 32-bit range");
                 return nullptr;
             }
             conditionals.push_back((int32_t)lit);
@@ -225,7 +240,10 @@ static PyObject* encode_pb(PyObject* args, PyObject* kwargs, bool packed) {
         }
 
         PBConfig config = std::make_shared<PBConfigClass>();
-        if (pb_encoder == 7) {
+        if (pb_encoder == 8) {
+            config->pb_encoder = PB_ENCODER::PB2CNF_PB_Encoder::ADDER;
+            config->use_bounded_bdd_adder = true;
+        } else if (pb_encoder == 7) {
             // Surface the hidden watchdog+GAC binary-merge path as a manual LPW mode.
             config->pb_encoder = PB_ENCODER::PB2CNF_PB_Encoder::BINARY_MERGE;
             config->use_watch_dog_encoding_in_binary_merger = true;
@@ -241,7 +259,7 @@ static PyObject* encode_pb(PyObject* args, PyObject* kwargs, bool packed) {
         std::unique_ptr<ClauseDatabase> result = packed
             ? std::unique_ptr<ClauseDatabase>(new PackedClauseDatabase(config, api, output.get()))
             : std::unique_ptr<ClauseDatabase>(new VectorClauseDatabase(config));
-        AuxVarManager varmgr(top_id + 1);
+        AuxVarManager varmgr(static_cast<int64_t>(top_id) + 1);
         PB2CNF pb2cnf(config);
         pb2cnf.encode(constr, *result, varmgr);
 
@@ -264,6 +282,10 @@ static PyObject* encode_pb(PyObject* args, PyObject* kwargs, bool packed) {
         PyTuple_SET_ITEM(out, 0, py_clauses);  // steals
         PyTuple_SET_ITEM(out, 1, py_aux);      // steals
         return out;
+    } catch (const std::overflow_error& e) {
+        if (conditionals_obj) Py_DECREF(conditionals_obj);
+        if (!PyErr_Occurred()) PyErr_SetString(PyExc_OverflowError, e.what());
+        return nullptr;
     } catch (const std::exception& e) {
         if (conditionals_obj) {
             Py_DECREF(conditionals_obj);
@@ -323,6 +345,7 @@ PyMODINIT_FUNC PyInit__pblib(void) {
     if (PyModule_AddIntConstant(m, "PB_ADDER", (int)PB_ENCODER::PB2CNF_PB_Encoder::ADDER) < 0) return nullptr;
     if (PyModule_AddIntConstant(m, "PB_BINARY_MERGE", (int)PB_ENCODER::PB2CNF_PB_Encoder::BINARY_MERGE) < 0) return nullptr;
     if (PyModule_AddIntConstant(m, "PB_LPW", 7) < 0) return nullptr;
+    if (PyModule_AddIntConstant(m, "PB_BOUNDED", 8) < 0) return nullptr;
 
     if (PyModule_AddIntConstant(m, "LEQ", (int)PBLib::Comparator::LEQ) < 0) return nullptr;
     if (PyModule_AddIntConstant(m, "GEQ", (int)PBLib::Comparator::GEQ) < 0) return nullptr;

@@ -1,12 +1,14 @@
 #include "auxvarmanager.h"
 
 #include <iostream>
+#include <limits>
+#include <stdexcept>
 
 using namespace std;
 
 int32_t AuxVarManager::getBiggestReturnedAuxVar()
 {
-  return variable_offset - 1;
+  return static_cast<int32_t>(variable_offset - 1);
 }
 
 void AuxVarManager::resetAuxVarsTo(int32_t new_first_free_variable)
@@ -30,8 +32,8 @@ void AuxVarManager::resetAuxVarsTo(int32_t new_first_free_variable)
 
 void AuxVarManager::freeVariables(int32_t start, int32_t end)
 {
-  for (; start <= end; ++start)
-    freeVariable(start);
+  for (int64_t var = start; var <= end; ++var)
+    freeVariable(static_cast<int32_t>(var));
 }
 
 void AuxVarManager::freeVariables(vector< int32_t >& variables)
@@ -51,7 +53,9 @@ int32_t AuxVarManager::getVariable()
   int32_t var;
   if (free_variables.size() == 0)
   {
-    var = variable_offset;
+    if (variable_offset > std::numeric_limits<int32_t>::max())
+      throw std::overflow_error("PB auxiliary variable IDs exceed signed 32-bit range");
+    var = static_cast<int32_t>(variable_offset);
     variable_offset++;
     if (rememberedVariables != nullptr)
       rememberedVariables->push_back(var);
@@ -81,6 +85,6 @@ void AuxVarManager::stopRememerReturnedVariables()
 }
 
 
-AuxVarManager::AuxVarManager(int32_t first_free_variable) : variable_offset(first_free_variable), rememberedVariables(nullptr)
+AuxVarManager::AuxVarManager(int64_t first_free_variable) : variable_offset(first_free_variable), rememberedVariables(nullptr)
 {
 }

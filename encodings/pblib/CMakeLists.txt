@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(hermax_pblib LANGUAGES CXX)
+include(../common/CompilerOptions.cmake)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,6 +16,7 @@ if(HERMAX_CORE_ARCHIVE)
     set_target_properties(pblib_core PROPERTIES IMPORTED_LOCATION "${HERMAX_CORE_ARCHIVE}")
 else()
     add_library(pblib_core STATIC ${PBLIB_CORE_SOURCES})
+    hermax_encoder_options(pblib_core)
     target_include_directories(pblib_core PUBLIC
         "${PBLIB_ROOT}"
         "${PBLIB_ROOT}/encoder")
@@ -38,6 +40,7 @@ if(NOT DEFINED HERMAX_PBLIB_ENABLE_PYINT_CACHE)
 endif()
 
 add_library(_pblib MODULE src/pblib_capi.cpp)
+hermax_encoder_options(_pblib)
 target_include_directories(_pblib PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../hermax/internal"
     "${PBLIB_ROOT}"

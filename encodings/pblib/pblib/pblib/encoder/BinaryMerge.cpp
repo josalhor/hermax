@@ -23,18 +23,21 @@ int64_t BinaryMerge::encodingValue(const SimplePBConstraint& constraint)
 
 void BinaryMerge::binary_merge(const SimplePBConstraint& constraint, ClauseDatabase& formula, AuxVarManager& auxvars, int32_t gac_lit)
 {
-  int64_t less_then = constraint.getLeq()+1;
-  int64_t p = floor(log2(constraint.getMaxWeight()));
-  int64_t m = ceil((double) (less_then) / (double) (pow(2,p))); // m is less (and not equal)
-  int64_t new_less_thean = m * pow(2,p);
-  int64_t T = (m * pow(2,p)) - (less_then);
+  const uint64_t less_then = static_cast<uint64_t>(constraint.getLeq()) + 1;
+  int64_t p = 0;
+  for (uint64_t weight = constraint.getMaxWeight(); weight > 1; weight >>= 1)
+    ++p;
+  const uint64_t power = uint64_t(1) << p;
+  const uint64_t m = less_then / power + (less_then % power != 0);
+  const uint64_t new_less_thean = m * power;
+  const uint64_t T = new_less_thean - less_then;
   true_lit = auxvars.getVariable();
 
   formula.addClause(true_lit);
 
   vector<vector<int32_t> > buckets;
 
-  int64_t bit = 1;
+  uint64_t bit = 1;
 
   // fill the bit buckets
   for (int64_t i = 0; i <= p; ++i)
@@ -58,7 +61,7 @@ void BinaryMerge::binary_merge(const SimplePBConstraint& constraint, ClauseDatab
 	  buckets[i].push_back(constraint.getWeightedLiterals()[j].lit);
       }
     }
-    bit = bit << 1;
+    bit <<= 1;
   }
 
   vector<vector<int32_t> > bucket_card(p+1); assert(bucket_card.size() == buckets.size());
@@ -67,13 +70,14 @@ void BinaryMerge::binary_merge(const SimplePBConstraint& constraint, ClauseDatab
   vector<int32_t> carries;
   for (int i = 0; i < buckets.size(); ++i)
   {
-    int64_t k = ceil((double)new_less_thean / (double)pow(2,i)); // we need only k output bits to detect inconsistency
+    const uint64_t divisor = uint64_t(1) << i;
+    const uint64_t k = new_less_thean / divisor + (new_less_thean % divisor != 0);
 
     //TODO
     if (config->use_watch_dog_encoding_in_binary_merger)
       totalizer(buckets[i], bucket_card[i], formula, auxvars);
     else
-      Sorting::sort(k, buckets[i], formula, auxvars, bucket_card[i]);
+      Sorting::sort(static_cast<int>(min<uint64_t>(k, buckets[i].size())), buckets[i], formula, auxvars, bucket_card[i]);
 
     if (k <= buckets[i].size())
     {
@@ -108,7 +112,7 @@ void BinaryMerge::binary_merge(const SimplePBConstraint& constraint, ClauseDatab
 	  if (config->use_watch_dog_encoding_in_binary_merger)
 	    unary_adder(bucket_card[i], carries, bucket_merge[i], formula, auxvars);
 	  else
-	    Sorting::merge(k, bucket_card[i], carries, formula, auxvars, bucket_merge[i]);
+	    Sorting::merge(static_cast<int>(min<uint64_t>(k, bucket_card[i].size() + carries.size())), bucket_card[i], carries, formula, auxvars, bucket_merge[i]);
 
 	  if (k == bucket_merge[i].size() || (config->use_watch_dog_encoding_in_binary_merger && k <= bucket_merge[i].size()) )
 	  {
@@ -169,7 +173,7 @@ void BinaryMerge::encode(const SimplePBConstraint& pbconstraint, ClauseDatabase&
     vector<WeightedLit> lits(pbconstraint.getWeightedLiterals());
     for (int i = 0; i < lits.size(); ++i)
     {
-      if (config->binary_merge_no_support_for_single_bits && floor(log2(lits[i].weight)) == log2(lits[i].weight))
+      if (config->binary_merge_no_support_for_single_bits && (lits[i].weight & (lits[i].weight - 1)) == 0)
       {
 	encode_complete_constrainte = true;
 	continue;

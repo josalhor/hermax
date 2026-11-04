@@ -4,9 +4,22 @@ import platform
 import sysconfig
 
 from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext
 
 
 ROOT = Path(__file__).resolve().parent
+
+
+class CardBuildExt(build_ext):
+    def build_extensions(self):
+        if self.debug:
+            for ext in self.extensions:
+                ext.extra_compile_args = [flag for flag in ext.extra_compile_args
+                                          if flag not in {"-O3", "-DNDEBUG", "-flto", "/O2", "/GL"}]
+                ext.extra_compile_args += (["/Od", "/UNDEBUG"] if platform.system() == "Windows"
+                                           else ["-O0", "-UNDEBUG"])
+                ext.extra_link_args = []
+        super().build_extensions()
 
 
 def _compile_args():
@@ -42,12 +55,14 @@ setup(
     name="hermax-pycard-standalone",
     version="0.0.1",
     description="Standalone build of hermax_pycard extension for local parity/perf testing",
+    cmdclass={"build_ext": CardBuildExt},
     ext_modules=[
         Extension(
             "hermax_pycard",
             sources=[str(ROOT / "pycard.cc")],
             include_dirs=[
                 str(ROOT),
+                str(ROOT.parents[1] / "hermax" / "internal"),
                 *(p for p in [sysconfig.get_paths().get("include"), sysconfig.get_paths().get("platinclude")] if p),
             ],
             language="c++",

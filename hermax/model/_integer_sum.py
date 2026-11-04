@@ -7,6 +7,7 @@ from hermax.encoder._integer_sum.encoding import binary_pb, channel_cost
 from hermax.encoder.pb_enc import EncType as PBEncType
 from hermax.internal import _encoding_policy as policy
 from ._integer_views import binary_view_ready
+from ._sum_choices import choose_sum_encoding, encode_direct, encode_tree
 from hermax.utils import _unary_merge_comparator_count
 from .expressions import ClauseGroup
 
@@ -68,7 +69,7 @@ def compile_binary_sum(
     views = [owner._get_binary_view() for owner, _ in items]
     cnf = binary_pb(
         views, [c for _, c in items], bound, comparator, model._top_id(),
-        encoding=PBEncType.adder,
+        encoding=PBEncType.bounded,
     )
     model._debug(
         model.DEBUG_COMPILE,
@@ -84,6 +85,18 @@ class _OrderPlan:
     orientations: list[int]
     modulus: int
     clauses: int
+    variables: int
+
+
+def _binary_sum_cost(widths, cached):
+    bits = [w.bit_length() for w in widths]
+    carry_bits = sum((1 << b) - 1 for b in bits).bit_length()
+    # Conservative adder bounds, including any new order-to-binary channels.
+    clauses = 20 * sum(bits) + 8 * carry_bits
+    clauses += sum(channel_cost(w) for w, ready in zip(widths, cached) if not ready)
+    variables = 2 * sum(bits) + carry_bits
+    variables += sum(b for b, ready in zip(bits, cached) if not ready)
+    return clauses, variables
 
 
 def _plan_order_sum(widths, coefficients, bound, comparator, cached):
@@ -96,14 +109,11 @@ def _plan_order_sum(widths, coefficients, bound, comparator, cached):
     costs = assess(widths, order_bound)
     kind = selection.choose(widths, order_bound, costs, cached, orientations=orientations)
     if kind == BINARY:
-        bits = [w.bit_length() for w in widths]
-        carry_bits = sum((1 << b) - 1 for b in bits).bit_length()
-        # At most one full adder per input bit and one half adder per column.
-        clauses = 20 * sum(bits) + 8 * carry_bits
-        clauses += sum(channel_cost(w) for w, ready in zip(widths, cached) if not ready)
+        clauses, variables = _binary_sum_cost(widths, cached)
     else:
         clauses = getattr(costs, kind).clauses
-    return _OrderPlan(kind, order_bound, orientations, costs.modulus, clauses)
+        variables = getattr(costs, kind).variables
+    return _OrderPlan(kind, order_bound, orientations, costs.modulus, clauses, variables)
 
 
 def _encode_order_plan(model, items, bound, comparator, plan):
@@ -136,6 +146,8 @@ def compile_sum(
         comparator, bound = ">=", -constant + 1
     else:
         bound = -constant
+    if any(owner._binary_primary for owner, _ in items):
+        return compile_binary_sum(model, items, bound, comparator)
     widths = [owner.ub - owner.lb for owner, _ in items]
     coefficients = [coefficient for _, coefficient in items]
     lower = -sum(w for w, c in zip(widths, coefficients) if c < 0)
@@ -155,10 +167,34 @@ def compile_sum(
     cached = [binary_view_ready(owner) for owner, _ in items]
     comparisons = ("<=", ">=") if comparator == "==" else (comparator,)
     plans = [_plan_order_sum(widths, coefficients, bound, op, cached) for op in comparisons]
-    if (
+    binary_fallback = (
         all(plan.kind == BINARY for plan in plans)
         or policy.exceeds_limits(clauses=sum(plan.clauses for plan in plans))
-    ):
+    )
+    if len(items) >= 3 and max(widths, default=0) > 1:
+        # Normalize signed counts to nonnegative counts. >= becomes <= by
+        # complementing all inputs; equality keeps both boundary directions.
+        orientations = coefficients
+        direct_bound = bound - lower
+        normalized_op = comparator
+        if comparator == ">=":
+            orientations = [-c for c in coefficients]
+            direct_bound = sum(widths) - direct_bound
+            normalized_op = "<="
+        baseline_clauses, baseline_variables = (
+            _binary_sum_cost(widths, cached) if binary_fallback else
+            (sum(plan.clauses for plan in plans), sum(plan.variables for plan in plans))
+        )
+        kind, tree = choose_sum_encoding(
+            widths, direct_bound, normalized_op,
+            baseline_clauses, baseline_variables,
+        )
+        if kind != "current":
+            model._debug(model.DEBUG_COMPILE, f"encode path=integer_sum_{kind} op={comparator}")
+            if kind == "direct":
+                return encode_direct(model, items, orientations, direct_bound, normalized_op)
+            return encode_tree(model, items, orientations, direct_bound, normalized_op, tree)
+    if binary_fallback:
         return compile_binary_sum(model, items, bound, comparator)
     groups = [_encode_order_plan(model, items, bound, op, plan)
               for op, plan in zip(comparisons, plans)]

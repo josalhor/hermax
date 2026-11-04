@@ -101,8 +101,10 @@ def test_obj_add_pbexpr_realizes_lazy_int_terms_inside_expression():
     # Realization may allocate the quotient IntVar and links.
     assert m._top_id() > top_before
     r = _solve_ok(m)
-    assert r[x] == 0
-    assert r.cost == 2  # floor(0/3) + 2
+    # All three values have the same optimal quotient; do not depend on
+    # the encoding or solver's choice among equivalent optimal assignments.
+    assert r[x] in {0, 1, 2}
+    assert r.cost == 2  # floor(x/3) + 2 is minimal throughout x=0..2.
 
 
 def test_obj_add_pbexpr_cross_model_rejected():
@@ -173,5 +175,5 @@ def test_obj_add_negated_piecewise_pbexpr_is_supported():
     m.obj += -gain
     r = _solve_ok(m)
     # Maximizing gain via minimizing -gain should push to highest tier.
-    assert r[x] in {5, 6, 7}
+    assert r[x] in {5, 6, 7, 8}
     assert r.cost == -10

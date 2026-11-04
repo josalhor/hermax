@@ -448,8 +448,32 @@ void PB2CNF::encode_with_binary_merge(SimplePBConstraint& constraint, ClauseData
 
 
 
+void PB2CNF::encode_bounded_bdd_adder(SimplePBConstraint& constraint, ClauseDatabase& formula, AuxVarManager& auxVars)
+{
+  // Private counting trials never consume caller IDs or emit output clauses.
+  const int64_t base = auxVars.getBiggestReturnedAuxVar();
+  CountingClauseDatabase adderCount(config);
+  AuxVarManager adderVars(base + 1);
+  adder_encoder.encode(constraint, adderCount, adderVars);
+  const int64_t clauseBudget = 4 * adderCount.getNumberOfClauses();
+  const int64_t variableBudget = 8 * (static_cast<int64_t>(adderVars.getBiggestReturnedAuxVar()) - base);
+  CountingClauseDatabase bddCount(config);
+  AuxVarManager bddVars(base + 1);
+  bdd_encoder.bddEncode(constraint, bddCount, bddVars, false, clauseBudget, variableBudget);
+  if (!bdd_encoder.wasToBig() && bddCount.getNumberOfClauses() <= clauseBudget &&
+      static_cast<int64_t>(bddVars.getBiggestReturnedAuxVar()) - base <= variableBudget)
+    encode_with_bdd(constraint, formula, auxVars);
+  else
+    encode_with_adder(constraint, formula, auxVars);
+}
+
 void PB2CNF::encode_pb(SimplePBConstraint& constraint, ClauseDatabase& formula, AuxVarManager& auxVars)
 {
+  if (config->use_bounded_bdd_adder)
+  {
+    encode_bounded_bdd_adder(constraint, formula, auxVars);
+    return;
+  }
   if(config->pb_encoder == PB_ENCODER::SORTINGNETWORKS)
   {
     sorting_networks.encode(constraint, formula, auxVars);

@@ -17,6 +17,7 @@ from hermax.model import Model
 )
 def test_integer_comparisons_keep_only_necessary_boundary_clauses(left, right, compare, clauses):
     m = Model()
+    m.set_integer_binary_threshold(None)
     x, y = m.int("x", *left), m.int("y", *right)
     before = m._top_id(), len(m._hard)
     m &= compare(x, y)
@@ -78,6 +79,7 @@ def test_compressed_boundaries_still_propagate_all_redundant_units_when_enabled(
 @pytest.mark.parametrize("compare", [operator.le, operator.lt, operator.ge, operator.gt, operator.eq])
 def test_order_comparisons_do_not_materialize_threshold_objects(compare):
     m = Model()
+    m.set_integer_binary_threshold(None)
     x, y = m.int("x", -20, 100), m.int("y", 0, 80)
     flag = m.bool("flag")
     m &= compare(x, y).only_if(flag)

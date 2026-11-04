@@ -50,7 +50,7 @@ def test_large_additions_delegate_to_existing_selector(op,monkeypatch):
         calls.append(True)
         return original(*args,**kwargs)
     monkeypatch.setattr(selection,'choose',record)
-    m=Model();x=m.int('x',0,1000);y=m.int('y',0,1000);z=m.int('z',0,2000)
+    m=Model(); m.set_integer_binary_threshold(None);x=m.int('x',0,1000);y=m.int('y',0,1000);z=m.int('z',0,2000)
     m &= (x+y==z) if op=='==' else (x+y<=z)
     assert calls
 

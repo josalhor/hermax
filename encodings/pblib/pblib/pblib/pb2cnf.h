@@ -67,6 +67,7 @@ private:
     void encode_amo(SimplePBConstraint & constraint, ClauseDatabase& formula, AuxVarManager& auxVars);
     void encode_amk(SimplePBConstraint & constraint, ClauseDatabase& formula, AuxVarManager& auxVars);
     void encode_pb(SimplePBConstraint & constraint, ClauseDatabase& formula, AuxVarManager& auxVars);
+    void encode_bounded_bdd_adder(SimplePBConstraint & constraint, ClauseDatabase& formula, AuxVarManager& auxVars);
 
 	bool try_to_encode_in_threshold(SimplePBConstraint& constraint, ClauseDatabase& formula, AuxVarManager& auxVars, int clause_threshold);
 

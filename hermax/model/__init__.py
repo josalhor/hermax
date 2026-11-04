@@ -1,7 +1,7 @@
 from __future__ import annotations
 from .expressions import (
     sum_expr, ClauseGroup, IntRelation, Clause, Literal, Term,
-    DivExpr, ModExpr, ScaleExpr, MaxExpr, PBExpr, PBConstraint
+    AbsExpr, DivExpr, ModExpr, ScaleExpr, MaxExpr, PBExpr, PBConstraint
 )
 from .encoders import EncodingEvent, EncodingProfile
 from .core import SolveResult, SoftRef, Model
@@ -21,6 +21,7 @@ __all__ = [
     "Literal",
     "Term",
     "DivExpr",
+    "AbsExpr",
     "ModExpr",
     "ScaleExpr",
     "MaxExpr",

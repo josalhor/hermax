@@ -15,13 +15,13 @@ class AuxVarManager
 private:
     AuxVarManager(const AuxVarManager& other) = delete;
 
-    int32_t variable_offset;
+    int64_t variable_offset;
     std::unordered_set<int32_t> free_variables;
     std::vector<int32_t> * rememberedVariables;
 
 public:
     // init the aux var manager with the first variable that is free
-    AuxVarManager(int32_t first_free_variable);
+    AuxVarManager(int64_t first_free_variable);
     virtual ~AuxVarManager() = default;
 
     // returns an unused variables
