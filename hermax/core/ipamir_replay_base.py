@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import math
 from dataclasses import dataclass
 from typing import List, Optional
 from itertools import chain
@@ -17,7 +18,7 @@ from hermax.core.utils import extract_wcnf_data, normalize_wcnf_formula
 class ReplaySolveResult:
     status: SolveStatus
     model: Optional[List[int]]
-    cost: Optional[int]
+    cost: Optional[int | float]
 
 
 class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
@@ -42,7 +43,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         self._invalidate_solution()
         return var
 
-    def add_clause(self, clause: List[int], weight: Optional[int] = None) -> None:
+    def add_clause(self, clause: List[int], weight: Optional[int | float] = None) -> None:
         self._require_open()
         cl = self._normalize_clause(clause)
 
@@ -69,7 +70,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
 
         raise ValueError(f"Unknown nonunit_soft_policy: {self.nonunit_soft_policy}")
 
-    def set_soft(self, lit: int, weight: int) -> None:
+    def set_soft(self, lit: int, weight: int | float) -> None:
         self._require_open()
         ilit = self._normalize_lit(lit)
         w = self._normalize_nonnegative_weight(weight)
@@ -78,7 +79,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
         self._journal.set_soft(ilit, w)
         self._invalidate_solution()
 
-    def add_soft_unit(self, lit: int, weight: int) -> None:
+    def add_soft_unit(self, lit: int, weight: int | float) -> None:
         w = self._normalize_positive_weight(weight)
         self.set_soft(int(lit), w)
 
@@ -97,19 +98,23 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
 
     @staticmethod
     def _normalize_positive_weight(weight: int) -> int:
-        if isinstance(weight, bool) or not isinstance(weight, int):
-            raise TypeError("Weight must be an integer.")
-        if int(weight) <= 0:
-            raise ValueError("Weight must be a positive integer.")
-        return int(weight)
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise TypeError("Weight must be numeric.")
+        if isinstance(weight, float) and not math.isfinite(weight):
+            raise ValueError("Weight must be finite.")
+        if weight <= 0:
+            raise ValueError("Weight must be positive.")
+        return weight
 
     @staticmethod
-    def _normalize_nonnegative_weight(weight: int) -> int:
-        if isinstance(weight, bool) or not isinstance(weight, int):
-            raise TypeError("Weight must be an integer.")
-        if int(weight) < 0:
-            raise ValueError("Weight must be a non-negative integer.")
-        return int(weight)
+    def _normalize_nonnegative_weight(weight: int | float) -> int | float:
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise TypeError("Weight must be numeric.")
+        if isinstance(weight, float) and not math.isfinite(weight):
+            raise ValueError("Weight must be finite.")
+        if weight < 0:
+            raise ValueError("Weight must be non-negative.")
+        return weight
 
     def _ensure_var(self, var: int) -> None:
         self._journal.ensure_var(var)
@@ -133,7 +138,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
     def _normalize_assumptions(self, assumptions: Optional[List[int]]) -> List[int]:
         return [self._normalize_lit(a) for a in assumptions] if assumptions else []
 
-    def _compute_wrapper_cost(self, model: List[int]) -> int:
+    def _compute_wrapper_cost(self, model: List[int]) -> int | float:
         asg = {abs(int(m)): int(m) > 0 for m in model}
         total = 0
 
@@ -142,7 +147,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
             val = asg.get(v, False)
             lit_true = val if lit > 0 else (not val)
             if not lit_true:
-                total += int(w)
+                total += w
 
         for cl, w in self._soft_nonunit:
             sat = False
@@ -153,7 +158,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
                     sat = True
                     break
             if not sat:
-                total += int(w)
+                total += w
 
         return total
 

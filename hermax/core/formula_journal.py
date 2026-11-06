@@ -1,6 +1,8 @@
 """Canonical incremental state, using the shared native formula representation."""
 from __future__ import annotations
 
+import math
+
 from typing import Callable, Dict, List, Optional
 
 from hermax.formula import WCNF
@@ -18,7 +20,7 @@ class FormulaJournal:
     def __init__(self) -> None:
         self._formula = WCNF()
         self._num_vars = 0
-        self.soft_units: Dict[int, int] = {}
+        self.soft_units: Dict[int, int | float] = {}
 
     @property
     def num_vars(self):
@@ -58,8 +60,10 @@ class FormulaJournal:
 
     @staticmethod
     def _normalize_weight(weight, *, allow_zero=False):
-        if isinstance(weight, bool) or not isinstance(weight, int):
-            raise TypeError('Soft weight must be an integer.')
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise TypeError('Soft weight must be numeric.')
+        if isinstance(weight, float) and not math.isfinite(weight):
+            raise ValueError('Soft weight must be finite.')
         if weight < 0 or (not allow_zero and weight == 0):
             raise ValueError('Soft weight must be positive (or zero for removal).')
         return weight

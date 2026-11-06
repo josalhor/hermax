@@ -77,8 +77,8 @@ class NativeIncrementalSolverBase(IPAMIRStateMixin, IPAMIRSolver, InterruptRecov
             raise ValueError("Weight must be a non-negative integer.")
         return int(weight)
 
-    def _set_feasible_result(self, model: List[int], cost: int, *, status) -> None:
-        self._set_result(status=status, model=model, cost=int(cost), num_vars=self.num_vars)
+    def _set_feasible_result(self, model: List[int], cost: int | float, *, status) -> None:
+        self._set_result(status=status, model=model, cost=cost, num_vars=self.num_vars)
 
     def _set_infeasible_result(self, *, status) -> None:
         self._set_result(status=status, model=None, cost=None)
@@ -197,18 +197,18 @@ class NativeIncrementalSolverBase(IPAMIRStateMixin, IPAMIRSolver, InterruptRecov
             if not cl:
                 raise ValueError("Invalid soft in WCNF.")
             if len(cl) == 1:
-                self.add_soft_unit(int(cl[0]), int(w))
+                self.add_soft_unit(int(cl[0]), w)
             else:
                 b = self.new_var()
-                self.add_soft_relaxed([int(x) for x in cl], int(w), relax_var=b)
+                self.add_soft_relaxed([int(x) for x in cl], w, relax_var=b)
 
-    def get_cost(self) -> int:
+    def get_cost(self) -> int | float:
         self._require_open()
         if not is_feasible(self._status):
             raise RuntimeError("Cost is only available for SAT or OPTIMUM status.")
         if self._last_cost is None:
             raise RuntimeError("Cost is only available for SAT or OPTIMUM status.")
-        return int(self._last_cost)
+        return self._last_cost
 
     @abc.abstractmethod
     def signature(self) -> str:  # pragma: no cover - interface method

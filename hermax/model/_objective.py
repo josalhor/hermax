@@ -71,14 +71,14 @@ def validate_soft_constraint(model: "Model", constraint) -> None:
         raise ValueError("Variables belong to different models.")
 
 
-def coerce_preference_weight(model: "Model", weight) -> tuple[int, float]:
+def coerce_preference_weight(model: "Model", weight) -> tuple[int | float, int | float]:
     scaled, raw = model._coerce_soft_weight(weight, allow_zero=True)
-    if raw > 0 and scaled == 0:
+    if model._objective_precision_decimals is not None and raw > 0 and scaled == 0:
         raise ValueError("Soft weight rounds to zero for current precision.")
     return scaled, raw
 
 
-def prepare_soft_preference(model: "Model", constraint, weight) -> tuple[int, float]:
+def prepare_soft_preference(model: "Model", constraint, weight) -> tuple[int | float, int | float]:
     validate_soft_constraint(model, constraint)
     return coerce_preference_weight(model, weight)
 
@@ -109,7 +109,7 @@ def normalize_objective(model: "Model", constraint, *, weight):
 
 
 def normalize_prepared_objective(model: "Model", expr: PBExpr, *, weight):
-    lit_weights: dict[int, int] = {}
+    lit_weights: dict[int, int | float] = {}
     offset_raw: int | float = weight * int(expr.constant)
     for t in expr.terms:
         coeff_raw = t.coefficient
@@ -127,20 +127,20 @@ def normalize_prepared_objective(model: "Model", expr: PBExpr, *, weight):
             lit = ~t.literal
             term_raw: int | float = (
                 float(weight) * float(coeff_abs)
-                if isinstance(coeff_abs, float)
+                if isinstance(weight, float) or isinstance(coeff_abs, float)
                 else weight * int(coeff_abs)
             )
         else:
             lit = t.literal
             term_raw = (
                 float(weight) * float(coeff_abs)
-                if isinstance(coeff_abs, float)
+                if isinstance(weight, float) or isinstance(coeff_abs, float)
                 else weight * int(coeff_abs)
             )
             offset_raw -= term_raw
         w, _rw = model._coerce_soft_weight(term_raw, allow_zero=False)
         dim = model._lit_to_dimacs(lit)
-        lit_weights[dim] = lit_weights.get(dim, 0) + int(w)
+        lit_weights[dim] = lit_weights.get(dim, 0) + w
     if float(offset_raw) < 0 and not bool(model._allow_negative_objective_offsets):
         raise ValueError(
             "Negative objective offsets are not supported by current model policy."
@@ -154,14 +154,14 @@ def normalize_prepared_objective(model: "Model", expr: PBExpr, *, weight):
         pos_off, _ = model._coerce_soft_weight(pos_w, allow_zero=False)
         false_lit = model._get_bool_constant_literal(False)
         dim_false = model._lit_to_dimacs(false_lit)
-        lit_weights[dim_false] = lit_weights.get(dim_false, 0) + int(pos_off)
+        lit_weights[dim_false] = lit_weights.get(dim_false, 0) + pos_off
     elif float(offset_raw) < -FLOAT_ZERO_TOL:
         neg_abs = -offset_raw
         neg_w = int(neg_abs) if isinstance(neg_abs, int) else float(neg_abs)
         neg_off, _ = model._coerce_soft_weight(neg_w, allow_zero=False)
-        offset = -int(neg_off)
+        offset = -neg_off
 
-    return lit_weights, int(offset)
+    return lit_weights, offset
 
 
 class ObjectiveTerm:
@@ -195,3 +195,4 @@ class ObjectiveTerm:
         """The non-negative multiplier of this term's fixed expression."""
         self._check_active()
         return self._weight
+

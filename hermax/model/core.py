@@ -71,8 +71,8 @@ class _ObjectiveProxy:
     def __init__(self, model: "Model"):
         self._model = model
         self._lit_to_sid: dict[int, int] = {}
-        self._lit_weights: dict[int, int] = {}
-        self._offset: int = 0
+        self._lit_weights: dict[int, int | float] = {}
+        self._offset: int | float = 0
         self._generation = 0
 
     def __getitem__(self, weight):
@@ -88,7 +88,7 @@ class _ObjectiveProxy:
     def _normalize_expr(self, constraint, *, weight):
         return normalize_objective(self._model, constraint, weight=weight)
 
-    def _plan_lit_weights(self, weights: dict[int, int]):
+    def _plan_lit_weights(self, weights: dict[int, int | float]):
         m = self._model
         updates, additions = {}, []
         for dim, weight in weights.items():
@@ -100,7 +100,7 @@ class _ObjectiveProxy:
                 updates[sid] = weight
         return updates, additions
 
-    def _apply_lit_weights(self, lit_weights: dict[int, int], offset: int):
+    def _apply_lit_weights(self, lit_weights: dict[int, int | float], offset: int | float):
         m = self._model
         updates = {
             sid: 0 for sid in m._soft_ids
@@ -115,7 +115,7 @@ class _ObjectiveProxy:
         self._generation += 1
         return self
 
-    def _change_lit_weights(self, changes: dict[int, int], offset_delta: int):
+    def _change_lit_weights(self, changes: dict[int, int | float], offset_delta: int | float):
         m = self._model
         targets = {}
         for dim, delta in changes.items():
@@ -200,7 +200,7 @@ class _ObjectiveProxy:
             return SoftRef(gid, [], objective=self, weight=raw_w, constraint=constraint)
         if not scaled_w:
             constraint = m._as_clausegroup(constraint)
-        gid, sids = m._add_soft(int(scaled_w), constraint, dedup=bool(m._soft_dedup_enabled), raw_weight=float(raw_w))
+        gid, sids = m._add_soft(scaled_w, constraint, dedup=bool(m._soft_dedup_enabled), raw_weight=raw_w)
         # An empty soft group is permanently satisfied, even if its source is mutated.
         return SoftRef(gid, sids, objective=self,
                        weight=raw_w if m._objective_precision_decimals is not None else scaled_w,
@@ -381,15 +381,15 @@ class _TierObjectiveProxy:
                 return True
         return False
 
-    def iter_active_tiers(self) -> list[tuple[int, dict[int, int], int]]:
-        out: list[tuple[int, dict[int, int], int]] = []
+    def iter_active_tiers(self) -> list[tuple[int, dict[int, int | float], int | float]]:
+        out: list[tuple[int, dict[int, int | float], int | float]] = []
         for tier in sorted(self._tiers.keys()):
             d = self._tiers[tier]
             lw_raw = d.get("lit_weights", {})
-            off = int(d.get("offset", 0))
+            off = d.get("offset", 0)
             if not isinstance(lw_raw, dict):
                 continue
-            lw = {int(k): int(v) for k, v in lw_raw.items() if int(v) > 0}
+            lw = {int(k): v for k, v in lw_raw.items() if v > 0}
             out.append((int(tier), lw, off))
         return out
 
@@ -504,7 +504,7 @@ class _IncrementalCoordinator:
         self.solver_kwargs: dict = {}
         self.ip_next_vid = 0
         self.soft_lit_by_id: dict[int, int] = {}
-        self.soft_weight_by_lit: dict[int, int] = {}
+        self.soft_weight_by_lit: dict[int, int | float] = {}
         self.hard_routed = 0
         self.soft_routed = 0
 
@@ -557,7 +557,7 @@ class _IncrementalCoordinator:
         while self.ip_next_vid < target:
             self._ip_next_var()
 
-    def _route_soft_index(self, idx: int, *, weight: int | None = None) -> None:
+    def _route_soft_index(self, idx: int, *, weight: int | float | None = None) -> None:
         if self.mode != "maxsat" or self.ip_solver is None:
             return
         m = self._model
@@ -568,20 +568,20 @@ class _IncrementalCoordinator:
         if weight is None:
             weight = stored_weight
         self._reserve_ip_vars(max((abs(int(l)) for l in clause), default=0))
-        if int(weight) <= 0:
+        if weight <= 0:
             return
         lits = list(clause)
         if len(lits) == 1:
             soft_lit = int(lits[0])
-            total = self.soft_weight_by_lit.get(soft_lit, 0) + int(weight)
+            total = self.soft_weight_by_lit.get(soft_lit, 0) + weight
             if soft_lit in self.soft_weight_by_lit:
                 self.ip_solver.set_soft(soft_lit, total)
             else:
-                self.ip_solver.add_soft_unit(soft_lit, int(weight))
+                self.ip_solver.add_soft_unit(soft_lit, weight)
         else:
             relax = self._ip_next_var()
-            self.ip_solver.add_soft_relaxed(lits, int(weight), relax)
-            soft_lit, total = -int(relax), int(weight)
+            self.ip_solver.add_soft_relaxed(lits, weight, relax)
+            soft_lit, total = -int(relax), weight
         self.soft_lit_by_id[sid] = soft_lit
         self.soft_weight_by_lit[soft_lit] = total
 
@@ -728,7 +728,7 @@ class _IncrementalCoordinator:
     def update_soft_weight(
         self,
         soft_id: int,
-        new_weight: int,
+        new_weight: int | float,
         *,
         allow_zero: bool = False,
         allow_when_sat: bool = False,
@@ -749,18 +749,18 @@ class _IncrementalCoordinator:
         if self.mode == "maxsat":
             if self.ip_solver is None:
                 return
-            if int(new_weight) == 0 and not allow_zero:
+            if new_weight == 0 and not allow_zero:
                 raise ValueError("Cannot set soft weight to zero without allow_zero=True.")
             lit = self.soft_lit_by_id.get(sid)
             if lit is None:
-                self._route_soft_index(idx, weight=int(new_weight))
+                self._route_soft_index(idx, weight=new_weight)
                 return
             if m._debug_level >= m.DEBUG_DELTA:
                 m._debug(
                     m.DEBUG_DELTA,
                     f"update_soft route maxsat sid={sid} lit={int(lit)} new={int(new_weight)}",
                 )
-            total = self.soft_weight_by_lit[lit] + int(new_weight) - int(old_w)
+            total = self.soft_weight_by_lit[lit] + new_weight - old_w
             self.ip_solver.set_soft(int(lit), total)
             self.soft_weight_by_lit[lit] = total
 
@@ -841,7 +841,7 @@ class _IncrementalCoordinator:
         if feasible:
             raw_model = self.ip_solver.get_model()
             c = self.ip_solver.get_cost()
-            cost = m._format_objective_cost(int(c) + int(m._objective_constant))
+            cost = m._format_objective_cost(c + m._objective_constant)
         return SolveResult(m, status=status, raw_model=raw_model, cost=cost, backend=f"hermax.{self.ip_solver.signature()}")
 
 
@@ -941,8 +941,8 @@ class Model:
         self._canonical_internal_lits: dict[object, Literal] = {}
         self._anon_counter = 0
         self._hard = _ClauseStorage()
-        self._soft: list[tuple[int, tuple[int, ...]]] = []
-        self._objective_constant = 0
+        self._soft: list[tuple[int | float, tuple[int, ...]]] = []
+        self._objective_constant: int | float = 0
         self._const_lits: dict[bool, Literal] = {}
         self._pending_literal_defs: dict[int, ClauseGroup] = {}
         self._realized_literal_defs: set[int] = set()
@@ -954,7 +954,7 @@ class Model:
         self._soft_group_to_ids: dict[int, list[int]] = {}
         self._soft_id_to_group: dict[int, int] = {}
         self._next_soft_group_id = 1
-        self._soft_raw_weight_by_id: dict[int, float] = {}
+        self._soft_raw_weight_by_id: dict[int, int | float] = {}
         self._inc_state = _IncrementalCoordinator(self)
         self._rebuild_on_interrupt = False
         self._obj_proxy = _ObjectiveProxy(self)
@@ -1149,25 +1149,31 @@ class Model:
         self._objective_precision_decimals = int(decimals)
         self._objective_precision_scale = scale
 
-    def _coerce_soft_weight(self, weight, *, allow_zero: bool = False) -> tuple[int, float]:
+    def _coerce_soft_weight(self, weight, *, allow_zero: bool = False) -> tuple[int | float, int | float]:
         if isinstance(weight, bool):
             raise ValueError("Objective weight must be a number, not bool.")
         if self._objective_precision_decimals is None:
             if isinstance(weight, int):
                 w = int(weight)
             else:
-                raise ValueError("weight must be a positive int")
+                if not isinstance(weight, float):
+                    raise ValueError("weight must be an int or float")
+                if not math.isfinite(weight):
+                    raise ValueError("Objective weight must be finite.")
+                w = weight
             if allow_zero:
                 if w < 0:
                     raise ValueError("Soft weight must be non-negative.")
             else:
                 if w <= 0:
-                    raise ValueError("weight must be a positive int")
-            return w, float(w)
+                    raise ValueError("weight must be positive")
+            return w, w
 
         if not isinstance(weight, (int, float)):
             raise ValueError("Soft weight must be int/float when objective precision is enabled.")
         raw = float(weight)
+        if not math.isfinite(raw):
+            raise ValueError("Objective weight must be finite.")
         if allow_zero:
             if raw < 0:
                 raise ValueError("Soft weight must be non-negative.")
@@ -1183,9 +1189,9 @@ class Model:
                 raise ValueError("Soft weight rounds to zero for current precision.")
         return int(scaled), float(raw)
 
-    def _format_objective_cost(self, scaled_cost: int) -> int | float:
+    def _format_objective_cost(self, scaled_cost: int | float) -> int | float:
         if self._objective_precision_decimals is None:
-            return int(scaled_cost)
+            return scaled_cost if isinstance(scaled_cost, float) else int(scaled_cost)
         return round(float(scaled_cost) / float(self._objective_precision_scale), int(self._objective_precision_decimals))
 
     @staticmethod
@@ -1237,7 +1243,7 @@ class Model:
         return self._tier_obj_proxy
 
     def _has_active_flat_objective(self) -> bool:
-        return bool(self._objective_constant) or any(int(w) > 0 for w, _ in self._soft)
+        return bool(self._objective_constant) or any(w > 0 for w, _ in self._soft)
 
     def _ensure_no_flat_objective_active(self) -> None:
         if self._has_active_flat_objective():
@@ -2418,23 +2424,23 @@ class Model:
 
     def _append_soft_entry(
         self,
-        weight: int,
+        weight: int | float,
         clause: Clause | Sequence[int],
         group_id: Optional[int] = None,
         *,
-        raw_weight: Optional[float] = None,
+        raw_weight: Optional[int | float] = None,
     ) -> int:
         if isinstance(clause, Clause):
             clause_dims = tuple(int(x) for x in clause.dimacs if int(x) != 0)
         else:
             clause_dims = tuple(int(x) for x in clause if int(x) != 0)
         idx = len(self._soft)
-        self._soft.append((int(weight), clause_dims))
+        self._soft.append((weight, clause_dims))
         sid = self._next_soft_id
         self._next_soft_id += 1
         self._soft_ids.append(sid)
         self._soft_id_to_index[sid] = idx
-        self._soft_raw_weight_by_id[sid] = float(int(weight) if raw_weight is None else raw_weight)
+        self._soft_raw_weight_by_id[sid] = weight if raw_weight is None else raw_weight
         if group_id is not None:
             gid = int(group_id)
             self._soft_group_to_ids.setdefault(gid, []).append(sid)
@@ -2444,7 +2450,7 @@ class Model:
     def _set_soft_weight_internal(
         self,
         sid: int,
-        new_weight: int,
+        new_weight: int | float,
         *,
         allow_zero: bool = False,
         allow_when_sat: bool = False,
@@ -2452,14 +2458,14 @@ class Model:
         sid = int(sid)
         if sid not in self._soft_id_to_index:
             raise KeyError(f"Unknown soft id {sid!r}")
-        if isinstance(new_weight, bool) or not isinstance(new_weight, int):
-            raise ValueError("Soft weight must be an integer.")
+        if isinstance(new_weight, bool) or not isinstance(new_weight, (int, float)) or not math.isfinite(new_weight):
+            raise ValueError("Soft weight must be finite numeric.")
         if allow_zero:
-            if int(new_weight) < 0:
+            if new_weight < 0:
                 raise ValueError("Soft weight must be non-negative.")
         else:
-            if int(new_weight) <= 0:
-                raise ValueError("Soft weight must be a positive integer.")
+            if new_weight <= 0:
+                raise ValueError("Soft weight must be positive.")
         idx = self._soft_id_to_index[sid]
         old_w, clause = self._soft[idx]
         if self._debug_level >= self.DEBUG_DELTA:
@@ -2469,11 +2475,11 @@ class Model:
             )
         self._inc_state.update_soft_weight(
             int(sid),
-            int(new_weight),
+            new_weight,
             allow_zero=bool(allow_zero),
             allow_when_sat=bool(allow_when_sat),
         )
-        self._soft[idx] = (int(new_weight), clause)
+        self._soft[idx] = (new_weight, clause)
 
     def close_incremental(self) -> None:
         """Close any bound incremental backend for this model."""
@@ -2521,7 +2527,7 @@ class Model:
             self._inc_state.route_deltas(hard0, soft0)
             return self
 
-    def _add_soft(self, weight: int, constraint, *, dedup: bool = False, raw_weight: Optional[float] = None):
+    def _add_soft(self, weight: int | float, constraint, *, dedup: bool = False, raw_weight: Optional[int | float] = None):
         validate_soft_constraint(self, constraint)
         hard0 = len(self._hard)
         soft0 = len(self._soft)
@@ -2557,10 +2563,10 @@ class Model:
             return None
 
         def _append_or_merge_soft(
-            weight_i: int,
+            weight_i: int | float,
             clause_i: Sequence[int],
             group_id_i: Optional[int],
-            raw_weight_i: Optional[float] = None,
+            raw_weight_i: Optional[int | float] = None,
         ) -> int:
             if not clause_i:
                 clause_i = (self._lit_to_dimacs(self._get_bool_constant_literal(False)),)
@@ -2572,18 +2578,15 @@ class Model:
             # Accumulate onto existing soft clause.
             idx_existing = self._soft_id_to_index[sid_existing]
             old_w, _old_clause = self._soft[idx_existing]
-            old_raw = (
-                float(self._soft_raw_weight_by_id.get(int(sid_existing), float(int(old_w))))
-                if old_w > 0 else 0.0
-            )
+            old_raw = self._soft_raw_weight_by_id.get(int(sid_existing), old_w) if old_w > 0 else 0
             if weight_i:
                 self._set_soft_weight_internal(
                     sid_existing,
-                    int(old_w) + int(weight_i),
+                    old_w + weight_i,
                     allow_zero=False,
                     allow_when_sat=True,
                 )
-            self._soft_raw_weight_by_id[int(sid_existing)] = float(old_raw + float(weight_i if raw_weight_i is None else raw_weight_i))
+            self._soft_raw_weight_by_id[int(sid_existing)] = old_raw + (weight_i if raw_weight_i is None else raw_weight_i)
             # Keep per-group membership for SoftRef handles.
             if group_id_i is not None:
                 gid = int(group_id_i)
@@ -2642,7 +2645,7 @@ class Model:
                       "or reify a compound condition first.", FutureWarning, stacklevel=2)
         return self.obj._add_preference(constraint, weight)
 
-    def update_soft_weight(self, target, new_weight: int) -> None:
+    def update_soft_weight(self, target, new_weight: int | float) -> None:
         """Deprecated: use obj.update(ref, weight=new_weight)."""
         warnings.warn("update_soft_weight() is deprecated; use obj.update(ref, weight=new_weight).",
                       FutureWarning, stacklevel=2)
@@ -3105,13 +3108,15 @@ class Model:
         self._prepare_encoding()
         wcnf = _hard_to_wcnf(self._hard)
         for weight, clause in self._soft:
-            if int(weight) <= 0:
+            if weight <= 0:
                 continue
             wcnf.append(self._clause_to_dimacs_list(clause), weight=weight)
         return wcnf
 
     def _soft_weight_gcd(self) -> int:
         if not bool(self._soft_gcd_opt_enabled):
+            return 1
+        if any(isinstance(w, float) for w, _ in self._soft):
             return 1
         ws = [int(w) for w, _ in self._soft if int(w) > 0]
         if not ws:
@@ -3122,11 +3127,22 @@ class Model:
     def _to_wcnf_for_solver(self) -> tuple[WCNF, int]:
         """Build solver WCNF plus soft-weight scaling factor for one-shot solve."""
         self._prepare_encoding()
+        if any(isinstance(w, float) for w, _ in self._soft):
+            merged_float: dict[tuple[int, ...], float] = {}
+            wcnf = _hard_to_wcnf(self._hard)
+            for weight, clause in self._soft:
+                if weight <= 0:
+                    continue
+                signature = tuple(sorted(set(self._clause_to_dimacs_list(clause))))
+                merged_float[signature] = merged_float.get(signature, 0.0) + float(weight)
+            for clause, weight in merged_float.items():
+                wcnf.append(list(clause), weight=weight)
+            return wcnf, 1
         g = int(self._soft_weight_gcd())
         wcnf = _hard_to_wcnf(self._hard)
         merged_soft: dict[tuple[int, ...], int] = {}
         for weight, clause in self._soft:
-            if int(weight) <= 0:
+            if weight <= 0:
                 continue
             ww = int(weight) // g if g > 1 else int(weight)
             signature = tuple(sorted(set(self._clause_to_dimacs_list(clause))))
@@ -3139,29 +3155,29 @@ class Model:
         """Return a decoded assignment view for a raw solver model."""
         return AssignmentView(self, model_lits)
 
-    def _tier_entry_to_pbexpr(self, lit_weights: dict[int, int], offset: int) -> PBExpr:
+    def _tier_entry_to_pbexpr(self, lit_weights: dict[int, int | float], offset: int | float) -> PBExpr:
         terms: list[Term] = []
         for dim, w in lit_weights.items():
-            if int(w) <= 0:
+            if w <= 0:
                 continue
             clause_lit = self._dimacs_to_lit(int(dim))
             # Soft unit clause [clause_lit] contributes when violated:
             # weight * (~clause_lit)
-            terms.append(Term(int(w), ~clause_lit))
-        return PBExpr(self, terms, int(offset))
+            terms.append(Term(w, ~clause_lit))
+        return PBExpr(self, terms, offset)
 
-    def _tier_entry_to_clausegroup_units(self, lit_weights: dict[int, int]) -> ClauseGroup:
+    def _tier_entry_to_clausegroup_units(self, lit_weights: dict[int, int | float]) -> ClauseGroup:
         clauses: list[Clause] = []
         for dim, w in lit_weights.items():
-            if int(w) <= 0:
+            if w <= 0:
                 continue
             lit = self._dimacs_to_lit(int(dim))
             clauses.append(Clause(self, [lit]))
         return ClauseGroup(self, clauses)
 
-    def _tier_hardening_group(self, lit_weights: dict[int, int], offset: int, bound_scaled: int) -> ClauseGroup:
-        rhs = int(bound_scaled) - int(offset)
-        active = {int(d): int(w) for d, w in lit_weights.items() if int(w) > 0}
+    def _tier_hardening_group(self, lit_weights: dict[int, int | float], offset: int | float, bound_scaled: int | float) -> ClauseGroup:
+        rhs = bound_scaled - offset
+        active = {int(d): w for d, w in lit_weights.items() if w > 0}
         if not active:
             if rhs >= 0:
                 return ClauseGroup(self, [])
@@ -3170,10 +3186,12 @@ class Model:
             (dim, w), = active.items()
             if rhs < 0:
                 return ClauseGroup(self, [Clause(self, [])])
-            if rhs >= int(w):
+            if rhs >= w:
                 return ClauseGroup(self, [])
             lit = self._dimacs_to_lit(int(dim))
             return ClauseGroup(self, [Clause(self, [lit])])
+        if any(isinstance(w, float) for w in active.values()):
+            raise ValueError("Native float weights are not supported by lexicographic PB hardening.")
         tier_expr = self._tier_entry_to_pbexpr(active, int(offset))
         return self._compile_pb_compare(tier_expr, "<=", PBExpr(self, [], int(bound_scaled)))
 
@@ -3217,8 +3235,8 @@ class Model:
                 for c in g:
                     formula.append(self._clause_to_dimacs_list(c))
             for dim, w in lit_weights.items():
-                if int(w) > 0:
-                    formula.append([int(dim)], weight=int(w))
+                if w > 0:
+                    formula.append([int(dim)], weight=w)
 
             res = self._solve_with_hermax_solver(
                 solver=solver if solver is not None else DefaultMaxSATSolver,
@@ -3226,7 +3244,7 @@ class Model:
                 assumptions=assumptions_dimacs,
                 raise_on_abnormal=raise_on_abnormal,
                 formula_override=formula,
-                objective_constant_override=int(offset),
+                objective_constant_override=offset,
             )
             last_status = res.status
             last_backend = res.backend
@@ -3264,7 +3282,7 @@ class Model:
             hard_bound_scaled = self._tier_obj_proxy._scaled_cost(
                 lit_weights, offset, res.assignment
             )
-            hard_group = self._tier_hardening_group(lit_weights, int(offset), int(hard_bound_scaled))
+            hard_group = self._tier_hardening_group(lit_weights, offset, hard_bound_scaled)
             self._ensure_deferred_defs_in_group(hard_group)
             hardening.append(hard_group)
 
@@ -3298,6 +3316,16 @@ class Model:
                 raise_on_abnormal=raise_on_abnormal,
             )
 
+        if self._objective_precision_decimals is None and any(
+            isinstance(weight, float)
+            for _tier_idx, weights, _offset in tiers
+            for weight in weights.values()
+        ):
+            raise ValueError(
+                "Lexicographic stratification requires integer weights; "
+                "use lex_strategy='incremental' with a float-capable solver."
+            )
+
         max_var: list[int] = []
         for _idx, lit_weights, offset in tiers:
             max_var.append(sum(int(w) for w in lit_weights.values() if int(w) > 0))
@@ -3314,19 +3342,19 @@ class Model:
             if bases[i] > i64:
                 raise OverflowError("Lexicographic stratification overflow risk detected. Use lex_strategy='incremental'.")
 
-        flat_lit_weights: dict[int, int] = {}
+        flat_lit_weights: dict[int, int | float] = {}
         flat_offset = 0
         for i, (_idx, lit_weights, offset) in enumerate(tiers):
             b = int(bases[i])
-            flat_offset += int(offset) * b
+            flat_offset += offset * b
             for dim, w in lit_weights.items():
-                ww = int(w) * b
+                ww = w * b
                 if ww <= 0:
                     continue
                 if ww > i64:
                     raise OverflowError("Lexicographic stratification overflow risk detected. Use lex_strategy='incremental'.")
-                flat_lit_weights[int(dim)] = int(flat_lit_weights.get(int(dim), 0)) + int(ww)
-                if flat_lit_weights[int(dim)] > i64:
+                flat_lit_weights[int(dim)] = flat_lit_weights.get(int(dim), 0) + ww
+                if isinstance(ww, int) and flat_lit_weights[int(dim)] > i64:
                     raise OverflowError("Lexicographic stratification overflow risk detected. Use lex_strategy='incremental'.")
 
         self._ensure_deferred_defs_in_group(ClauseGroup._from_dimacs_trusted(self, self._hard))
@@ -3339,8 +3367,8 @@ class Model:
             if v > 0:
                 formula.append([int(v), -int(v)])
         for dim, w in flat_lit_weights.items():
-            if int(w) > 0:
-                formula.append([int(dim)], weight=int(w))
+            if w > 0:
+                formula.append([int(dim)], weight=w)
 
         res = self._solve_with_hermax_solver(
             solver=solver if solver is not None else DefaultMaxSATSolver,
@@ -3348,7 +3376,7 @@ class Model:
             assumptions=assumptions_dimacs,
             raise_on_abnormal=raise_on_abnormal,
             formula_override=formula,
-            objective_constant_override=int(flat_offset),
+            objective_constant_override=flat_offset,
         )
         if not res.ok:
             return SolveResult(
@@ -3458,6 +3486,20 @@ class Model:
         ):
             use_incremental = False
 
+        if any(isinstance(w, float) for w, _ in self._soft) and self._objective_precision_decimals is None:
+            # A live incremental binding takes precedence over a solver argument
+            # or the default, so check the backend that will actually receive the
+            # weights.
+            if use_incremental and self._inc_state.mode == "maxsat" and self._inc_state.ip_solver is not None:
+                selected_solver = self._inc_state.ip_solver
+            else:
+                selected_solver = solver or (DefaultMaxSATSolver if maxsat_backend.lower() != "rc2" else HermaxRC2)
+            if not bool(getattr(selected_solver, "supports_float_weights", False)):
+                raise ValueError(
+                    "Selected solver does not support native floating-point weights; "
+                    "call set_objective_precision() or choose CoreTrail/RC2."
+                )
+
         # If incremental backend is already bound, always continue incrementally.
         if use_incremental:
             return self._inc_state.solve(
@@ -3522,17 +3564,17 @@ class Model:
         raise_on_abnormal: bool,
         time_limit: Optional[float] = None,
         formula_override: Optional[WCNF] = None,
-        objective_constant_override: Optional[int] = None,
+        objective_constant_override: Optional[int | float] = None,
     ) -> SolveResult:
         """Solve via a Hermax ``IPAMIRSolver`` backend (including portfolios)."""
 
         if formula_override is None:
             formula, soft_gcd = self._to_wcnf_for_solver()
-            objective_constant = int(self._objective_constant)
+            objective_constant = self._objective_constant
         else:
             formula = formula_override
             soft_gcd = 1
-            objective_constant = int(self._objective_constant if objective_constant_override is None else objective_constant_override)
+            objective_constant = self._objective_constant if objective_constant_override is None else objective_constant_override
         if soft_gcd > 1 and self._debug_level >= self.DEBUG_COMPILE:
             self._debug(self.DEBUG_COMPILE, f"soft_gcd optimize factor={soft_gcd}")
 
@@ -3551,7 +3593,7 @@ class Model:
 
             for w, c in zip(formula_obj.wght, formula_obj.soft):
                 clause = [int(l) for l in c]
-                weight = int(w)
+                weight = w
                 if len(clause) == 1:
                     ip_solver.add_soft_unit(clause[0], weight)
                     continue
@@ -3605,6 +3647,11 @@ class Model:
                 raise TypeError("solver callable must return an IPAMIRSolver instance.")
 
         try:
+            if any(isinstance(w, float) for w, _ in formula.soft) and not bool(getattr(ip_solver, "supports_float_weights", False)):
+                raise ValueError(
+                    f"{ip_solver.signature()} does not support native floating-point weights; "
+                    "call set_objective_precision() or choose a compatible solver."
+                )
             ip_solver.solve(
                 assumptions=self._coerce_assumptions(assumptions),
                 raise_on_abnormal=bool(raise_on_abnormal),
@@ -3626,9 +3673,12 @@ class Model:
                         backend=f"hermax.{ip_solver.signature()}",
                     )
                 c = ip_solver.get_cost()
-                cost = self._format_objective_cost(int(c) * int(soft_gcd) + int(objective_constant))
+            cost = self._format_objective_cost(c * soft_gcd + objective_constant)
             backend = f"hermax.{ip_solver.signature()}"
             return SolveResult(self, status=status, raw_model=raw_model, cost=cost, backend=backend)
         finally:
             if created:
                 self._safe_close_backend(ip_solver)
+
+
+

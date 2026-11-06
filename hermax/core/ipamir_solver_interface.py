@@ -15,6 +15,7 @@ and is aligned with incremental SAT interface conventions:
 """
 
 import abc
+import math
 from enum import IntEnum
 from typing import List, Optional, Callable
 
@@ -62,6 +63,8 @@ class IPAMIRSolver(abc.ABC):
     def __init__(self, *args, **kwargs):
         self._status: SolveStatus = SolveStatus.UNKNOWN
 
+    supports_float_weights = False
+
     def add_clauses(self, clauses) -> None:
         """Add hard clauses from an iterable, preserving their order.
 
@@ -85,7 +88,7 @@ class IPAMIRSolver(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def set_soft(self, lit: int, weight: int) -> None:
+    def set_soft(self, lit: int, weight: int | float) -> None:
         """
         Declares or updates a soft literal.
 
@@ -99,7 +102,7 @@ class IPAMIRSolver(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def add_soft_unit(self, lit: int, weight: int) -> None:
+    def add_soft_unit(self, lit: int, weight: int | float) -> None:
         """
         Shortcut for `add_soft_relaxed([lit], weight, relax_var=None)`.
 
@@ -116,7 +119,7 @@ class IPAMIRSolver(abc.ABC):
     def add_soft_relaxed(
         self,
         clause: list[int],
-        weight: int,
+        weight: int | float,
         relax_var: int | None,
     ):
         """
@@ -141,8 +144,10 @@ class IPAMIRSolver(abc.ABC):
             raise ValueError("clause must be a non-empty list")
         if any(isinstance(lit, bool) or not isinstance(lit, int) or lit == 0 for lit in clause):
             raise ValueError("clause literals must be non-zero integers")
-        if isinstance(weight, bool) or not isinstance(weight, int) or weight <= 0:
-            raise ValueError("weight must be a positive int")
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or weight <= 0:
+            raise ValueError("weight must be a positive number")
+        if isinstance(weight, float) and not math.isfinite(weight):
+            raise ValueError("weight must be finite")
 
         if relax_var is None:
             if len(clause) != 1:

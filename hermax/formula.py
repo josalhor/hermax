@@ -6,6 +6,7 @@ Use :meth:`to_pysat` for an explicit, independent PySAT representation.
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 from operator import index
 
 from hermax.internal._clause_storage import ClauseStorage
@@ -19,6 +20,14 @@ def _integer(value, name, *, minimum=0):
     value = index(value)
     if value < minimum:
         raise ValueError(f'{name} must be at least {minimum}.')
+    return value
+
+
+def _validate_soft_weight(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError('Soft weight must be numeric.')
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError('Soft weight must be finite and positive.')
     return value
 
 
@@ -64,7 +73,7 @@ class _Formula:
             if len(self.soft) != len(self.wght):
                 raise ValueError('Soft clauses and weights must have equal length.')
             for weight in self.wght:
-                _integer(weight, 'Soft weight', minimum=1)
+                _validate_soft_weight(weight)
         for constraint in self._constraints:
             _constraint(constraint)
         return self
@@ -91,7 +100,7 @@ class _Formula:
         if source_weighted:
             result.hard = formula.hard
             result.soft = formula.soft
-            result.wght = [_integer(w, 'Soft weight', minimum=1) for w in formula.wght]
+            result.wght = [_validate_soft_weight(w) for w in formula.wght]
             if len(result.soft) != len(result.wght):
                 raise ValueError('Soft clauses and weights must have equal length.')
             result.topw = getattr(formula, 'topw', sum(result.wght) + 1)
@@ -320,7 +329,10 @@ class WCNF(_Formula):
         elif weight is None:
             self.hard.append(clause)
         else:
-            weight = _integer(weight, 'Soft weight', minimum=1)
+            if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+                raise TypeError('Soft weight must be numeric.')
+            if not math.isfinite(weight) or weight <= 0:
+                raise ValueError('Soft weight must be finite and positive.')
             self.soft.append(clause)
             self.wght.append(weight)
 
@@ -330,7 +342,7 @@ class WCNF(_Formula):
         else:
             # Validate both collections before mutation; never silently zip-truncate.
             rows = ClauseStorage(clauses)
-            weights = [_integer(w, 'Soft weight', minimum=1) for w in weights]
+            weights = [_validate_soft_weight(w) for w in weights]
             if len(rows) != len(weights):
                 raise ValueError('Soft clauses and weights must have equal length.')
             self.soft.extend(rows)

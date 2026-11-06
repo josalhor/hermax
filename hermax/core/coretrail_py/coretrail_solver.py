@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import math
 from typing import List, Optional
 from itertools import chain
 
@@ -20,6 +21,8 @@ _MAX_I64 = (1 << 63) - 1
 
 class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
     """Thin IPAMIR adapter for the native resumable CoreTrail backend."""
+
+    supports_float_weights = True
 
     @classmethod
     def is_available(cls) -> bool:
@@ -61,20 +64,24 @@ class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
         return int(lit)
 
     @staticmethod
-    def _normalize_positive_weight(weight: int) -> int:
-        if isinstance(weight, bool) or not isinstance(weight, int) or weight <= 0:
-            raise ValueError("Weight must be a positive integer.")
-        if weight > _MAX_I64:
+    def _normalize_positive_weight(weight):
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or weight <= 0:
+            raise ValueError("Weight must be a positive integer or finite float.")
+        if isinstance(weight, float) and not math.isfinite(weight):
+            raise ValueError("Weight must be finite.")
+        if isinstance(weight, int) and weight > _MAX_I64:
             raise OverflowError(f"Weight exceeds CoreTrail's int64 range: {weight}")
-        return int(weight)
+        return weight
 
     @staticmethod
-    def _normalize_nonnegative_weight(weight: int) -> int:
-        if isinstance(weight, bool) or not isinstance(weight, int) or weight < 0:
-            raise ValueError("Weight must be a non-negative integer.")
-        if weight > _MAX_I64:
+    def _normalize_nonnegative_weight(weight):
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or weight < 0:
+            raise ValueError("Weight must be a non-negative integer or finite float.")
+        if isinstance(weight, float) and not math.isfinite(weight):
+            raise ValueError("Weight must be finite.")
+        if isinstance(weight, int) and weight > _MAX_I64:
             raise OverflowError(f"Weight exceeds CoreTrail's int64 range: {weight}")
-        return int(weight)
+        return weight
 
     def _normalize_clause(self, clause: List[int]) -> List[int]:
         if not isinstance(clause, list):
@@ -135,7 +142,7 @@ class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
         else:
             super().add_clauses(clauses)
 
-    def set_soft(self, lit: int, weight: int) -> None:
+    def set_soft(self, lit: int, weight: int | float) -> None:
         self._require_open()
         ilit = self._normalize_lit(lit)
         w = self._normalize_nonnegative_weight(weight)
@@ -155,10 +162,11 @@ class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
         status = SolveStatus(int(self.solver.get_status()))
 
         if is_feasible(status):
+            native_cost = self.solver.get_cost()
             self._set_result(
                 status=status,
                 model=self.solver.get_model(),
-                cost=int(self.solver.get_cost()),
+                cost=native_cost,
                 num_vars=self.num_vars,
             )
         elif status in {SolveStatus.UNSAT, SolveStatus.INTERRUPTED}:

@@ -1,7 +1,6 @@
 #pragma once
 
-#include <cstdint>
-#include <limits>
+#include "coretrail/weight.hpp"
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -12,19 +11,18 @@ namespace coretrail {
 // Canonical user objective. Derived RC2 selectors never enter this store.
 class ObjectiveStore {
 public:
-    // Reject objectives whose possible cost exceeds the native signed range.
-    void validate_weight(int selector, std::int64_t weight, bool replace) const {
-        if (weight < 0) throw std::invalid_argument("soft weight must be non-negative");
-        std::int64_t retained = total_weight_;
+    // Validate non-negative, finite weights and exact integer overflow.
+    void validate_weight(int selector, Weight weight, bool replace) const {
+        if (!weight.finite() || weight < 0) throw std::invalid_argument("soft weight must be finite and non-negative");
+        Weight retained = total_weight_;
         if (replace) {
             const auto it = terms_.find(selector);
             if (it != terms_.end()) retained -= it->second.weight;
         }
-        if (retained > std::numeric_limits<std::int64_t>::max() - weight)
-            throw std::overflow_error("total objective weight exceeds signed int64 range");
+        (void)(retained + weight); // check exact integer overflow; doubles remain finite-checked
     }
 
-    void add_unit(int selector, int literal, std::int64_t weight) {
+    void add_unit(int selector, int literal, Weight weight) {
         if (weight <= 0) throw std::invalid_argument("soft weight must be positive");
         validate_weight(selector, weight, false);
         auto [it, inserted] = terms_.try_emplace(selector, Term{{literal}, 0});
@@ -35,7 +33,7 @@ public:
         total_weight_ += weight;
     }
 
-    void add_clause(int selector, std::vector<int> clause, std::int64_t weight) {
+    void add_clause(int selector, std::vector<int> clause, Weight weight) {
         if (weight <= 0) throw std::invalid_argument("soft weight must be positive");
         validate_weight(selector, weight, false);
         if (!terms_.emplace(selector, Term{std::move(clause), weight}).second) {
@@ -44,7 +42,7 @@ public:
         total_weight_ += weight;
     }
 
-    void set_unit(int selector, int literal, std::int64_t weight) {
+    void set_unit(int selector, int literal, Weight weight) {
         if (weight < 0) throw std::invalid_argument("soft weight must be non-negative");
         validate_weight(selector, weight, true);
         auto [it, inserted] = terms_.try_emplace(selector, Term{{literal}, 0});
@@ -56,17 +54,17 @@ public:
         it->second.weight = weight;
     }
 
-    std::int64_t unit_weight(int literal) const {
+    Weight unit_weight(int literal) const {
         const auto it = terms_.find(literal);
-        return it == terms_.end() ? 0 : it->second.weight;
+        return it == terms_.end() ? Weight(0) : it->second.weight;
     }
 
-    std::int64_t evaluate(const std::vector<int>& model) const {
+    Weight evaluate(const std::vector<int>& model) const {
         std::unordered_map<int, bool> values;
         values.reserve(model.size());
         for (int lit : model) values[lit < 0 ? -lit : lit] = lit > 0;
 
-        std::int64_t cost = 0;
+        Weight cost = 0;
         for (const auto& [selector, term] : terms_) {
             (void)selector;
             if (term.weight == 0) continue;
@@ -91,11 +89,13 @@ public:
 private:
     struct Term {
         std::vector<int> clause;
-        std::int64_t weight;
+        Weight weight;
     };
 
     std::unordered_map<int, Term> terms_{};
-    std::int64_t total_weight_{0};
+    Weight total_weight_{0};
 };
 
 }  // namespace coretrail
+
+

@@ -18,6 +18,7 @@ class RC2Reentrant(ReplayFormulaSolverBase):
     """RC2 replay baseline wrapper (rebuild per solve)."""
 
     nonunit_soft_policy = "store"
+    supports_float_weights = True
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -110,7 +111,7 @@ class RC2Reentrant(ReplayFormulaSolverBase):
                 return ReplaySolveResult(
                     status=SolveStatus.OPTIMUM,
                     model=[int(x) for x in model],
-                    cost=int(rc2.cost),
+                    cost=rc2.cost,
                 )
         except Exception:
             return ReplaySolveResult(status=SolveStatus.ERROR, model=None, cost=None)

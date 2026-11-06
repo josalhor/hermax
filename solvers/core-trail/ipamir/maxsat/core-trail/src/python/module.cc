@@ -77,6 +77,13 @@ static int py_to_literal(PyObject* value, int* out) {
     return 0;
 }
 
+static int py_to_weight(PyObject* value, coretrail::Weight* out) {
+    if (PyBool_Check(value)) { PyErr_SetString(PyExc_TypeError, "Weights must be integers or floats, not bools."); return -1; }
+    if (PyLong_Check(value)) { long long v = PyLong_AsLongLong(value); if (PyErr_Occurred()) return -1; *out = coretrail::Weight(static_cast<std::int64_t>(v)); return 0; }
+    if (PyFloat_Check(value)) { double v = PyFloat_AsDouble(value); if (PyErr_Occurred()) return -1; if (!std::isfinite(v)) { PyErr_SetString(PyExc_ValueError, "Weights must be finite."); return -1; } *out = coretrail::Weight(v); return 0; }
+    PyErr_SetString(PyExc_TypeError, "Weights must be integers or floats."); return -1;
+}
+
 static int py_to_int_vector(PyObject* seq, std::vector<int>* out) {
     PyObject* it = PyObject_GetIter(seq);
     if (!it) return -1;
@@ -167,9 +174,10 @@ static int load_formula_from_wcnf(coretrail::CoreTrailSolver* solver, PyObject* 
             Py_DECREF(hard); Py_DECREF(soft); Py_DECREF(wght);
             return -1;
         }
-        long long w = PyLong_AsLongLong(ww);
+        coretrail::Weight w;
+        int weight_status = py_to_weight(ww, &w);
         Py_DECREF(ww);
-        if (PyErr_Occurred()) {
+        if (weight_status < 0) {
             Py_DECREF(cl); Py_DECREF(hard); Py_DECREF(soft); Py_DECREF(wght);
             return -1;
         }
@@ -386,10 +394,10 @@ static PyObject* m_add_clause(PyCoreTrail* self, PyObject* args, PyObject* kwarg
         return nullptr;
     }
     if (py_to_int_vector(clause_obj, &clause) < 0) return nullptr;
-    std::optional<std::int64_t> w = std::nullopt;
+    std::optional<coretrail::Weight> w = std::nullopt;
     if (weight_obj != Py_None) {
-        long long wi = PyLong_AsLongLong(weight_obj);
-        if (PyErr_Occurred()) return nullptr;
+        coretrail::Weight wi;
+        if (py_to_weight(weight_obj, &wi) < 0) return nullptr;
         w = wi;
     }
     try {
@@ -411,12 +419,14 @@ static PyObject* m_set_soft(PyCoreTrail* self, PyObject* args, PyObject* kwargs)
     coretrail::CoreTrailSolver* s = get_solver(self);
     if (s == nullptr) return nullptr;
     PyObject* lit_object = nullptr;
-    long long weight = 0;
+    PyObject* weight_obj = nullptr;
     int lit;
     static const char* names[] = {"lit", "weight", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OL", const_cast<char**>(names),
-                                     &lit_object, &weight)) return nullptr;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO", const_cast<char**>(names),
+                                     &lit_object, &weight_obj)) return nullptr;
     if (py_to_literal(lit_object, &lit) < 0) return nullptr;
+    coretrail::Weight weight;
+    if (py_to_weight(weight_obj, &weight) < 0) return nullptr;
     try {
         s->set_soft(lit, weight);
     } catch (const std::invalid_argument& e) {
@@ -436,12 +446,14 @@ static PyObject* m_add_soft_unit(PyCoreTrail* self, PyObject* args, PyObject* kw
     coretrail::CoreTrailSolver* s = get_solver(self);
     if (s == nullptr) return nullptr;
     PyObject* lit_object = nullptr;
-    long long weight = 0;
+    PyObject* weight_obj = nullptr;
     int lit;
     static const char* names[] = {"lit", "weight", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OL", const_cast<char**>(names),
-                                     &lit_object, &weight)) return nullptr;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO", const_cast<char**>(names),
+                                     &lit_object, &weight_obj)) return nullptr;
     if (py_to_literal(lit_object, &lit) < 0) return nullptr;
+    coretrail::Weight weight;
+    if (py_to_weight(weight_obj, &weight) < 0) return nullptr;
     try {
         s->add_soft_unit(lit, weight);
     } catch (const std::invalid_argument& e) {
@@ -537,7 +549,8 @@ static PyObject* m_get_cost(PyCoreTrail* self, PyObject* args) {
     coretrail::CoreTrailSolver* s = get_solver(self);
     if (s == nullptr) return nullptr;
     try {
-        return PyLong_FromLongLong(s->get_cost());
+        const coretrail::Weight cost = s->get_cost();
+        return cost.is_integer() ? PyLong_FromLongLong(cost.as_integer()) : PyFloat_FromDouble(cost.as_double());
     } catch (const std::runtime_error& e) {
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return nullptr;

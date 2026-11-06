@@ -17,7 +17,7 @@ class IPAMIRStateMixin:
         self._closed: bool = False
         self._status: SolveStatus = SolveStatus.UNKNOWN
         self._model: Optional[List[int]] = None
-        self._last_cost: Optional[int] = None
+        self._last_cost: Optional[int | float] = None
 
     def _require_open(self) -> None:
         if self._closed:
@@ -33,14 +33,14 @@ class IPAMIRStateMixin:
         *,
         status: SolveStatus,
         model: Optional[List[int]] = None,
-        cost: Optional[int] = None,
+        cost: Optional[int | float] = None,
         num_vars: Optional[int] = None,
         pad_missing_with_negative: bool = True,
     ) -> None:
         if not isinstance(status, SolveStatus):
             raise TypeError("status must be a SolveStatus.")
-        if cost is not None and (isinstance(cost, bool) or not isinstance(cost, int)):
-            raise TypeError("cost must be an integer or None.")
+        if cost is not None and (isinstance(cost, bool) or not isinstance(cost, (int, float))):
+            raise TypeError("cost must be numeric or None.")
 
         normalized_model: Optional[List[int]]
         if model is None:
@@ -87,13 +87,13 @@ class IPAMIRStateMixin:
     def get_status(self) -> SolveStatus:
         return self._status
 
-    def get_cost(self) -> int:
+    def get_cost(self) -> int | float:
         self._require_open()
         if not is_feasible(self._status):
             raise RuntimeError("Cost is only available for feasible status.")
         if self._last_cost is None:
             raise RuntimeError("Objective value unavailable")
-        return int(self._last_cost)
+        return self._last_cost
 
     def get_model(self) -> Optional[List[int]]:
         self._require_open()

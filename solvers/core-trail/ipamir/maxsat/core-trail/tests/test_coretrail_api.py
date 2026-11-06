@@ -11,7 +11,7 @@ from coretrail import CoreTrail
 
 
 class Formula:
-    def __init__(self, *, nv: int, hard: list[list[int]] | None = None, soft: list[list[int]] | None = None, wght: list[int] | None = None):
+    def __init__(self, *, nv: int, hard: list[list[int]] | None = None, soft: list[list[int]] | None = None, wght: list[int | float] | None = None):
         self.nv = nv
         self.hard = hard or []
         self.soft = soft or []
@@ -84,6 +84,52 @@ def test_duplicate_unit_soft_clauses_accumulate_wcnf_cost():
         assert solver.get_cost() == 5
     finally:
         solver.close()
+
+
+def test_fractional_weights_flow_through_solver_and_python_cost():
+    solver = CoreTrail(Formula(nv=1, hard=[[-1]], soft=[[1]], wght=[0.34545384753412]))
+    try:
+        assert solver.solve() is True
+        cost = solver.get_cost()
+        assert isinstance(cost, float)
+        assert cost == 0.34545384753412
+    finally:
+        solver.close()
+
+
+def test_fractional_weight_updates_and_incremental_additions():
+    solver = CoreTrail(Formula(nv=1, hard=[[-1]], soft=[[1]], wght=[0.1233593467569]))
+    try:
+        assert solver.solve() is True
+        assert solver.get_cost() == 0.1233593467569
+
+        solver.set_soft(1, 0.34545384753412)
+        assert solver.solve() is True
+        assert solver.get_cost() == 0.34545384753412
+
+        solver.add_clause([1], weight=0.1233593467569)
+        assert solver.solve() is True
+        assert solver.get_cost() == 0.46881319429102
+    finally:
+        solver.close()
+
+
+def test_integer_weight_cost_remains_an_exact_python_int_above_double_precision():
+    weight = 2**53 + 1
+    solver = CoreTrail(Formula(nv=1, hard=[[-1]], soft=[[1]], wght=[weight]))
+    try:
+        assert solver.solve() is True
+        cost = solver.get_cost()
+        assert isinstance(cost, int)
+        assert cost == weight
+    finally:
+        solver.close()
+
+
+@pytest.mark.parametrize("weight", [float("inf"), float("-inf"), float("nan")])
+def test_non_finite_soft_weights_are_rejected(weight: float):
+    with pytest.raises(ValueError, match="finite"):
+        CoreTrail(Formula(nv=1, soft=[[1]], wght=[weight]))
 
 
 def test_added_weighted_unit_rolls_back_old_core():

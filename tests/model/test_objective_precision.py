@@ -12,26 +12,47 @@ def _solve_ok(m: Model):
     return r
 
 
-def test_float_weight_rejected_without_precision_add_soft():
+def test_float_weight_is_stored_without_precision_until_solver_selection_add_soft():
     m = Model()
     a = m.bool("a")
-    with pytest.raises(ValueError):
-        with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
-            m.obj.add_soft(a, 1.25)  # type: ignore[arg-type]
+    with pytest.warns(FutureWarning, match=r"add_soft\(\) is deprecated"):
+        m.obj.add_soft(a, 1.25)  # type: ignore[arg-type]
+    assert m._soft[0][0] == 1.25
 
 
-def test_float_weight_rejected_without_precision_obj_bucket():
+def test_default_coretrail_preserves_native_float_cost_without_precision():
     m = Model()
     a = m.bool("a")
-    with pytest.raises(ValueError):
-        m.obj += 1.25 * a  # type: ignore[index]
+    m &= a
+    m.obj.add(~a, weight=0.34545384753412)
+    result = m.solve()
+    assert result.ok
+    assert result.cost == pytest.approx(0.34545384753412)
+    assert result[a] is True
 
 
-def test_integral_float_weight_also_rejected_without_precision():
+def test_float_objective_rejected_by_integer_only_solver_without_precision():
+    from hermax.core.openwbo_py import OLLSolver
+
     m = Model()
     a = m.bool("a")
-    with pytest.raises(ValueError):
-        m.obj.add(~a, weight=1.0)  # type: ignore[arg-type]
+    m.obj.add(~a, weight=0.375)
+    with pytest.raises(ValueError, match="does not support native floating-point weights"):
+        m.solve(incremental=False, solver=OLLSolver)
+
+
+def test_float_weight_stored_without_precision_obj_bucket():
+    m = Model()
+    a = m.bool("a")
+    m.obj += 1.25 * a  # type: ignore[index]
+    assert 1.25 in [w for w, _ in m._soft]
+
+
+def test_integral_float_weight_stored_without_precision():
+    m = Model()
+    a = m.bool("a")
+    m.obj.add(~a, weight=1.0)  # type: ignore[arg-type]
+    assert 1.0 in [w for w, _ in m._soft]
 
 
 def test_precision_allows_float_weights_and_rounds():

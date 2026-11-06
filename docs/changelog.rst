@@ -18,6 +18,7 @@ Highlights
 * Added ``model.all_different_except()``, ``model.all_equal_except()``, ``model.precedence()``, ``model.regular()``, ``model.mdd()``, ``model.no_overlap()`` 
 * Added integer membership with ``IntVar.is_in()``.
 * Added ``IntVector.lexicographic_less_or_equal()``.
+* Added support for native floating point weights.
 
 Version 1.3.1
 -------------
