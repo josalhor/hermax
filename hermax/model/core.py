@@ -168,6 +168,8 @@ class _ObjectiveProxy:
 
     def _reweight_term(self, term, weight):
         m = self._model
+        if m._objective_precision_decimals is None and isinstance(weight, float) and not weight.is_integer():
+            raise ValueError("Fractional updates require objective precision; call set_objective_precision().")
         scaled, raw = m._coerce_soft_weight(weight, allow_zero=True)
         value = raw if m._objective_precision_decimals is not None else scaled
         snapshot = prepare_objective(self._model, term._expression, lower=bool(value))
@@ -288,6 +290,8 @@ class _TierObjectiveProxy:
         validate_numeric_objective(self._model, expression)
         scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=True)
         value = raw if self._model._objective_precision_decimals is not None else scaled
+        if self._model._objective_precision_decimals is None and isinstance(value, float) and not value.is_integer():
+            raise ValueError("Fractional tier weights require objective precision.")
         snapshot = prepare_objective(self._model, expression, lower=bool(value))
         weights, offset = normalize_prepared_objective(self._model, snapshot, weight=value) if value else ({}, 0)
         if not value:
@@ -309,6 +313,8 @@ class _TierObjectiveProxy:
         self._reweight_term(term, weight)
 
     def _reweight_term(self, term, weight):
+        if self._model._objective_precision_decimals is None and isinstance(weight, float) and not weight.is_integer():
+            raise ValueError("Fractional updates require objective precision; call set_objective_precision().")
         scaled, raw = self._model._coerce_soft_weight(weight, allow_zero=True)
         value = raw if self._model._objective_precision_decimals is not None else scaled
         snapshot = prepare_objective(self._model, term._expression, lower=bool(value))
@@ -374,8 +380,8 @@ class _TierObjectiveProxy:
     def is_active(self) -> bool:
         for _tier, d in self._tiers.items():
             lw = d.get("lit_weights", {})
-            off = int(d.get("offset", 0))
-            if isinstance(lw, dict) and any(int(v) > 0 for v in lw.values()):
+            off = d.get("offset", 0)
+            if isinstance(lw, dict) and any(v > 0 for v in lw.values()):
                 return True
             if off != 0:
                 return True
@@ -656,6 +662,10 @@ class _IncrementalCoordinator:
                 if hasattr(ip_solver, "close"):
                     self._safe_call(ip_solver.close)
                 raise TypeError("solver callable must return an IPAMIRSolver instance.")
+
+        if any(isinstance(w, float) for w, _ in m._soft) and not bool(getattr(ip_solver, "supports_float_weights", False)):
+            self.ip_solver = None
+            raise ValueError("Selected solver does not support native floating-point weights; call set_objective_precision() or choose a compatible solver.")
 
         # replay
         m._prepare_encoding()
@@ -1230,6 +1240,17 @@ class Model:
         # Augmented assignment on attributes may rebind back the same proxy.
         if new_expr is self._obj_proxy:
             return
+        if self._objective_precision_decimals is None:
+            validate_numeric_objective(self, new_expr)
+            if isinstance(new_expr, Term):
+                coefficients = (new_expr.coefficient,)
+            elif isinstance(new_expr, PBExpr):
+                coefficients = (term.coefficient for term in new_expr.terms)
+            else:
+                coefficients = ()
+            if any(isinstance(coefficient, float) and not coefficient.is_integer()
+                   for coefficient in coefficients):
+                raise ValueError("Fractional objective expressions require objective precision; call set_objective_precision().")
         self._obj_proxy.replace_with(new_expr)
 
     @property
@@ -3328,7 +3349,10 @@ class Model:
 
         max_var: list[int] = []
         for _idx, lit_weights, offset in tiers:
-            max_var.append(sum(int(w) for w in lit_weights.values() if int(w) > 0))
+            capacity = sum((w for w in lit_weights.values() if w > 0), 0)
+            if capacity > self._i64_max() or (isinstance(capacity, float) and not math.isfinite(capacity)):
+                raise OverflowError("Lexicographic stratification overflow risk detected. Use lex_strategy='incremental'.")
+            max_var.append(int(math.ceil(capacity)))
 
         bases = [1] * len(tiers)
         i64 = self._i64_max()
@@ -3347,14 +3371,17 @@ class Model:
         for i, (_idx, lit_weights, offset) in enumerate(tiers):
             b = int(bases[i])
             flat_offset += offset * b
+            if abs(flat_offset) > i64 or (isinstance(flat_offset, float) and not math.isfinite(flat_offset)):
+                raise OverflowError("Lexicographic stratification offset overflow risk detected. Use lex_strategy='incremental'.")
             for dim, w in lit_weights.items():
                 ww = w * b
                 if ww <= 0:
                     continue
-                if ww > i64:
+                if ww > i64 or (isinstance(ww, float) and not math.isfinite(ww)):
                     raise OverflowError("Lexicographic stratification overflow risk detected. Use lex_strategy='incremental'.")
                 flat_lit_weights[int(dim)] = flat_lit_weights.get(int(dim), 0) + ww
-                if isinstance(ww, int) and flat_lit_weights[int(dim)] > i64:
+                combined = flat_lit_weights[int(dim)]
+                if combined > i64 or (isinstance(combined, float) and not math.isfinite(combined)):
                     raise OverflowError("Lexicographic stratification overflow risk detected. Use lex_strategy='incremental'.")
 
         self._ensure_deferred_defs_in_group(ClauseGroup._from_dimacs_trusted(self, self._hard))
@@ -3619,7 +3646,6 @@ class Model:
             if solver_kwargs:
                 raise ValueError("solver_kwargs are only supported when passing a solver class/callable.")
             ip_solver = solver
-            _replay_into_existing_instance(ip_solver, formula)
         else:
             if not callable(solver):
                 raise TypeError("solver must be an IPAMIRSolver instance, class, or callable factory.")
@@ -3647,11 +3673,13 @@ class Model:
                 raise TypeError("solver callable must return an IPAMIRSolver instance.")
 
         try:
-            if any(isinstance(w, float) for w, _ in formula.soft) and not bool(getattr(ip_solver, "supports_float_weights", False)):
+            if any(isinstance(w, float) for w in formula.wght) and not bool(getattr(ip_solver, "supports_float_weights", False)):
                 raise ValueError(
                     f"{ip_solver.signature()} does not support native floating-point weights; "
                     "call set_objective_precision() or choose a compatible solver."
                 )
+            if isinstance(solver, IPAMIRSolver):
+                _replay_into_existing_instance(ip_solver, formula)
             ip_solver.solve(
                 assumptions=self._coerce_assumptions(assumptions),
                 raise_on_abnormal=bool(raise_on_abnormal),
@@ -3673,7 +3701,8 @@ class Model:
                         backend=f"hermax.{ip_solver.signature()}",
                     )
                 c = ip_solver.get_cost()
-            cost = self._format_objective_cost(c * soft_gcd + objective_constant)
+            if feasible:
+                cost = self._format_objective_cost(c * soft_gcd + objective_constant)
             backend = f"hermax.{ip_solver.signature()}"
             return SolveResult(self, status=status, raw_model=raw_model, cost=cost, backend=backend)
         finally:

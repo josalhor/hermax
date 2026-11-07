@@ -57,8 +57,8 @@ def test_objective_rejects_invalid_weights():
     with pytest.raises(ValueError, match="non-negative|positive int"):
         m.obj.add(a, weight=-1)
 
-    with pytest.raises(ValueError, match="positive int"):
-        m.obj.add(a, weight=1.5)
+    m.obj.add(a, weight=1.5)
+    assert 1.5 in [weight for weight, _clause in m._soft]
 
 
 def test_objective_soft_literal_and_clause_choose_min_cost_assignment():

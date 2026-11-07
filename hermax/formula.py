@@ -28,6 +28,8 @@ def _validate_soft_weight(value):
         raise TypeError('Soft weight must be numeric.')
     if not math.isfinite(value) or value <= 0:
         raise ValueError('Soft weight must be finite and positive.')
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError('Soft weights must be integer-valued in WCNF.')
     return value
 
 

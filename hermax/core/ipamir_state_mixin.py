@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import List, Optional
 
 from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible
@@ -41,6 +42,10 @@ class IPAMIRStateMixin:
             raise TypeError("status must be a SolveStatus.")
         if cost is not None and (isinstance(cost, bool) or not isinstance(cost, (int, float))):
             raise TypeError("cost must be numeric or None.")
+        if isinstance(cost, float) and not math.isfinite(cost):
+            raise ValueError("cost must be finite or None.")
+        if isinstance(cost, float) and not cost.is_integer():
+            raise TypeError("cost must be an integer-valued number or None.")
 
         normalized_model: Optional[List[int]]
         if model is None:

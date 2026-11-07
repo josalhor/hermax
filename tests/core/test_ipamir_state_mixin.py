@@ -73,6 +73,17 @@ def test_set_result_rejects_non_integer_costs(raw_cost):
         )
 
 
+@pytest.mark.parametrize("raw_cost", [float("nan"), float("inf"), float("-inf")])
+def test_set_result_rejects_non_finite_costs(raw_cost):
+    with pytest.raises(ValueError, match="finite"):
+        _state()._set_result(
+            status=SolveStatus.OPTIMUM,
+            model=[1],
+            cost=raw_cost,
+            num_vars=1,
+        )
+
+
 def test_set_result_is_atomic_when_replacement_cost_is_invalid():
     state = _state()
     state._set_result(
