@@ -194,6 +194,8 @@ class _Formula:
 
     def to_dimacs(self):
         self.validate()
+        if self._weighted and any(isinstance(weight, float) and not weight.is_integer() for weight in self.wght):
+            raise ValueError("DIMACS WCNF serialization requires integer soft weights; fractional weights are supported in memory only.")
         topw = self.topw if self._weighted else None
         kind = ('wcnf' if self._weighted else 'cnf') + ('+' if self._plus else '')
         if self._weighted:

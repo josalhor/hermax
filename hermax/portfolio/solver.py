@@ -224,6 +224,14 @@ class PortfolioSolver(IPAMIRSolver):
     }
     CALLBACK_HEARTBEAT_S = 1.0
 
+    @property
+    def supports_float_weights(self) -> bool:
+        """Whether every configured worker supports native float costs."""
+        return all(
+            getattr(cls, "supports_float_weights", False)
+            for cls in self._solver_classes
+        )
+
     def __init__(
         self,
         solver_classes: Sequence[Type[IPAMIRSolver]],
@@ -418,6 +426,7 @@ class PortfolioSolver(IPAMIRSolver):
             raise TypeError("Soft literal must be an integer.")
         if isinstance(weight, bool) or not isinstance(weight, (int, float)):
             raise TypeError("Weight must be numeric.")
+        self._validate_weight_capability(weight)
         lit = int(lit)
         if isinstance(weight, float) and not math.isfinite(weight):
             raise ValueError("Weight must be finite.")
@@ -447,6 +456,7 @@ class PortfolioSolver(IPAMIRSolver):
             raise ValueError("clause must be a non-empty list")
         if isinstance(weight, bool) or not isinstance(weight, (int, float)):
             raise TypeError("weight must be numeric")
+        self._validate_weight_capability(weight)
         if isinstance(weight, float) and not math.isfinite(weight):
             raise ValueError("weight must be finite")
         if weight <= 0:
@@ -478,6 +488,10 @@ class PortfolioSolver(IPAMIRSolver):
         self._invalidate()
         return b
 
+    def _validate_weight_capability(self, weight: int | float) -> None:
+        if isinstance(weight, float) and not self.supports_float_weights:
+            raise TypeError("No configured portfolio worker supports floating-point weights.")
+
     def _launch_workers(self, assumptions: list[int]) -> list[_WorkerProc]:
         workers: list[_WorkerProc] = []
         now = time.monotonic()
@@ -503,6 +517,18 @@ class PortfolioSolver(IPAMIRSolver):
     def _spawn_worker(self, cls: type, assumptions: list[int], now: Optional[float] = None) -> Optional[_WorkerProc]:
         if now is None:
             now = time.monotonic()
+        if (
+            any(isinstance(weight, float) for weight in self._journal.soft_units.values())
+            and not getattr(cls, "supports_float_weights", False)
+        ):
+            self._last_run_details.append(
+                {
+                    "solver": _class_path(cls),
+                    "status": "SKIP",
+                    "reason": "native floating-point weights are unsupported",
+                }
+            )
+            return None
         if not _solver_is_available(cls):
             self._last_run_details.append(
                 {"solver": _class_path(cls), "status": "SKIP", "reason": "unavailable"}
@@ -661,7 +687,12 @@ class PortfolioSolver(IPAMIRSolver):
                     report = _loads_frame_from_bytes(header + payload)
                     model = report["model"]
                     cost = report["cost"]
-                    if not isinstance(model, list) or isinstance(cost, bool) or not isinstance(cost, int):
+                    if (
+                        not isinstance(model, list)
+                        or isinstance(cost, bool)
+                        or not isinstance(cost, (int, float))
+                        or (isinstance(cost, float) and not math.isfinite(cost))
+                    ):
                         raise ValueError("invalid incumbent model or cost")
                     actual_cost = maxsat_cost_of_model(model, self._softs)
                     rank = actual_cost if self._recompute_cost else cost

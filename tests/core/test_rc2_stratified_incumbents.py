@@ -1,4 +1,5 @@
 from pysat.formula import WCNF
+import pytest
 from itertools import product
 import random
 import time
@@ -199,6 +200,26 @@ def test_portfolio_waits_for_full_report_and_rejects_invalid_incumbent():
         assert len(candidates) == 1 and candidates[0]["model"] == [1]
         assert caught
         assert solver._read_incumbents(worker) == []
+    finally:
+        worker.cleanup()
+        solver.close()
+
+
+def test_portfolio_accepts_fractional_incumbent_report():
+    solver = PortfolioSolver([RC2Reentrant])
+    solver.add_clause([1])
+    solver.add_soft_unit(-1, 0.375)
+    with tempfile.NamedTemporaryFile(delete=False) as stream:
+        path = stream.name
+        stream.write(_dumps_frame({"model": [1], "cost": 0.375}))
+    worker = _WorkerProc(solver_name="test", worker_class_path="test", proc=None,
+                         stdout_file=tempfile.TemporaryFile(), stderr_file=tempfile.TemporaryFile(),
+                         start_s=0, deadline_s=1, timeout_s=1, grace_s=0,
+                         request_assumptions=[], incumbent_path=path)
+    try:
+        candidates = solver._read_incumbents(worker)
+        assert len(candidates) == 1
+        assert candidates[0]["cost"] == pytest.approx(0.375)
     finally:
         worker.cleanup()
         solver.close()

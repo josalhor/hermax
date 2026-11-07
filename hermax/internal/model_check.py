@@ -24,6 +24,8 @@ def _weight(value: object) -> int | float:
         raise TypeError("soft weights must be numeric.")
     if isinstance(value, float) and not math.isfinite(value):
         raise ValueError("soft weights must be finite.")
+    if value <= 0:
+        raise ValueError("soft weights must be positive.")
     return value
 
 

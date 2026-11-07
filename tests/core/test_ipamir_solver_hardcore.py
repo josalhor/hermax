@@ -198,7 +198,7 @@ class _ModelCheckingSolverProxy:
         self._tc = tc
         self._solver = solver
         self._hards: list[list[int]] = []
-        self._softs: list[tuple[list[int], int]] = []
+        self._softs: list[tuple[list[int], int | float]] = []
 
     def __getattr__(self, name):
         return getattr(self._solver, name)
@@ -215,23 +215,23 @@ class _ModelCheckingSolverProxy:
             self._hards.append([int(x) for x in clause])
             return out
         out = self._solver.add_clause(clause, weight)
-        self._softs.append(([int(x) for x in clause], int(weight)))
+        self._softs.append(([int(x) for x in clause], weight))
         return out
 
     def set_soft(self, lit, weight):
         out = self._solver.set_soft(lit, weight)
-        self._softs.append(([int(lit)], int(weight)))
+        self._softs.append(([int(lit)], weight))
         return out
 
     def add_soft_unit(self, lit, weight):
         out = self._solver.add_soft_unit(lit, weight)
-        self._softs.append(([int(lit)], int(weight)))
+        self._softs.append(([int(lit)], weight))
         return out
 
     def add_soft_relaxed(self, clause, weight, relax_var):
         # Track semantic effect defined by IPAMIRSolver.add_soft_relaxed.
         cl = [int(x) for x in clause]
-        w = int(weight)
+        w = weight
         b = None if relax_var is None else abs(int(relax_var))
         out = self._solver.add_soft_relaxed(clause, weight, relax_var)
         if b is None:
@@ -947,9 +947,11 @@ class TestIPAMIRSolverHardcore(unittest.TestCase):
         self.assertEqual(self.solver.val(big), 1)
 
     def test_114_inconsistent_weight_types_raise(self):
-        # Non-int weights should be rejected
-        with self.assertRaises((TypeError, ValueError, AssertionError, RuntimeError)):
-            self.solver.set_soft(-1, 3.14)  # float
+        # Native-float support is covered by model integration tests. Check the
+        # rejection boundary here only for backends that do not advertise it.
+        if not getattr(self.solver, "supports_float_weights", False):
+            with self.assertRaises((TypeError, ValueError, AssertionError, RuntimeError)):
+                self.solver.set_soft(-1, 3.14)  # float
         with self.assertRaises((TypeError, ValueError, AssertionError, RuntimeError)):
             self.solver.set_soft(-2, "5")   # string
 

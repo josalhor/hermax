@@ -49,6 +49,8 @@ def test_wcnf_fractional_weights_are_consistent_across_append_extend_and_copy():
     f.extend([[2]], [0.25])
     assert f.validate() is f
     assert f.copy().wght == [0.5, 0.25]
+    with pytest.raises(ValueError, match="DIMACS WCNF serialization requires integer"):
+        f.to_dimacs()
 
 
 def test_pysat_roundtrip_preserves_plus_constraints_and_is_independent():

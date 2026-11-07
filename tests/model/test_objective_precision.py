@@ -24,7 +24,7 @@ def test_default_coretrail_preserves_native_float_cost_without_precision():
     m = Model()
     a = m.bool("a")
     m &= a
-    m.obj.add(~a, weight=0.34545384753412)
+    m.obj.add(a, weight=0.34545384753412)
     result = m.solve()
     assert result.ok
     assert result.cost == pytest.approx(0.34545384753412)

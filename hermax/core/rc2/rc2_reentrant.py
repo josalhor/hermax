@@ -113,7 +113,7 @@ class RC2Reentrant(ReplayFormulaSolverBase):
                     model=[int(x) for x in model],
                     cost=rc2.cost,
                 )
-        except Exception as exc:
+        except (ValueError, OverflowError, RuntimeError) as exc:
             self._last_error = f"{type(exc).__name__}: {exc}"
             return ReplaySolveResult(status=SolveStatus.ERROR, model=None, cost=None)
 

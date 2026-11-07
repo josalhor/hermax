@@ -52,6 +52,7 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
             self._invalidate_solution()
             return
 
+        self._validate_weight_capability(weight)
         w = self._normalize_positive_weight(weight)
         if len(cl) == 0:
             raise ValueError("Empty soft clause is not allowed.")
@@ -73,11 +74,18 @@ class ReplayFormulaSolverBase(IPAMIRStateMixin, IPAMIRSolver, abc.ABC):
     def set_soft(self, lit: int, weight: int | float) -> None:
         self._require_open()
         ilit = self._normalize_lit(lit)
+        self._validate_weight_capability(weight)
         w = self._normalize_nonnegative_weight(weight)
         self._ensure_var(abs(ilit))
 
         self._journal.set_soft(ilit, w)
         self._invalidate_solution()
+
+    def _validate_weight_capability(self, weight: int | float) -> None:
+        if isinstance(weight, float) and not self.supports_float_weights:
+            raise TypeError(
+                f"{self.signature()} does not support floating-point weights."
+            )
 
     def add_soft_unit(self, lit: int, weight: int | float) -> None:
         w = self._normalize_positive_weight(weight)

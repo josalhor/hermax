@@ -30,7 +30,7 @@ def test_model_check_rejects_non_integer_soft_literals(bad_literal):
         check_model([1], [], [([bad_literal], 1)], reported_cost=0)
 
 
-@pytest.mark.parametrize("bad_weight", [True, "1", float("nan"), float("inf")])
+@pytest.mark.parametrize("bad_weight", [True, "1", 0, -1, float("nan"), float("inf")])
 def test_model_check_rejects_non_integer_soft_weights(bad_weight):
     with pytest.raises((TypeError, ValueError)):
         check_model([1], [], [([1], bad_weight)], reported_cost=0)
