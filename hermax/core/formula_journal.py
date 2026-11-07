@@ -76,7 +76,7 @@ class FormulaJournal:
         self._formula.append(normalized)
         self.ensure_var(max(map(abs, normalized), default=0))
 
-    def set_soft(self, lit: int, weight: int) -> None:
+    def set_soft(self, lit: int, weight: int | float) -> None:
         lit = self._normalize_literal(lit)
         weight = self._normalize_weight(weight, allow_zero=True)
         self.ensure_var(abs(lit))
@@ -85,7 +85,7 @@ class FormulaJournal:
         else:
             self.soft_units[lit] = weight
 
-    def add_soft_nonunit(self, clause: List[int], weight: int) -> None:
+    def add_soft_nonunit(self, clause: List[int], weight: int | float) -> None:
         copied = [self._normalize_literal(lit) for lit in clause]
         weight = self._normalize_weight(weight)
         if len(copied) < 2:

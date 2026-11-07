@@ -1,7 +1,9 @@
 import pytest
 
 from hermax.portfolio import PortfolioSolver
+from hermax.core.ipamir_solver_interface import SolveStatus
 from hermax.portfolio._test_solvers import BadModelCostSolver, NonIntegerCostSolver
+from hermax.internal.maxsat_cli_parse import parse_maxsat_cli_output
 
 
 def test_portfolio_rejects_out_of_range_model_literals():
@@ -95,7 +97,7 @@ def test_portfolio_solve_rejects_non_integer_assumptions(raw_assumption, monkeyp
     solver.close()
 
 
-def test_portfolio_rejects_non_integer_worker_costs():
+def test_portfolio_rejects_non_numeric_worker_costs():
     solver = PortfolioSolver(
         [NonIntegerCostSolver],
         max_workers=1,
@@ -108,3 +110,21 @@ def test_portfolio_rejects_non_integer_worker_costs():
             solver.solve()
     finally:
         solver.close()
+
+
+def test_portfolio_compares_fractional_candidate_costs_exactly():
+    solver = PortfolioSolver([BadModelCostSolver], max_workers=1)
+    try:
+        better = {"status": SolveStatus.OPTIMUM, "cost": 0.1, "model": [1], "solver": "better"}
+        worse = {"status": SolveStatus.OPTIMUM, "cost": 0.9, "model": [-1], "solver": "worse"}
+        assert solver._choose_best(better, worse) is better
+        assert solver._choose_best(worse, better) is better
+    finally:
+        solver.close()
+
+
+def test_portfolio_cli_parser_preserves_fractional_objectives():
+    status, cost, model = parse_maxsat_cli_output("s OPTIMUM FOUND\no 0.125\nv 1 0", num_vars=1)
+    assert status is SolveStatus.OPTIMUM
+    assert cost == 0.125
+    assert model == [1]

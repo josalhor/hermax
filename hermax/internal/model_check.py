@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 from hermax.internal._clauses import satisfies
 
 
 Clause = Sequence[int]
-WeightedClause = Tuple[Sequence[int], int]
+WeightedClause = Tuple[Sequence[int], int | float]
 
 
 def _literal(value: object, *, context: str) -> int:
@@ -18,10 +19,12 @@ def _literal(value: object, *, context: str) -> int:
     return int(value)
 
 
-def _weight(value: object) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise TypeError("soft weights must be integers.")
-    return int(value)
+def _weight(value: object) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError("soft weights must be numeric.")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("soft weights must be finite.")
+    return value
 
 
 def model_literal_set(model: Iterable[int]) -> set[int]:
@@ -51,15 +54,15 @@ def model_satisfies_hard_clauses(hards: Iterable[Clause], model: Iterable[int]) 
     return satisfies(hards, model)
 
 
-def normalize_soft_units_last_wins(softs: Iterable[WeightedClause]) -> List[Tuple[List[int], int]]:
+def normalize_soft_units_last_wins(softs: Iterable[WeightedClause]) -> List[Tuple[List[int], int | float]]:
     """
     Soft clauses under Hermax/IPAMIR wrapper:
 
     - Unit soft clauses are deduplicated by literal (polarity-sensitive) using last-wins.
     - Non-unit soft clauses are preserved as a multiset.
     """
-    last_unit: dict[int, int] = {}
-    nonunits: list[tuple[list[int], int]] = []
+    last_unit: dict[int, int | float] = {}
+    nonunits: list[tuple[list[int], int | float]] = []
 
     for clause, w in softs:
         cl = [_literal(x, context="soft clause") for x in clause]
@@ -74,7 +77,7 @@ def normalize_soft_units_last_wins(softs: Iterable[WeightedClause]) -> List[Tupl
     return out
 
 
-def maxsat_cost_of_model(model: Iterable[int], softs: Iterable[WeightedClause]) -> int:
+def maxsat_cost_of_model(model: Iterable[int], softs: Iterable[WeightedClause]) -> int | float:
     """
     Compute weighted partial MaxSAT cost for a model under soft.
     """
@@ -82,14 +85,14 @@ def maxsat_cost_of_model(model: Iterable[int], softs: Iterable[WeightedClause]) 
     total = 0
     for clause, w in normalize_soft_units_last_wins(softs):
         if not any(_literal(lit, context="soft clause") in s for lit in clause):
-            total += int(w)
+            total += w
     return total
 
 
 @dataclass(frozen=True)
 class ModelCheckResult:
     hards_ok: bool
-    recomputed_cost: int
+    recomputed_cost: int | float
     reported_cost_matches: Optional[bool]
 
 
@@ -97,11 +100,13 @@ def check_model(
     model: Iterable[int],
     hards: Iterable[Clause],
     softs: Iterable[WeightedClause],
-    reported_cost: Optional[int] = None,
+    reported_cost: Optional[int | float] = None,
 ) -> ModelCheckResult:
     recomputed = maxsat_cost_of_model(model, softs)
-    if reported_cost is not None and (isinstance(reported_cost, bool) or not isinstance(reported_cost, int)):
-        raise TypeError("reported_cost must be an integer or None.")
+    if reported_cost is not None and (isinstance(reported_cost, bool) or not isinstance(reported_cost, (int, float))):
+        raise TypeError("reported_cost must be numeric or None.")
+    if isinstance(reported_cost, float) and not math.isfinite(reported_cost):
+        raise ValueError("reported_cost must be finite or None.")
     return ModelCheckResult(
         hards_ok=model_satisfies_hard_clauses(hards, model),
         recomputed_cost=recomputed,

@@ -62,7 +62,7 @@ def test_set_result_is_atomic_when_replacement_model_is_invalid():
     assert state.get_cost() == 7
 
 
-@pytest.mark.parametrize("raw_cost", [1.5, True, "7"])
+@pytest.mark.parametrize("raw_cost", [True, "7"])
 def test_set_result_rejects_non_integer_costs(raw_cost):
     with pytest.raises((TypeError, ValueError)):
         _state()._set_result(

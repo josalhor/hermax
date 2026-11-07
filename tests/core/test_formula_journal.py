@@ -126,7 +126,7 @@ def test_journal_snapshot_roundtrip_preserves_native_storage_and_ownership():
 @pytest.mark.parametrize('field,value', [
     ('num_vars', 1.5),
     ('hard_clauses', [[True]]),
-    ('soft_units', [(1, 2.5)]),
+    ('soft_units', [(1, float('nan'))]),
     ('soft_nonunit', [([1, 2], -3)]),
 ])
 def test_journal_snapshot_rejects_malformed_data(field, value):

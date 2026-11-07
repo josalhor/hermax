@@ -114,9 +114,9 @@ class NonIntegerModelSolver(BadModelCostSolver):
 
 
 class NonIntegerCostSolver(BadModelCostSolver):
-    """Test helper that reports a cost which is not an integer."""
+    """Test helper that reports a non-finite cost."""
 
-    def __init__(self, raw_cost=1.5, *args, **kwargs):
+    def __init__(self, raw_cost=float("nan"), *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.raw_cost = raw_cost
 

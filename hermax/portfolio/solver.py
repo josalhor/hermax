@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import importlib
+import math
 import os
 import tempfile
 import time
@@ -49,7 +50,7 @@ class PortfolioEvent:
     event_type: str  # "HEARTBEAT" | "INCUMBENT"
     elapsed_s: float
     worker_id: Optional[int] = None
-    cost: Optional[int] = None
+    cost: Optional[int | float] = None
     model: Optional[List[int]] = None
     is_optimal: bool = False
 
@@ -300,7 +301,7 @@ class PortfolioSolver(IPAMIRSolver):
 
         self._status = SolveStatus.UNKNOWN
         self._model: Optional[List[int]] = None
-        self._last_cost: Optional[int] = None
+        self._last_cost: Optional[int | float] = None
         self._last_error: Optional[str] = None
         self._last_solver_name: Optional[str] = None
         self._last_run_details: list[dict[str, Any]] = []
@@ -411,14 +412,15 @@ class PortfolioSolver(IPAMIRSolver):
         self._journal.add_hard(cl)
         self._invalidate()
 
-    def set_soft(self, lit: int, weight: int) -> None:
+    def set_soft(self, lit: int, weight: int | float) -> None:
         self._require_open()
         if isinstance(lit, bool) or not isinstance(lit, int):
             raise TypeError("Soft literal must be an integer.")
-        if isinstance(weight, bool) or not isinstance(weight, int):
-            raise TypeError("Weight must be a non-negative integer.")
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise TypeError("Weight must be numeric.")
         lit = int(lit)
-        weight = int(weight)
+        if isinstance(weight, float) and not math.isfinite(weight):
+            raise ValueError("Weight must be finite.")
         if lit == 0:
             raise ValueError("Soft literal must be non-zero.")
         if weight < 0:
@@ -428,23 +430,27 @@ class PortfolioSolver(IPAMIRSolver):
         self._journal.set_soft(lit, weight)
         self._invalidate()
 
-    def add_soft_unit(self, lit: int, weight: int) -> None:
+    def add_soft_unit(self, lit: int, weight: int | float) -> None:
         self._require_open()
-        if isinstance(weight, bool) or not isinstance(weight, int):
-            raise TypeError("Weight must be a positive integer.")
-        if int(weight) <= 0:
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise TypeError("Weight must be numeric.")
+        if isinstance(weight, float) and not math.isfinite(weight):
+            raise ValueError("Weight must be finite.")
+        if weight <= 0:
             raise ValueError("Weight must be positive.")
         self.set_soft(lit, weight)
 
-    def add_soft_relaxed(self, clause: list[int], weight: int, relax_var: int | None):
+    def add_soft_relaxed(self, clause: list[int], weight: int | float, relax_var: int | None):
         self._require_open()
         # Mirror IPAMIRSolver while tracking exact replay op.
         if not isinstance(clause, list) or len(clause) == 0:
             raise ValueError("clause must be a non-empty list")
-        if isinstance(weight, bool) or not isinstance(weight, int):
-            raise TypeError("weight must be a positive int")
-        if int(weight) <= 0:
-            raise ValueError("weight must be a positive int")
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise TypeError("weight must be numeric")
+        if isinstance(weight, float) and not math.isfinite(weight):
+            raise ValueError("weight must be finite")
+        if weight <= 0:
+            raise ValueError("weight must be positive")
         if any(isinstance(lit, bool) or not isinstance(lit, int) for lit in clause):
             raise TypeError("Clause literals must be integers.")
         if any(lit == 0 for lit in clause):
@@ -614,8 +620,8 @@ class PortfolioSolver(IPAMIRSolver):
         w: _WorkerProc,
         status: SolveStatus,
         model: Optional[list[int]],
-        cost: Optional[int],
-    ) -> tuple[bool, Optional[int], Optional[str]]:
+        cost: Optional[int | float],
+    ) -> tuple[bool, Optional[int | float], Optional[str]]:
         if not is_feasible(status):
             return True, cost, None
         if model is None:
@@ -707,7 +713,7 @@ class PortfolioSolver(IPAMIRSolver):
             if st is None:
                 st = {10: SolveStatus.INTERRUPTED_SAT, 20: SolveStatus.UNSAT, 30: SolveStatus.OPTIMUM}.get(w.exit_code, SolveStatus.ERROR)
             status = st
-            cost = None if obj is None else int(obj)
+            cost = obj
             model_list = None if model is None else [int(x) for x in model]
             ok, final_cost, invalid_reason = self._validate_candidate(w, status, model_list, cost)
             if not ok:
@@ -755,8 +761,10 @@ class PortfolioSolver(IPAMIRSolver):
         cost = None
         if resp.get("cost") is not None:
             raw_cost = resp["cost"]
-            if isinstance(raw_cost, bool) or not isinstance(raw_cost, int):
-                raise TypeError("worker cost must be an integer")
+            if isinstance(raw_cost, bool) or not isinstance(raw_cost, (int, float)):
+                raise TypeError("worker cost must be numeric")
+            if isinstance(raw_cost, float) and not math.isfinite(raw_cost):
+                raise ValueError("worker cost must be finite")
             cost = raw_cost
         ok, final_cost, invalid_reason = self._validate_candidate(w, status, model_list, cost)
         if not ok:
@@ -787,7 +795,7 @@ class PortfolioSolver(IPAMIRSolver):
             return False
         if prev_cost is None:
             return True
-        return int(new_cost) < int(prev_cost)
+        return new_cost < prev_cost
 
     def _invoke_callback(self, event: PortfolioEvent):
         cb = self._callback
@@ -942,7 +950,7 @@ class PortfolioSolver(IPAMIRSolver):
                                     event_type="INCUMBENT",
                                     elapsed_s=max(0.0, float(now - t0)),
                                     worker_id=int(i),
-                                    cost=None if best.get("cost") is None else int(best["cost"]),
+                                    cost=best.get("cost"),
                                     model=None if best.get("model") is None else list(best["model"]),
                                     is_optimal=(best.get("status") == SolveStatus.OPTIMUM),
                                 )
@@ -961,7 +969,7 @@ class PortfolioSolver(IPAMIRSolver):
                                     event_type="INCUMBENT",
                                     elapsed_s=max(0.0, float(now - t0)),
                                     worker_id=int(i),
-                                    cost=None if best.get("cost") is None else int(best["cost"]),
+                                    cost=best.get("cost"),
                                     model=None if best.get("model") is None else list(best["model"]),
                                     is_optimal=(best.get("status") == SolveStatus.OPTIMUM),
                                 )
@@ -1031,7 +1039,7 @@ class PortfolioSolver(IPAMIRSolver):
 
         if best is not None and is_feasible(best["status"]):
             self._model = list(best["model"]) if best.get("model") is not None else None
-            self._last_cost = None if best.get("cost") is None else int(best["cost"])
+            self._last_cost = best.get("cost")
             self._last_solver_name = str(best["solver"])
             if best["status"] == SolveStatus.OPTIMUM:
                 self._status = SolveStatus.OPTIMUM
@@ -1059,14 +1067,14 @@ class PortfolioSolver(IPAMIRSolver):
         # Prefer OPTIMUM over non-optimum if same/unknown cost.
         if cst == SolveStatus.OPTIMUM and rst != SolveStatus.OPTIMUM:
             if cand.get("cost") is not None and cur.get("cost") is not None:
-                if int(cand["cost"]) > int(cur["cost"]):
+                if cand["cost"] > cur["cost"]:
                     return cur
             return cand
         if cand.get("cost") is None:
             return cur
         if cur.get("cost") is None:
             return cand
-        return cand if int(cand["cost"]) < int(cur["cost"]) else cur
+        return cand if cand["cost"] < cur["cost"] else cur
 
     def _should_early_stop(self, cand: dict[str, Any], worker_class_path: str) -> bool:
         pol = self._selection_policy
@@ -1082,12 +1090,12 @@ class PortfolioSolver(IPAMIRSolver):
     def get_status(self) -> SolveStatus:
         return self._status
 
-    def get_cost(self) -> int:
+    def get_cost(self) -> int | float:
         if not is_feasible(self._status):
             raise RuntimeError("Cost is only available for feasible status.")
         if self._last_cost is None:
             raise RuntimeError("Objective value unavailable")
-        return int(self._last_cost)
+        return self._last_cost
 
     def val(self, lit: int) -> int:
         if not is_feasible(self._status) or self._model is None:
@@ -1126,10 +1134,10 @@ class PortfolioSolver(IPAMIRSolver):
         for cl, w in data.soft:
             cl2 = list(map(int, cl))
             if len(cl2) == 1:
-                self.add_soft_unit(cl2[0], int(w))
+                self.add_soft_unit(cl2[0], w)
             else:
                 b = self.new_var()
-                self.add_soft_relaxed(cl2, int(w), relax_var=b)
+                self.add_soft_relaxed(cl2, w, relax_var=b)
 
     @property
     def last_run_details(self) -> list[dict[str, Any]]:

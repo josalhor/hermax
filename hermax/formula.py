@@ -28,8 +28,6 @@ def _validate_soft_weight(value):
         raise TypeError('Soft weight must be numeric.')
     if not math.isfinite(value) or value <= 0:
         raise ValueError('Soft weight must be finite and positive.')
-    if isinstance(value, float) and not value.is_integer():
-        raise ValueError('Soft weights must be integer-valued in WCNF.')
     return value
 
 
@@ -105,7 +103,9 @@ class _Formula:
             result.wght = [_validate_soft_weight(w) for w in formula.wght]
             if len(result.soft) != len(result.wght):
                 raise ValueError('Soft clauses and weights must have equal length.')
-            result.topw = getattr(formula, 'topw', sum(result.wght) + 1)
+            total = sum(result.wght)
+            default_top = (math.ceil(total) if isinstance(total, float) else total) + 1
+            result.topw = getattr(formula, 'topw', default_top)
         else:
             result.clauses = formula.clauses
         result._constraints = [_constraint(c) for c in constraints]
@@ -209,7 +209,7 @@ class _Formula:
             return prefix + ' '.join(map(str, (*row, 0)))
         if self._weighted:
             lines.extend(clause_line(row, f'{topw} ') for row in self.hard)
-            lines.extend(clause_line(row, f'{_integer(w, "Soft weight", minimum=1)} ')
+            lines.extend(clause_line(row, f'{_validate_soft_weight(w)} ')
                          for row, w in zip(self.soft, self.wght))
         else:
             lines.extend(clause_line(row) for row in self.clauses)
@@ -317,7 +317,9 @@ class WCNF(_Formula):
 
     @property
     def topw(self):
-        return max(self._topw, sum(self.wght) + 1)
+        total = sum(self.wght)
+        required = math.ceil(total) if isinstance(total, float) else total
+        return max(self._topw, required + 1)
 
     @topw.setter
     def topw(self, value):

@@ -7,7 +7,7 @@ from hermax.core.ipamir_solver_interface import SolveStatus
 
 
 _STATUS_RE = re.compile(r"^\s*s\s+(.+?)\s*$", re.IGNORECASE)
-_OBJ_RE = re.compile(r"^\s*o\s+(-?\d+)\s*$")
+_OBJ_RE = re.compile(r"^\s*o\s+(-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*$")
 _V_RE = re.compile(r"^\s*v\s+(.*)$")
 
 
@@ -15,19 +15,19 @@ def parse_maxsat_cli_output(
     out: str,
     *,
     num_vars: int,
-) -> tuple[Optional[SolveStatus], Optional[int], Optional[List[int]]]:
+) -> tuple[Optional[SolveStatus], Optional[int | float], Optional[List[int]]]:
     """
     Parse common MaxSAT CLI output.
 
     Supports:
     - `s ...` status lines
-    - `o <int>` objective lines
+    - `o <number>` objective lines
     - `v ...` model lines as either:
       - DIMACS signed literals (e.g. `v 1 -2 3 -4 0`)
       - compact bitstring (e.g. `v 1010`)
     """
     last_status: Optional[SolveStatus] = None
-    best_cost: Optional[int] = None
+    best_cost: Optional[int | float] = None
     lits: List[int] = []
 
     for line in out.splitlines():
@@ -46,7 +46,8 @@ def parse_maxsat_cli_output(
 
         m = _OBJ_RE.match(line)
         if m:
-            best_cost = int(m.group(1))
+            token = m.group(1)
+            best_cost = float(token) if any(ch in token for ch in ".eE") else int(token)
             continue
 
         m = _V_RE.match(line)

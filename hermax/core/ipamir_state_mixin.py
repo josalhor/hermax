@@ -44,8 +44,6 @@ class IPAMIRStateMixin:
             raise TypeError("cost must be numeric or None.")
         if isinstance(cost, float) and not math.isfinite(cost):
             raise ValueError("cost must be finite or None.")
-        if isinstance(cost, float) and not cost.is_integer():
-            raise TypeError("cost must be an integer-valued number or None.")
 
         normalized_model: Optional[List[int]]
         if model is None:

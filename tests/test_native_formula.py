@@ -43,6 +43,14 @@ def test_formula_copy_is_independent():
     assert f.atms == [[[1, 2], 1]]
 
 
+def test_wcnf_fractional_weights_are_consistent_across_append_extend_and_copy():
+    f = WCNF()
+    f.append([1], weight=0.5)
+    f.extend([[2]], [0.25])
+    assert f.validate() is f
+    assert f.copy().wght == [0.5, 0.25]
+
+
 def test_pysat_roundtrip_preserves_plus_constraints_and_is_independent():
     p = PyWCNFPlus()
     p.append([-1])
@@ -186,7 +194,7 @@ def test_external_tuple_clauses_keep_their_explicit_weights():
     assert data.soft == [([1], 7), ([1, 2], 9)]
 
 
-@pytest.mark.parametrize('weight', [True, 1.5, '2', -1, 0])
+@pytest.mark.parametrize('weight', [True, '2', -1, 0, float('nan'), float('inf')])
 def test_formula_boundaries_reject_mutated_invalid_weights(weight):
     from hermax.core.utils import extract_wcnf_data
     f = WCNF()
