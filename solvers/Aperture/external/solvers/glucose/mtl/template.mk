@@ -8,10 +8,10 @@
 PWD        = $(shell pwd)
 EXEC      ?= $(notdir $(PWD))
 
-CSRCS      = $(wildcard $(PWD)/*.cc) 
+CSRCS      = $(wildcard $(PWD)/*.cc)
 DSRCS      = $(foreach dir, $(DEPDIR), $(filter-out $(MROOT)/$(dir)/Main.cc, $(wildcard $(MROOT)/$(dir)/*.cc)))
 CHDRS      = $(wildcard $(PWD)/*.h)
-COBJS      = $(CSRCS:.cc=.o) $(DSRCS:.cc=.o)
+COBJS      = $(sort $(abspath $(CSRCS:.cc=.o) $(DSRCS:.cc=.o)))
 
 PCOBJS     = $(addsuffix p,  $(COBJS))
 DCOBJS     = $(addsuffix d,  $(COBJS))
@@ -20,14 +20,14 @@ HCOBJS     = $(addsuffix h,  $(COBJS))
 
 CXX       ?= g++
 CFLAGS    ?= -Wall -Wno-parentheses -std=c++20
-LFLAGS    ?= -Wall -lpthread 
+LFLAGS    ?= -Wall -lpthread
 
 COPTIMIZE ?= -O3
 
 CFLAGS    += -I$(MROOT)/../.. -I$(MROOT) -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS
 LFLAGS    += -L$(MROOT)/../.. -lz
 
-.PHONY : s p d r rs clean 
+.PHONY : s p d r rs clean
 
 s:	$(EXEC)
 p:	$(EXEC)_profile
@@ -62,17 +62,17 @@ $(EXEC)_debug:		$(DCOBJS)
 $(EXEC)_release:	$(RCOBJS)
 $(EXEC)_static:		$(RCOBJS)
 
-lib$(LIB)_standard.a:	$(filter-out */Main.o,  $(COBJS))
-lib$(LIB)_profile.a:	$(filter-out */Main.op, $(PCOBJS))
-lib$(LIB)_debug.a:	$(filter-out */Main.od, $(DCOBJS))
-lib$(LIB)_release.a:	$(filter-out */Main.or, $(RCOBJS))
-lib$(LIB)_releaseh.a:	$(filter-out */Main.oh, $(HCOBJS))
+lib$(LIB)_standard.a:	$(filter-out %/Main.o,  $(COBJS))
+lib$(LIB)_profile.a:	$(filter-out %/Main.op, $(PCOBJS))
+lib$(LIB)_debug.a:	$(filter-out %/Main.od, $(DCOBJS))
+lib$(LIB)_release.a:	$(filter-out %/Main.or, $(RCOBJS))
+lib$(LIB)_releaseh.a:	$(filter-out %/Main.oh, $(HCOBJS))
 
 
 ## Build rule
 %.o %.op %.od %.or %.oh: %.cc
 	@echo Compiling: $(subst $(MROOT)/,,$@)
-	@$(CXX) $(CFLAGS) -c -o $@ $<
+	@$(CXX) $(CFLAGS) -MMD -MP -MF $@.d -MT $@ -c -o $@ $<
 
 ## Linking rules (standard/profile/debug/release)
 $(EXEC) $(EXEC)_profile $(EXEC)_debug $(EXEC)_release $(EXEC)_static:
@@ -91,23 +91,13 @@ libs libp libd libr:
 
 ## Clean rule
 allclean: clean
-	
+
 	@rm -f ../simp/*.o ../simp/*.or ../simp/*.od ../simp/*.oh ../core/*.o ../core/*.or ../core/*.od ../core/*.oh
 clean:
 	rm -f $(EXEC) $(EXEC)_profile $(EXEC)_debug $(EXEC)_release $(EXEC)_static \
-	 $(COBJS) $(PCOBJS) $(DCOBJS) $(RCOBJS) $(HCOBJS) *.core depend.mk 
+	 $(COBJS) $(PCOBJS) $(DCOBJS) $(RCOBJS) $(HCOBJS) $(DEPFILES) *.core depend.mk
 
-## Make dependencies
-depend.mk: $(CSRCS) $(CHDRS)
-	@echo Making dependencies
-	@$(CXX) $(CFLAGS) -I$(MROOT) \
-	   $(CSRCS) -MM | sed 's|\(.*\):|$(PWD)/\1 $(PWD)/\1r $(PWD)/\1d $(PWD)/\1p:|' > depend.mk
-	@for dir in $(DEPDIR); do \
-	      if [ -r $(MROOT)/$${dir}/depend.mk ]; then \
-		  echo Depends on: $${dir}; \
-		  cat $(MROOT)/$${dir}/depend.mk >> depend.mk; \
-	      fi; \
-	  done
-
+## Track headers for each object without concatenating dependency files.
+DEPFILES = $(addsuffix .d,$(COBJS) $(PCOBJS) $(DCOBJS) $(RCOBJS) $(HCOBJS))
 -include $(MROOT)/mtl/config.mk
--include depend.mk
+-include $(DEPFILES)
