@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 # Build all available CPython 3 versions, starting at 3.10.
 build = "cp3*-*"
 build-frontend = "build[uv]"
-skip = "*-musllinux_* cp*-win32 cp38-* cp39-* cp*t-*"
+skip = "*-musllinux_* cp*-win32 cp39-* cp*t-*"
 build-verbosity = 1
 
 # Test settings - pure import smoke test from /tmp
