@@ -9,7 +9,7 @@ PWD        = $(shell pwd)
 EXEC      ?= $(notdir $(PWD))
 LIB       ?= $(notdir $(PWD))
 
-CSRCS      = $(wildcard *.cc) 
+CSRCS      = $(wildcard *.cc)
 DSRCS      = $(foreach dir, $(DEPDIR), $(filter-out $(MROOT)/$(dir)/Main.cc, $(wildcard $(MROOT)/$(dir)/%.cc)))
 CHDRS      = $(wildcard *.h)
 COBJS      = $(CSRCS:.cc=.o) $(DSRCS:.cc=.o)
@@ -23,11 +23,11 @@ QCOBJS     = $(addsuffix q,  $(COBJS))
 CXX       ?= g++
 
 CFLAGS    ?= -DSKIP_ZLIB -Wall -Wno-parentheses -std=c++20
-LFLAGS    ?= -Wall -lpthread 
+LFLAGS    ?= -Wall -lpthread
 
 COPTIMIZE ?= -O3
 
-.PHONY : s p d r rs rh clean 
+.PHONY : s p d r rs rh clean
 
 s:	$(EXEC)
 p:	$(EXEC)_profile
@@ -82,7 +82,7 @@ lib$(LIB)_shared_debug.so:	$(filter-out %/Main.oq, $(QCOBJS))
 ## Build rule
 %.o %.op %.od %.or %.oh %.oq:	%.cc
 	@echo Compiling: $@
-	@$(CXX) $(CFLAGS) -c -o $@ $<
+	@$(CXX) $(CFLAGS) -MMD -MP -MF $@.d -MT $@ -c -o $@ $<
 
 ## Linking rules (standard/profile/debug/release)
 $(EXEC) $(EXEC)_profile $(EXEC)_debug $(EXEC)_release $(EXEC)_static $(EXEC)_shared_release $(EXEC)_shared_debug:
@@ -108,22 +108,13 @@ librh libdh:
 
 ## Clean rule
 allclean: clean
-	
+
 	@rm -f ../simp/*.o ../simp/*.or ../simp/*.od  ../core/*.o ../core/*.or ../core/*.od ../core/*.oh  ../core/*.oq
 clean:
 	rm -f $(EXEC) $(EXEC)_profile $(EXEC)_debug $(EXEC)_release $(EXEC)_static $(EXEC)_shared_* lib$(LIB)_*.a lib$(LIB)_profile.a lib$(LIB)_debug.a lib$(LIB)_release.a lib$(LIB)*.so lib$(LIB).a\
-	  $(COBJS) $(PCOBJS) $(DCOBJS) $(RCOBJS) $(HCOBJS) $(QCOBJS) *.core depend.mk 
+	  $(COBJS) $(PCOBJS) $(DCOBJS) $(RCOBJS) $(HCOBJS) $(QCOBJS) $(DEPFILES) *.core depend.mk
 
-## Make dependencies
-depend.mk: $(CSRCS) $(CHDRS)
-	@echo Making dependencies
-	@$(CXX) $(CFLAGS) -I$(MROOT) \
-	   $(CSRCS) -MM | sed 's|\(.*\):|$(PWD)/\1 $(PWD)/\1r $(PWD)/\1d $(PWD)/\1p:|' > depend.mk
-	@for dir in $(DEPDIR); do \
-	      if [ -r $(MROOT)/$${dir}/depend.mk ]; then \
-		  echo Depends on: $${dir}; \
-		  cat $(MROOT)/$${dir}/depend.mk >> depend.mk; \
-	      fi; \
-	  done
-
--include depend.mk
+## Generate dependencies during compilation for each actual object variant.
+## This avoids rewriting compiler output and preserves header dependencies.
+DEPFILES = $(addsuffix .d,$(COBJS) $(PCOBJS) $(DCOBJS) $(RCOBJS) $(HCOBJS) $(QCOBJS))
+-include $(DEPFILES)
