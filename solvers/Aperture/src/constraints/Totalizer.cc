@@ -79,7 +79,7 @@ vector<TLit> Totalizer<TLit, TWeight>::EncodeTotalizer(
           if (a + 1 >= rhs_simp_limit || b + 1 >= rhs_simp_limit) {
             continue;
           }
-          sum = min(sum, rhs_simp_limit);
+          sum = CheckRhsSimplification(sum);
         }
         clause.clear();
         clause.push_back(-left[a]);
