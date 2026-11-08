@@ -93,7 +93,7 @@ def test_clearing_or_replacing_invalidates_numeric_handles(replacement):
         m.obj.update(term, weight=4)
 
 
-@pytest.mark.parametrize("bad", [-1, True, 1.5, float("nan")])
+@pytest.mark.parametrize("bad", [-1, True, float("nan")])
 def test_invalid_weight_update_preserves_cost(bad):
     m = Model()
     x = m.bool("x")
@@ -437,3 +437,12 @@ def test_update_cannot_activate_a_handle_in_the_other_objective_mode(tiered):
     with pytest.raises(ValueError, match="mutually exclusive"):
         objective.update(term, weight=7)
     assert term.weight == 0
+
+
+def test_native_float_term_can_be_reweighted_without_precision():
+    m = Model()
+    x = m.bool("x")
+    term = m.obj.add(x, weight=0.5)
+    m.obj.update(term, weight=1.5)
+    assert term.weight == 1.5
+    assert m.to_wcnf().wght == [1.5]

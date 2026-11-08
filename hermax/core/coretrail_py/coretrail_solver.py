@@ -28,8 +28,7 @@ class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
     def is_available(cls) -> bool:
         return importlib.util.find_spec("hermax.core.coretrail_native") is not None
 
-    def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
-        del args, kwargs
+    def __init__(self, formula: Optional[WCNF] = None):
         IPAMIRSolver.__init__(self)
         self._init_ipamir_state()
         self._num_vars = 0

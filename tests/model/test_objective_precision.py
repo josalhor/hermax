@@ -129,11 +129,11 @@ def test_float_term_builds_but_pb_compare_fails_on_compile():
         m &= pb
 
 
-def test_float_objective_expr_requires_precision_to_lower():
+def test_float_objective_expr_accepts_native_weights_and_precision():
     m = Model()
     b = m.bool("b")
-    with pytest.raises(ValueError):
-        m.obj = (3.5 * b)
+    m.obj = (3.5 * b)
+    assert m.to_wcnf().wght == [3.5]
 
     m2 = Model()
     m2.set_objective_precision(decimals=2)
@@ -155,3 +155,58 @@ def test_objective_expression_precision_scaling_soundness():
     assert res[x] is True
     assert res.cost == pytest.approx(1.25, abs=1e-9)
 
+
+
+@pytest.mark.parametrize("incremental", [False, True])
+def test_native_float_solver_factory_is_checked_after_construction(incremental):
+    class FloatSolver(FakeIPSoft):
+        supports_float_weights = True
+
+        def add_soft_unit(self, lit, weight):
+            self.soft_map[lit] = weight
+
+        def get_cost(self):
+            return sum(w for lit, w in self.soft_map.items() if lit < 0)
+
+    def factory(**kwargs):
+        return FloatSolver(**kwargs)
+
+    m = Model()
+    x = m.bool("x")
+    m &= x
+    m.obj.add(x, weight=0.375)
+    result = m.solve(solver=factory, incremental=incremental)
+    assert result.ok
+    assert result.cost == 0.375
+
+
+@pytest.mark.parametrize("backend", ["coretrail", "rc2"])
+@pytest.mark.parametrize("incremental", [False, True])
+def test_native_float_weights_choose_and_update_the_optimum(backend, incremental):
+    from hermax.core.coretrail_py import CoreTrailSolver
+    from hermax.core.rc2.rc2_reentrant import RC2Reentrant
+
+    solver_class = CoreTrailSolver if backend == "coretrail" else RC2Reentrant
+    m = Model()
+    x, y = m.bool("x"), m.bool("y")
+    m &= x | y
+    m &= ~x | ~y
+    tx = m.obj.add(x, weight=0.9)
+    ty = m.obj.add(y, weight=0.1)
+
+    def check(expected_x, expected_cost):
+        result = m.solve(solver=solver_class, incremental=incremental)
+        assert result.status == "optimum"
+        assert result[x] is expected_x
+        assert result[y] is (not expected_x)
+        assert result.cost == pytest.approx(expected_cost, rel=1e-12, abs=1e-12)
+        recomputed = tx.weight * int(result[x]) + ty.weight * int(result[y])
+        assert result.cost == pytest.approx(recomputed, rel=1e-12, abs=1e-12)
+
+    check(False, 0.1)
+    m.obj.update(ty, weight=1.1)
+    check(True, 0.9)
+    m.obj.update(ty, weight=0)
+    check(False, 0)
+    m.obj.update(ty, weight=0.375)
+    check(False, 0.375)

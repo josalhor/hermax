@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional
-
-from hermax.formula import WCNF
+from typing import List
 
 from .rc2 import RC2Stratified
 from hermax.core.ipamir_replay_base import ReplayFormulaSolverBase, ReplaySolveResult
@@ -90,32 +88,28 @@ class RC2Reentrant(ReplayFormulaSolverBase):
     def _run_replay_solve(self, assumptions: List[int]) -> ReplaySolveResult:
         wcnf = self._journal.to_formula(assumptions)
 
-        try:
-            def report(model):
-                if self._incumbent_callback is None:
-                    return
-                present = {abs(lit) for lit in model}
-                complete = sorted([*model, *(-v for v in range(1, self._num_vars + 1)
-                                             if v not in present)], key=abs)
-                self._incumbent_callback(complete, self._compute_wrapper_cost(complete))
+        def report(model):
+            if self._incumbent_callback is None:
+                return
+            present = {abs(lit) for lit in model}
+            complete = sorted([*model, *(-v for v in range(1, self._num_vars + 1)
+                                         if v not in present)], key=abs)
+            self._incumbent_callback(complete, self._compute_wrapper_cost(complete))
 
-            with RC2Stratified(wcnf, solver='g4', adapt=True, exhaust=True,
-                               on_model=report if self._incumbent_callback else None) as rc2:
-                # A single weight level has no intermediate stages. Obtain a
-                # feasible fallback before optimization when reporting is enabled.
-                if self._incumbent_callback and rc2.oracle.solve():
-                    rc2._report_model()
-                model = rc2.compute()
-                if model is None:
-                    return ReplaySolveResult(status=SolveStatus.UNSAT, model=None, cost=None)
-                return ReplaySolveResult(
-                    status=SolveStatus.OPTIMUM,
-                    model=[int(x) for x in model],
-                    cost=rc2.cost,
-                )
-        except (ValueError, OverflowError, RuntimeError) as exc:
-            self._last_error = f"{type(exc).__name__}: {exc}"
-            return ReplaySolveResult(status=SolveStatus.ERROR, model=None, cost=None)
+        with RC2Stratified(wcnf, solver='g4', adapt=True, exhaust=True,
+                           on_model=report if self._incumbent_callback else None) as rc2:
+            # A single weight level has no intermediate stages. Obtain a
+            # feasible fallback before optimization when reporting is enabled.
+            if self._incumbent_callback and rc2.oracle.solve():
+                rc2._report_model()
+            model = rc2.compute()
+            if model is None:
+                return ReplaySolveResult(status=SolveStatus.UNSAT, model=None, cost=None)
+            return ReplaySolveResult(
+                status=SolveStatus.OPTIMUM,
+                model=[int(x) for x in model],
+                cost=rc2.cost,
+            )
 
     def signature(self) -> str:
         return "rc2-reentrant-ipamir (RC2 baseline, rebuild per solve)"

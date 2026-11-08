@@ -298,3 +298,14 @@ def test_native_soft_clause_selector_does_not_collide_with_user_literal(unit_fir
         assert s.get_cost() == 8
     finally:
         s.close()
+
+
+def test_coretrail_wrapper_rejects_unknown_constructor_options(monkeypatch):
+    from hermax.core.coretrail_py import CoreTrailSolver
+
+    def unexpected_backend_creation():
+        pytest.fail("Invalid constructor arguments must fail before backend creation")
+
+    monkeypatch.setattr(CoreTrailSolver, "_create_backend", unexpected_backend_creation)
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        CoreTrailSolver(unsupported_option=True)

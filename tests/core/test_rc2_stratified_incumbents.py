@@ -252,3 +252,31 @@ def test_queued_incumbents_check_best_actual_cost_first(monkeypatch):
     finally:
         worker.cleanup()
         solver.close()
+
+
+@pytest.mark.parametrize("error", [ValueError, OverflowError, RuntimeError])
+def test_rc2_wrapper_propagates_errors_and_closes_backend(monkeypatch, error):
+    closed = []
+
+    class FailingBackend:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            closed.append(True)
+
+        def compute(self):
+            raise error("integration failure")
+
+    monkeypatch.setattr(rc2_reentrant, "RC2Stratified", FailingBackend)
+    solver = RC2Reentrant()
+    try:
+        with pytest.raises(error, match="integration failure"):
+            solver.solve()
+        assert closed == [True]
+        assert solver.get_status() == SolveStatus.UNKNOWN
+    finally:
+        solver.close()

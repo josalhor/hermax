@@ -1872,9 +1872,8 @@ setup(
         "Repository": "https://github.com/josalhor/hermax",
         "Issues": "https://github.com/josalhor/hermax/issues",
     },
-    license="Apache-2.0",
+    license_expression="Apache-2.0",
     classifiers=[
-        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3 :: Only",
         "Topic :: Scientific/Engineering",

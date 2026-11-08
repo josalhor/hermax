@@ -347,3 +347,11 @@ def test_public_file_loader_uses_extension_for_ambiguous_headerless_input(tmp_pa
     ambiguous.write_text(path.read_text())
     with pytest.raises(ValueError, match='header|extension'):
         load_formula(ambiguous)
+
+
+def test_integral_float_weight_serializes_as_integer_token():
+    from hermax.formula import WCNF
+    formula = WCNF()
+    formula.append([1], weight=1.0)
+    restored = WCNF(from_string=formula.to_dimacs())
+    assert list(restored.wght) == [1]

@@ -168,8 +168,6 @@ class _ObjectiveProxy:
 
     def _reweight_term(self, term, weight):
         m = self._model
-        if m._objective_precision_decimals is None and isinstance(weight, float) and not weight.is_integer():
-            raise ValueError("Fractional updates require objective precision; call set_objective_precision().")
         scaled, raw = m._coerce_soft_weight(weight, allow_zero=True)
         value = raw if m._objective_precision_decimals is not None else scaled
         snapshot = prepare_objective(self._model, term._expression, lower=bool(value))
@@ -664,7 +662,8 @@ class _IncrementalCoordinator:
                 raise TypeError("solver callable must return an IPAMIRSolver instance.")
 
         if any(isinstance(w, float) for w, _ in m._soft) and not bool(getattr(ip_solver, "supports_float_weights", False)):
-            self.ip_solver = None
+            if created:
+                m._safe_close_backend(ip_solver)
             raise ValueError("Selected solver does not support native floating-point weights; call set_objective_precision() or choose a compatible solver.")
 
         # replay
@@ -1240,17 +1239,6 @@ class Model:
         # Augmented assignment on attributes may rebind back the same proxy.
         if new_expr is self._obj_proxy:
             return
-        if self._objective_precision_decimals is None:
-            validate_numeric_objective(self, new_expr)
-            if isinstance(new_expr, Term):
-                coefficients = (new_expr.coefficient,)
-            elif isinstance(new_expr, PBExpr):
-                coefficients = (term.coefficient for term in new_expr.terms)
-            else:
-                coefficients = ()
-            if any(isinstance(coefficient, float) and not coefficient.is_integer()
-                   for coefficient in coefficients):
-                raise ValueError("Fractional objective expressions require objective precision; call set_objective_precision().")
         self._obj_proxy.replace_with(new_expr)
 
     @property
@@ -3137,39 +3125,31 @@ class Model:
     def _soft_weight_gcd(self) -> int:
         if not bool(self._soft_gcd_opt_enabled):
             return 1
-        if any(isinstance(w, float) for w, _ in self._soft):
-            return 1
-        ws = [int(w) for w, _ in self._soft if int(w) > 0]
-        if not ws:
-            return 1
-        g = reduce(math.gcd, ws)
-        return int(g) if int(g) > 1 else 1
+        g = 0
+        for weight, _ in self._soft:
+            if weight <= 0:
+                continue
+            if isinstance(weight, float):
+                return 1
+            g = math.gcd(g, weight)
+            if g == 1:
+                return 1
+        return g or 1
 
     def _to_wcnf_for_solver(self) -> tuple[WCNF, int]:
         """Build solver WCNF plus soft-weight scaling factor for one-shot solve."""
         self._prepare_encoding()
-        if any(isinstance(w, float) for w, _ in self._soft):
-            merged_float: dict[tuple[int, ...], float] = {}
-            wcnf = _hard_to_wcnf(self._hard)
-            for weight, clause in self._soft:
-                if weight <= 0:
-                    continue
-                signature = tuple(sorted(set(self._clause_to_dimacs_list(clause))))
-                merged_float[signature] = merged_float.get(signature, 0.0) + float(weight)
-            for clause, weight in merged_float.items():
-                wcnf.append(list(clause), weight=weight)
-            return wcnf, 1
         g = int(self._soft_weight_gcd())
         wcnf = _hard_to_wcnf(self._hard)
-        merged_soft: dict[tuple[int, ...], int] = {}
+        merged_soft: dict[tuple[int, ...], int | float] = {}
         for weight, clause in self._soft:
             if weight <= 0:
                 continue
-            ww = int(weight) // g if g > 1 else int(weight)
+            ww = weight // g if g > 1 else weight
             signature = tuple(sorted(set(self._clause_to_dimacs_list(clause))))
-            merged_soft[signature] = int(merged_soft.get(signature, 0)) + int(ww)
+            merged_soft[signature] = merged_soft.get(signature, 0) + ww
         for clause, weight in merged_soft.items():
-            wcnf.append(list(clause), weight=int(weight))
+            wcnf.append(list(clause), weight=weight)
         return wcnf, g
 
     def decode_model(self, model_lits: Sequence[int]) -> AssignmentView:
@@ -3513,20 +3493,6 @@ class Model:
         ):
             use_incremental = False
 
-        if any(isinstance(w, float) for w, _ in self._soft) and self._objective_precision_decimals is None:
-            # A live incremental binding takes precedence over a solver argument
-            # or the default, so check the backend that will actually receive the
-            # weights.
-            if use_incremental and self._inc_state.mode == "maxsat" and self._inc_state.ip_solver is not None:
-                selected_solver = self._inc_state.ip_solver
-            else:
-                selected_solver = solver or (DefaultMaxSATSolver if maxsat_backend.lower() != "rc2" else HermaxRC2)
-            if not bool(getattr(selected_solver, "supports_float_weights", False)):
-                raise ValueError(
-                    "Selected solver does not support native floating-point weights; "
-                    "call set_objective_precision() or choose CoreTrail/RC2."
-                )
-
         # If incremental backend is already bound, always continue incrementally.
         if use_incremental:
             return self._inc_state.solve(
@@ -3659,13 +3625,13 @@ class Model:
 
                 ip_solver = PortfolioSolver(
                     [solver],
-                    formula=formula,
+                    formula=None,
                     per_solver_time_limit_s=time_limit,
                     overall_time_limit_s=time_limit,
                     max_workers=1,
                 )
             else:
-                ip_solver = solver(formula=formula, **solver_kwargs)
+                ip_solver = solver(formula=None, **solver_kwargs)
             created = True
             if not isinstance(ip_solver, IPAMIRSolver):
                 if created:
@@ -3678,8 +3644,7 @@ class Model:
                     f"{ip_solver.signature()} does not support native floating-point weights; "
                     "call set_objective_precision() or choose a compatible solver."
                 )
-            if isinstance(solver, IPAMIRSolver):
-                _replay_into_existing_instance(ip_solver, formula)
+            _replay_into_existing_instance(ip_solver, formula)
             ip_solver.solve(
                 assumptions=self._coerce_assumptions(assumptions),
                 raise_on_abnormal=bool(raise_on_abnormal),

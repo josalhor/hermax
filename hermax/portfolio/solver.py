@@ -490,7 +490,7 @@ class PortfolioSolver(IPAMIRSolver):
 
     def _validate_weight_capability(self, weight: int | float) -> None:
         if isinstance(weight, float) and not self.supports_float_weights:
-            raise TypeError("No configured portfolio worker supports floating-point weights.")
+            raise TypeError("All configured portfolio workers must support floating-point weights.")
 
     def _launch_workers(self, assumptions: list[int]) -> list[_WorkerProc]:
         workers: list[_WorkerProc] = []
@@ -517,18 +517,6 @@ class PortfolioSolver(IPAMIRSolver):
     def _spawn_worker(self, cls: type, assumptions: list[int], now: Optional[float] = None) -> Optional[_WorkerProc]:
         if now is None:
             now = time.monotonic()
-        if (
-            any(isinstance(weight, float) for weight in self._journal.soft_units.values())
-            and not getattr(cls, "supports_float_weights", False)
-        ):
-            self._last_run_details.append(
-                {
-                    "solver": _class_path(cls),
-                    "status": "SKIP",
-                    "reason": "native floating-point weights are unsupported",
-                }
-            )
-            return None
         if not _solver_is_available(cls):
             self._last_run_details.append(
                 {"solver": _class_path(cls), "status": "SKIP", "reason": "unavailable"}

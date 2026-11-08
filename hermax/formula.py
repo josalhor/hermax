@@ -26,7 +26,7 @@ def _integer(value, name, *, minimum=0):
 def _validate_soft_weight(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError('Soft weight must be numeric.')
-    if not math.isfinite(value) or value <= 0:
+    if (isinstance(value, float) and not math.isfinite(value)) or value <= 0:
         raise ValueError('Soft weight must be finite and positive.')
     return value
 
@@ -211,7 +211,7 @@ class _Formula:
             return prefix + ' '.join(map(str, (*row, 0)))
         if self._weighted:
             lines.extend(clause_line(row, f'{topw} ') for row in self.hard)
-            lines.extend(clause_line(row, f'{_validate_soft_weight(w)} ')
+            lines.extend(clause_line(row, f'{int(w)} ')
                          for row, w in zip(self.soft, self.wght))
         else:
             lines.extend(clause_line(row) for row in self.clauses)
@@ -335,10 +335,7 @@ class WCNF(_Formula):
         elif weight is None:
             self.hard.append(clause)
         else:
-            if isinstance(weight, bool) or not isinstance(weight, (int, float)):
-                raise TypeError('Soft weight must be numeric.')
-            if not math.isfinite(weight) or weight <= 0:
-                raise ValueError('Soft weight must be finite and positive.')
+            weight = _validate_soft_weight(weight)
             self.soft.append(clause)
             self.wght.append(weight)
 
