@@ -19,6 +19,7 @@ file(GLOB SOURCES
     "graph/*.cc"
     "clusterings/*.cc"
 )
+list(APPEND SOURCES openwbo_inc_native.cpp)
 
 file(GLOB_RECURSE GLUCOSE_SOURCES
     "solvers/glucose4.1/core/*.cc"
@@ -50,21 +51,22 @@ if(NOT HERMAX_CORE_ARCHIVE)
     )
 endif()
 
-# Keep the binding compilation environment identical to the original
-# single-target build when the solver core is imported from the cache.
-add_definitions(-D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -D SIMP)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNSPACE=Glucose")
-
 if(HERMAX_CORE_ONLY)
     return()
 endif()
 
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')"
+  OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PYTHON_EXTENSION_SUFFIX)
+  message(FATAL_ERROR "Could not determine the Python extension suffix")
+endif()
 
-pybind11_add_module(openwbo_inc MODULE NO_EXTRAS openwbo_bindings.cpp)
-target_compile_options(openwbo_inc PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h)
-target_link_libraries(openwbo_inc PRIVATE Python3::Module pybind11::module openwbo_inc_core)
+add_library(openwbo_inc MODULE openwbo_bindings.cpp)
+set_target_properties(openwbo_inc PROPERTIES SUFFIX "${PYTHON_EXTENSION_SUFFIX}")
+target_link_libraries(openwbo_inc PRIVATE Python3::Module openwbo_inc_core)
 
 # Link against GMP
 find_library(GMP_LIBRARY gmp)
@@ -89,4 +91,5 @@ endif()
 set_target_properties(openwbo_inc PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+  PREFIX ""
 )

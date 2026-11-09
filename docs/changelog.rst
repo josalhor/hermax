@@ -1,6 +1,14 @@
 Changelog
 =========
 
+
+Version 1.3.3
+-------------
+
+Highlights
+~~~~~~~~~~
+* Moved away from ``pybind11`` to native bindings.
+
 Version 1.3.2
 -------------
 

@@ -7,12 +7,12 @@ import subprocess
 import shutil
 import contextlib
 from pathlib import Path
-import pybind11
 import sysconfig
 import glob
 import tempfile
 import hashlib
 import json
+import shlex
 
 from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext
@@ -64,6 +64,12 @@ class CMakeBuild(build_ext):
         flags = re.sub(r"(?<!\S)-O(?:[0-3sgz]|fast)?(?=\s|$)", "", flags)
         return f"{flags} -O0 -UNDEBUG".strip()
 
+    @staticmethod
+    def _native_adapter_compile_command(env, standard):
+        """Match the Release flags used by the core linked to each adapter."""
+        return [env.get("CXX", "c++"), *shlex.split(env.get("CXXFLAGS", "")),
+                "-O3", "-DNDEBUG", f"-std=c++{standard}", "-fPIC"]
+
     def _native_core_reuse_enabled(self):
         """Reuse across Python ABIs in a wheel job; ordinary builds stay fresh."""
         override = os.environ.get("HERMAX_REUSE_NATIVE_CORES")
@@ -91,6 +97,7 @@ class CMakeBuild(build_ext):
 
         fingerprint = {
             "cache_version": 2,
+            "build_recipe": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "session": env.get("HERMAX_NATIVE_BUILD_SESSION", ""),
             "job": [os.environ.get(name, "") for name in
                     ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB")],
@@ -106,6 +113,8 @@ class CMakeBuild(build_ext):
             "deployment_target": env.get("MACOSX_DEPLOYMENT_TARGET", ""),
             "msystem": env.get("MSYSTEM", ""),
             "mingw_prefix": env.get("MINGW_PREFIX", ""),
+            "cplex_inc_dir": env.get("CPLEX_INC_DIR", ""),
+            "cplex_lib_dir": env.get("CPLEX_LIB_DIR", ""),
         }
         if env.get("HERMAX_ENCODER_CACHE_POLICY"):
             fingerprint["encoder_policy"] = env["HERMAX_ENCODER_CACHE_POLICY"]
@@ -235,10 +244,6 @@ class CMakeBuild(build_ext):
         cmake_args = [
             ext.sourcedir,
             "-DHERMAX_CORE_ONLY=ON",
-            f"-DPython3_EXECUTABLE={sys.executable}",
-            f"-DPython3_ROOT_DIR={sys.exec_prefix}",
-            f"-Dpybind11_DIR={pybind11.get_cmake_dir()}",
-            "-DPYBIND11_FINDPYTHON=ON",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
             "-DCMAKE_BUILD_TYPE=Release",
             f"-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY={archive_dir}",
@@ -418,8 +423,8 @@ if %errorlevel%==0 (
 
         if "hermax.core._aperture_native" in extension_names:
             env = self.get_base_env()
-            aperture_lib = os.path.join("solvers", "Aperture", "build", "libaperture_pic.a")
-            if not self._can_reuse_native_core("aperture", [aperture_lib], env, ["solvers/Aperture"]):
+            aperture_roots = ["solvers/Aperture", "bindings/aperture-py"]
+            if not self._load_cached_native_core("aperture", env, aperture_roots):
                 if platform.system() == "Windows":
                     self._make(["clean-all"], cwd="solvers/Aperture", env=env)
                 else:
@@ -516,9 +521,7 @@ if %errorlevel%==0 (
             f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
             f"-DPython3_EXECUTABLE={sys.executable}",
             f"-DPython3_ROOT_DIR={sys.exec_prefix}",
-            f"-Dpybind11_DIR={pybind11.get_cmake_dir()}",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
-            "-DPYBIND11_FINDPYTHON=ON",
             f"-DCMAKE_BUILD_TYPE={cfg}",
             "-DCMAKE_C_STANDARD=11",
             f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS', '')}",
@@ -595,7 +598,7 @@ if %errorlevel%==0 (
                 "aperture",
                 [os.path.join("solvers", "Aperture", "build", "libaperture_pic.a")],
                 env,
-                ["solvers/Aperture"],
+                ["solvers/Aperture", "bindings/aperture-py"],
             )
         
         self.verify_abi(ext, extdir, abi_tag)
@@ -1086,20 +1089,18 @@ if %errorlevel%==0 (
     def verify_abi(self, ext, extdir, abi_tag):
         produced_sos = [f for f in os.listdir(extdir) if f.endswith((".so", ".dylib", ".pyd"))]
         ext_base_name = ext.name.split('.')[-1]
-        found_correct = False
-        for so_file in produced_sos:
-            if ext_base_name in so_file:
-                if platform.system() == "Linux":
-                    if abi_tag in so_file:
-                        found_correct = True
-                    else:
-                        print(f"ERROR: Build of {ext.name} produced WRONG ABI artifact: {so_file}")
-                        sys.exit(1)
-                else:
-                    found_correct = True
+        matching = [so_file for so_file in produced_sos if ext_base_name in so_file]
+        found_correct = any(
+            abi_tag in so_file for so_file in matching
+        ) if platform.system() == "Linux" else bool(matching)
         if not found_correct:
-            print(f"ERROR: Build of {ext.name} did not produce expected extension in {extdir}")
+            detail = f"; found {matching}" if matching else ""
+            print(f"ERROR: Build of {ext.name} did not produce expected ABI artifact in {extdir}{detail}")
             sys.exit(1)
+        if platform.system() == "Linux":
+            for stale in matching:
+                if abi_tag not in stale:
+                    os.remove(os.path.join(extdir, stale))
 
 class CMakeBuildURMaxSAT(CMakeBuild):
     def run(self):
@@ -1114,15 +1115,42 @@ class CMakeBuildURMaxSAT(CMakeBuild):
             return self.build_urmaxsat_comp(ext)
         if ext.name == "hermax.core.cashwmaxsat":
             return self.build_cashwmaxsat(ext)
+        if ext.name == "hermax.core._aperture_native":
+            return self.build_aperture(ext)
+        if ext.name == "hermax.core.imaxhs_py":
+            return self.build_imaxhs(ext)
+        if ext.name == "hermax.core.maxhs_py":
+            return self.build_maxhs(ext)
         if ext.name == "hermax.core.evalmaxsat_latest":
             return self.build_evalmaxsat_latest(ext)
         if ext.name == "hermax.core.evalmaxsat_incr":
             return self.build_evalmaxsat_incr(ext)
-        if ext.name == "hermax.core.maxhs_py":
-            return self.build_maxhs(ext)
-        if ext.name == "hermax.core.imaxhs_py":
-            return self.build_imaxhs(ext)
         return super().build_extension(ext)
+
+    def build_aperture(self, ext):
+        abi_tag = sysconfig.get_config_var("SOABI") or f"cp{sys.version_info.major}{sys.version_info.minor}"
+        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
+        build_temp_path = os.path.join(self.build_temp, f"build_{ext.name}_{abi_tag}")
+        os.makedirs(build_temp_path, exist_ok=True)
+        env = self.get_base_env()
+        core_path = os.path.join("solvers", "Aperture", "build", "libaperture_pic.a")
+        core_roots = ["solvers/Aperture", "bindings/aperture-py"]
+        cached = self._load_cached_native_core("aperture", env, core_roots)
+        cmake_args = [
+            f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
+            f"-DPython3_EXECUTABLE={sys.executable}",
+            f"-DPython3_ROOT_DIR={sys.exec_prefix}",
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+            "-DCMAKE_BUILD_TYPE=Release",
+            f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS', '')}",
+            f"-DCMAKE_C_FLAGS={env.get('CFLAGS', '')}",
+        ]
+        cmake_args.append(f"-DHERMAX_CORE_ARCHIVE={cached[0] if cached else ''}")
+        subprocess.check_call(["cmake", ext.sourcedir, *cmake_args], cwd=build_temp_path, env=env)
+        subprocess.check_call(["cmake", "--build", ".", "--config", "Release"], cwd=build_temp_path, env=env)
+        if not cached and self._native_core_reuse_enabled():
+            self._store_native_core("aperture", [core_path], env, core_roots)
+        self.verify_abi(ext, extdir, abi_tag)
 
     def _ranlib(self, lib_path, env=None):
         if not os.path.exists(lib_path):
@@ -1217,34 +1245,29 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         env = self.get_base_env()
         env = self._darwin_make_env(env)
         cplex_inc_dir, cplex_lib_dir = self._resolve_cplex_paths()
+        env["CPLEX_INC_DIR"] = cplex_inc_dir
+        env["CPLEX_LIB_DIR"] = cplex_lib_dir
 
         imaxhs_src_dir = os.path.abspath("solvers/incremental-maxhs/src")
-        imaxhs_a = os.path.join(imaxhs_src_dir, "build", "release", "lib", "libipamirmaxhs.a")
-        self._make(["clean"], cwd=imaxhs_src_dir, env=env)
-        self._make(
-            [
-                "ipamir",
-                "-j",
-                f"CPLEXINCDIR={cplex_inc_dir}",
-                f"CPLEXLIBDIR={cplex_lib_dir}",
-                "CXXFLAGS=-fPIC",
-            ],
-            cwd=imaxhs_src_dir,
-            env=env,
-        )
-
-        if not os.path.exists(imaxhs_a):
-            raise RuntimeError(f"libipamirmaxhs.a not produced at {imaxhs_a}")
-        self._ranlib(imaxhs_a, env=env)
-        self._macos_rebuild_archive_if_gnu(imaxhs_a)
+        imaxhs_built_a = os.path.join(imaxhs_src_dir, "build", "release", "lib", "libipamirmaxhs.a")
+        imaxhs_roots = [imaxhs_src_dir]
+        imaxhs_cached = self._cached_core_artifacts("imaxhs", ["libipamirmaxhs.a"], env)
+        if self._can_reuse_native_core("imaxhs", imaxhs_cached, env, imaxhs_roots):
+            imaxhs_a = imaxhs_cached[0]
+        else:
+            self._make(["clean"], cwd=imaxhs_src_dir, env=env)
+            self._make(["ipamir", "-j", f"CPLEXINCDIR={cplex_inc_dir}", f"CPLEXLIBDIR={cplex_lib_dir}", "CXXFLAGS=-fPIC"], cwd=imaxhs_src_dir, env=env)
+            if not os.path.exists(imaxhs_built_a):
+                raise RuntimeError(f"libipamirmaxhs.a not produced at {imaxhs_built_a}")
+            self._ranlib(imaxhs_built_a, env=env)
+            self._macos_rebuild_archive_if_gnu(imaxhs_built_a)
+            imaxhs_a = self._store_native_core("imaxhs", [imaxhs_built_a], env, imaxhs_roots)[0]
 
         cmake_args = [
             f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
             f"-DPython3_EXECUTABLE={sys.executable}",
             f"-DPython3_ROOT_DIR={sys.exec_prefix}",
-            f"-Dpybind11_DIR={pybind11.get_cmake_dir()}",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
-            "-DPYBIND11_FINDPYTHON=ON",
             "-DCMAKE_BUILD_TYPE=Release",
             f"-DIMAXHS_LIB_ABS={imaxhs_a}",
             f"-DCPLEX_LIB_DIR={cplex_lib_dir}",
@@ -1266,34 +1289,37 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         env = self.get_base_env()
         env = self._darwin_make_env(env)
         cplex_inc_dir, cplex_lib_dir = self._resolve_cplex_paths()
+        env["CPLEX_INC_DIR"] = cplex_inc_dir
+        env["CPLEX_LIB_DIR"] = cplex_lib_dir
 
         maxhs_src_dir = os.path.abspath("solvers/maxhs")
-        maxhs_a = os.path.join(maxhs_src_dir, "build", "release", "lib", "libmaxhs.a")
-        self._make(["clean"], cwd=maxhs_src_dir, env=env)
-        self._make(
-            [
-                "lr",
-                "-j",
-                f"CPLEXINCDIR={cplex_inc_dir}",
-                f"CPLEXLIBDIR={cplex_lib_dir}",
-                "CXXFLAGS=-fPIC",
-            ],
-            cwd=maxhs_src_dir,
-            env=env,
-        )
-
-        if not os.path.exists(maxhs_a):
-            raise RuntimeError(f"libmaxhs.a not produced at {maxhs_a}")
-        self._ranlib(maxhs_a, env=env)
-        self._macos_rebuild_archive_if_gnu(maxhs_a)
+        maxhs_built_a = os.path.join(maxhs_src_dir, "build", "release", "lib", "libmaxhs.a")
+        maxhs_roots = [maxhs_src_dir, os.path.abspath("bindings/maxhs-py")]
+        maxhs_cached = self._cached_core_artifacts("maxhs", ["libmaxhs.a"], env)
+        if self._can_reuse_native_core("maxhs", maxhs_cached, env, maxhs_roots):
+            maxhs_a = maxhs_cached[0]
+        else:
+            self._make(["clean"], cwd=maxhs_src_dir, env=env)
+            self._make(["lr", "-j", f"CPLEXINCDIR={cplex_inc_dir}", f"CPLEXLIBDIR={cplex_lib_dir}", "CXXFLAGS=-fPIC"], cwd=maxhs_src_dir, env=env)
+            if not os.path.exists(maxhs_built_a):
+                raise RuntimeError(f"libmaxhs.a not produced at {maxhs_built_a}")
+            adapter_obj = os.path.join(os.path.dirname(maxhs_cached[0]), "maxhs_native.o")
+            adapter_cpp = os.path.abspath("bindings/maxhs-py/maxhs_native.cpp")
+            compile_cmd = self._native_adapter_compile_command(env, "17") + ["-I", maxhs_src_dir, "-c", adapter_cpp, "-o", adapter_obj]
+            subprocess.check_call(compile_cmd, env=env)
+            ar = self._which_mingw_tool("ar", env) if platform.system() == "Windows" else shutil.which("ar", path=env.get("PATH"))
+            if not ar:
+                raise RuntimeError("ar not found for MaxHS native adapter archive")
+            subprocess.check_call([ar, "rcs", maxhs_built_a, adapter_obj], env=env)
+            self._ranlib(maxhs_built_a, env=env)
+            self._macos_rebuild_archive_if_gnu(maxhs_built_a)
+            maxhs_a = self._store_native_core("maxhs", [maxhs_built_a], env, maxhs_roots)[0]
 
         cmake_args = [
             f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
             f"-DPython3_EXECUTABLE={sys.executable}",
             f"-DPython3_ROOT_DIR={sys.exec_prefix}",
-            f"-Dpybind11_DIR={pybind11.get_cmake_dir()}",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
-            "-DPYBIND11_FINDPYTHON=ON",
             "-DCMAKE_BUILD_TYPE=Release",
             f"-DMAXHS_LIB_ABS={maxhs_a}",
             f"-DCPLEX_LIB_DIR={cplex_lib_dir}",
@@ -1316,17 +1342,29 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         env = self.get_base_env()
         eval_src_dir = os.path.abspath("solvers/EvalMaxSAT2022")
         eval_lib = os.path.join(eval_src_dir, "libipamirEvalMaxSAT2022.a")
-        if not self._can_reuse_native_core("evalmaxsat-incr", [eval_lib], env, [eval_src_dir]):
+        adapter_lib = self._cached_core_artifacts("evalmaxsat-incr", ["libevalmaxsat_incr_adapter.a"], env)[0]
+        source_roots = [eval_src_dir, os.path.abspath("bindings/evalmaxsat-incr-py")]
+        core_artifacts = [eval_lib, adapter_lib]
+        if not self._can_reuse_native_core("evalmaxsat-incr", core_artifacts, env, source_roots):
             cfg = os.path.join(eval_src_dir, "build_lib.sh")
             with self._preserve_files(cfg):
                 st = os.stat(cfg).st_mode
                 os.chmod(cfg, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
                 self._bash(["./build_lib.sh"], cwd=eval_src_dir, env=env)
+            adapter_obj = os.path.join(os.path.dirname(adapter_lib), "evalmaxsat_incr_native.o")
+            adapter_cpp = os.path.abspath("bindings/evalmaxsat-incr-py/evalmaxsat_incr_native.cpp")
+            compile_cmd = self._native_adapter_compile_command(env, "17") + ["-I", eval_src_dir, "-c", adapter_cpp, "-o", adapter_obj]
+            subprocess.check_call(compile_cmd, env=env)
+            ar = self._which_mingw_tool("ar", env) if platform.system() == "Windows" else shutil.which("ar", path=env.get("PATH"))
+            if not ar:
+                raise RuntimeError("ar not found for EvalMaxSAT incremental adapter archive")
+            subprocess.check_call([ar, "rcs", adapter_lib, adapter_obj], env=env)
         if not os.path.exists(eval_lib):
             raise RuntimeError(f"EvalMaxSAT incremental archive not produced at {eval_lib}")
         self._ranlib(eval_lib, env=env)
-        self._mark_native_core("evalmaxsat-incr", [eval_lib], env, [eval_src_dir])
-        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DEVALMAXSAT_INCR_LIB_ABS={eval_lib}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+        self._ranlib(adapter_lib, env=env)
+        self._mark_native_core("evalmaxsat-incr", core_artifacts, env, source_roots)
+        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DEVALMAXSAT_INCR_LIB_ABS={eval_lib}", f"-DEVALMAXSAT_INCR_ADAPTER_LIB_ABS={adapter_lib}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
         subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
         subprocess.check_call(["cmake", "--build", "."], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
@@ -1338,6 +1376,8 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         os.makedirs(build_temp_path, exist_ok=True)
         env = self.get_base_env()
         eval_src_dir = os.path.abspath("solvers/evalmaxsat")
+        source_roots = [eval_src_dir, os.path.abspath("bindings/evalmaxsat-latest-py")]
+        adapter_lib = self._cached_core_artifacts("evalmaxsat-latest", ["libevalmaxsat_latest_adapter.a"], env)[0]
         if self._native_core_reuse_enabled():
             eval_build_dir = str(self._native_core_cache_dir(env) / "evalmaxsat-latest")
         else:
@@ -1345,18 +1385,27 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         eval_lib = os.path.join(eval_build_dir, "lib", "EvalMaxSAT", "libEvalMaxSAT.a")
         glucose_lib = os.path.join(eval_build_dir, "lib", "glucose", "libglucose.a")
         cadical_lib = os.path.join(eval_build_dir, "lib", "cadical", "libcadical.a")
-        core_artifacts = [eval_lib, glucose_lib, cadical_lib]
-        if not self._can_reuse_native_core("evalmaxsat-latest", core_artifacts, env, [eval_src_dir]):
+        core_artifacts = [eval_lib, glucose_lib, cadical_lib, adapter_lib]
+        if not self._can_reuse_native_core("evalmaxsat-latest", core_artifacts, env, source_roots):
             shutil.rmtree(eval_build_dir, ignore_errors=True)
             os.makedirs(eval_build_dir, exist_ok=True)
             subprocess.check_call(["cmake", eval_src_dir, "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"], cwd=eval_build_dir, env=env)
             subprocess.check_call(["cmake", "--build", ".", "--config", "Release"], cwd=eval_build_dir, env=env)
+            adapter_obj = os.path.join(eval_build_dir, "evalmaxsat_native.o")
+            adapter_cpp = os.path.abspath("bindings/evalmaxsat-latest-py/evalmaxsat_native.cpp")
+            include_dirs = [os.path.join(eval_src_dir, "lib", d, "src") for d in ["EvalMaxSAT", "MaLib", "cadical", "glucose"]]
+            compile_cmd = self._native_adapter_compile_command(env, "20") + [*[arg for inc in include_dirs for arg in ("-I", inc)], "-c", adapter_cpp, "-o", adapter_obj]
+            subprocess.check_call(compile_cmd, env=env)
+            ar = self._which_mingw_tool("ar", env) if platform.system() == "Windows" else shutil.which("ar", path=env.get("PATH"))
+            if not ar:
+                raise RuntimeError("ar not found for EvalMaxSAT latest adapter archive")
+            subprocess.check_call([ar, "rcs", adapter_lib, adapter_obj], env=env)
         if not all(os.path.exists(path) for path in core_artifacts):
             raise RuntimeError("EvalMaxSAT latest build did not produce all required static archives")
-        self._mark_native_core("evalmaxsat-latest", core_artifacts, env, [eval_src_dir])
+        self._mark_native_core("evalmaxsat-latest", core_artifacts, env, source_roots)
         # CMake handles ranlib automatically, but we keep it for consistency if needed
         eval_inc, malib_inc, cadical_inc, glucose_inc = [os.path.join(eval_src_dir, "lib", d, "src") for d in ["EvalMaxSAT", "MaLib", "cadical", "glucose"]]
-        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DEVALMAXSAT_LIB_ABS={eval_lib}", f"-DGLUCOSE_LIB_ABS={glucose_lib}", f"-DCADICAL_LIB_ABS={cadical_lib}", f"-DEVALMAXSAT_INC_DIR={eval_inc}", f"-DMALIB_INC_DIR={malib_inc}", f"-DCADICAL_INC_DIR={cadical_inc}", f"-DGLUCOSE_INC_DIR={glucose_inc}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DEVALMAXSAT_LIB_ABS={eval_lib}", f"-DEVALMAXSAT_ADAPTER_LIB_ABS={adapter_lib}", f"-DGLUCOSE_LIB_ABS={glucose_lib}", f"-DCADICAL_LIB_ABS={cadical_lib}", f"-DEVALMAXSAT_INC_DIR={eval_inc}", f"-DMALIB_INC_DIR={malib_inc}", f"-DCADICAL_INC_DIR={cadical_inc}", f"-DGLUCOSE_INC_DIR={glucose_inc}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
         subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
         subprocess.check_call(["cmake", "--build", "."], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
@@ -1446,7 +1495,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
                 source_roots,
             )
 
-        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
         subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
         subprocess.check_call(["cmake", "--build", ".", "--verbose"], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
@@ -1559,7 +1608,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
                 source_roots,
             )
 
-        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCOMINISATPS_A_ABS={cominisatps_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
         subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
         subprocess.check_call(["cmake", "--build", ".", "--verbose"], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
@@ -1610,7 +1659,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
                 "urmaxsat", [built_cadical_a, built_uwr_a], env, source_roots
             )
 
-        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", f"-Dpybind11_DIR={pybind11.get_cmake_dir()}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DPYBIND11_FINDPYTHON=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
+        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DUWR_LIB_ABS={uwr_a}", f"-DCADICAL_A_ABS={cadical_a}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
         if platform.system() == "Windows":
             subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
             subprocess.check_call(["cmake", "--build", "."], cwd=build_temp_path, env=env)
@@ -1845,7 +1894,7 @@ CMAKE_NATIVE_CORE_SPECS = {
     "hermax.core.tt_openwbo_inc": {
         "component": "tt-openwbo-inc",
         "target": "tt_openwbo_inc_core",
-        "source_roots": ["bindings/tt-open-wbo-inc-py", "solvers/tt-open-wbo-inc/code"],
+        "source_roots": ["solvers/tt-open-wbo-inc/code", "bindings/tt-open-wbo-inc-py"],
     },
     "hermax.core.loandra": {
         "component": "loandra",
@@ -1912,7 +1961,7 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
 
 setup(
     name="hermax",
-    version="1.3.2",
+    version="1.3.3",
     author="Josep Maria Salvia Hornos",
     author_email="josh.salvia@gmail.com",
     description="A Python library of incremental MaxSAT solvers",

@@ -69,6 +69,8 @@ namespace openwbo {
         delete solver;
     }
     
+    bool search_complete = false;
+
     void search();                                      // BLS search.
     void printAnswer(int type);                         // Print the answer.
     

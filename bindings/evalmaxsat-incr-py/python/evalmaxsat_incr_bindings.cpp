@@ -1,90 +1,237 @@
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+#include "../evalmaxsat_incr_native.h"
+#include <exception>
+#include <limits>
+#include <new>
+#include <stdexcept>
 #include <vector>
-#include <string>
-#include "../../../solvers/EvalMaxSAT2022/ipamir.h"
 
-namespace py = pybind11;
-
-class EvalMaxSATIncr {
-public:
-    void* solver;
-
-    EvalMaxSATIncr() : solver(ipamir_init()) {
-        if (!solver) {
-            throw std::runtime_error("Failed to initialize EvalMaxSATIncr solver.");
-        }
+typedef struct {
+    PyObject_HEAD evalmaxsat_incr_native::Solver *solver;
+} PyEvalMaxSATIncr;
+static PyTypeObject EvalMaxSATIncrType = {PyVarObject_HEAD_INIT(nullptr, 0)};
+static void translate_exception() {
+    try {
+        throw;
+    } catch (const std::invalid_argument &e) {
+        PyErr_SetString(PyExc_ValueError, e.what());
+    } catch (const std::overflow_error &e) {
+        PyErr_SetString(PyExc_OverflowError, e.what());
+    } catch (const std::bad_alloc &) {
+        PyErr_NoMemory();
+    } catch (const std::exception &e) {
+        PyErr_SetString(PyExc_RuntimeError, e.what());
+    } catch (...) {
+        PyErr_SetString(PyExc_RuntimeError, "Unknown C++ exception");
     }
+}
+static PyObject *eval_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "", const_cast<char **>(names)))
+        return nullptr;
 
-    ~EvalMaxSATIncr() {
-        if (solver) {
-            ipamir_release(solver);
-            solver = nullptr;
-        }
+    auto *self = reinterpret_cast<PyEvalMaxSATIncr *>(type->tp_alloc(type, 0));
+    if (!self)
+        return nullptr;
+    self->solver = nullptr;
+    try {
+        self->solver = new evalmaxsat_incr_native::Solver();
+    } catch (...) {
+        Py_DECREF(reinterpret_cast<PyObject *>(self));
+        translate_exception();
+        return nullptr;
     }
-
-    void addClause(const std::vector<int>& clause, std::optional<long long> weight = std::nullopt) {
-        if (!weight.has_value()) {
-            // Hard clause
-            for (int lit : clause) {
-                ipamir_add_hard(solver, lit);
+    return reinterpret_cast<PyObject *>(self);
+}
+static void eval_dealloc(PyEvalMaxSATIncr *self) {
+    delete self->solver;
+    self->solver = nullptr;
+    Py_TYPE(self)->tp_free(reinterpret_cast<PyObject *>(self));
+}
+static int to_int_vector(PyObject *value, std::vector<int> &out, const char *message) {
+    PyObject *seq = PySequence_Fast(value, message);
+    if (!seq)
+        return -1;
+    Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
+    try {
+        out.reserve(static_cast<size_t>(n));
+        for (Py_ssize_t i = 0; i < n; ++i) {
+            long v = PyLong_AsLong(PySequence_Fast_GET_ITEM(seq, i));
+            if (v == -1 && PyErr_Occurred()) {
+                Py_DECREF(seq);
+                return -1;
             }
-            ipamir_add_hard(solver, 0);
-        } else {
-            // IPAMIR only supports unit soft literals via add_soft_lit
-            // For non-unit soft clauses, we follow the IPAMIR guidance:
-            // introduce new literal b, add (C or b) as hard, declare b soft.
-            if (clause.size() == 1) {
-                // IPAMIR add_soft_lit(lit, w) means assigning 'lit' to true incurs cost 'w'.
-                // Clarsify: adding unit soft clause [L] with weight W means if L is false (i.e., -L is true), cost W.
-                // So we call ipamir_add_soft_lit(-L, W).
-                ipamir_add_soft_lit(solver, -clause[0], (uint64_t)*weight);
-            } else {
-                throw std::runtime_error("EvalMaxSATIncr (IPAMIR) only supports unit soft clauses directly. Use add_soft_relaxed logic in Python.");
+            if (v <= std::numeric_limits<int>::min() || v > std::numeric_limits<int>::max()) {
+                Py_DECREF(seq);
+                PyErr_SetString(PyExc_OverflowError, "literal does not fit in C int");
+                return -1;
             }
+            out.push_back(static_cast<int>(v));
+        }
+    } catch (...) {
+        Py_DECREF(seq);
+        translate_exception();
+        return -1;
+    }
+    Py_DECREF(seq);
+    return 0;
+}
+static PyObject *eval_add_clause(PyEvalMaxSATIncr *self, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {"clause", "weight", nullptr};
+    PyObject *clause, *weight = Py_None;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|O:addClause", const_cast<char **>(names),
+                                     &clause, &weight))
+        return nullptr;
+    std::vector<int> lits;
+    if (to_int_vector(clause, lits, "clause must be an iterable of integers") < 0)
+        return nullptr;
+    std::optional<long long> native_weight;
+    if (weight != Py_None) {
+        long long v = PyLong_AsLongLong(weight);
+        if (v == -1 && PyErr_Occurred())
+            return nullptr;
+        native_weight = v;
+    }
+    try {
+        self->solver->add_clause(lits, native_weight);
+        Py_RETURN_NONE;
+    } catch (...) {
+        translate_exception();
+        return nullptr;
+    }
+}
+static PyObject *eval_add_soft(PyEvalMaxSATIncr *self, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {"lit", "weight", nullptr};
+    int lit;
+    PyObject *weight_obj;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "iO:addSoftLit", const_cast<char **>(names),
+                                     &lit, &weight_obj))
+        return nullptr;
+    unsigned long long weight = PyLong_AsUnsignedLongLong(weight_obj);
+    if (weight == static_cast<unsigned long long>(-1) && PyErr_Occurred())
+        return nullptr;
+    try {
+        self->solver->add_soft_lit(lit, static_cast<uint64_t>(weight));
+        Py_RETURN_NONE;
+    } catch (...) {
+        translate_exception();
+        return nullptr;
+    }
+}
+static PyObject *eval_assume(PyEvalMaxSATIncr *self, PyObject *arg) {
+    std::vector<int> assumptions;
+    if (to_int_vector(arg, assumptions, "assumptions must be an iterable of integers") < 0)
+        return nullptr;
+    try {
+        self->solver->assume(assumptions);
+        Py_RETURN_NONE;
+    } catch (...) {
+        translate_exception();
+        return nullptr;
+    }
+}
+static PyObject *eval_solve(PyEvalMaxSATIncr *self, PyObject *) {
+    int result = 0;
+    std::exception_ptr error;
+    Py_BEGIN_ALLOW_THREADS try { result = self->solver->solve(); } catch (...) {
+        error = std::current_exception();
+    }
+    Py_END_ALLOW_THREADS if (error) {
+        try {
+            std::rethrow_exception(error);
+        } catch (...) {
+            translate_exception();
+            return nullptr;
         }
     }
-
-    void addSoftLit(int lit, uint64_t weight) {
-        ipamir_add_soft_lit(solver, lit, weight);
+    return PyLong_FromLong(result);
+}
+static PyObject *eval_cost(PyEvalMaxSATIncr *self, PyObject *) {
+    try {
+        return PyLong_FromUnsignedLongLong(self->solver->get_cost());
+    } catch (...) {
+        translate_exception();
+        return nullptr;
     }
-
-    void assume(const std::vector<int>& assumptions) {
-        for (int lit : assumptions) {
-            ipamir_assume(solver, lit);
-        }
+}
+static PyObject *eval_value(PyEvalMaxSATIncr *self, PyObject *arg) {
+    long lit = PyLong_AsLong(arg);
+    if (lit == -1 && PyErr_Occurred())
+        return nullptr;
+    if (lit <= std::numeric_limits<int>::min() || lit > std::numeric_limits<int>::max()) {
+        PyErr_SetString(PyExc_OverflowError, "literal does not fit in C int");
+        return nullptr;
     }
-
-    int solve() {
-        return ipamir_solve(solver);
+    try {
+        int v = self->solver->get_value(static_cast<int>(lit));
+        if (v == lit)
+            Py_RETURN_TRUE;
+        if (v == -lit)
+            Py_RETURN_FALSE;
+        Py_RETURN_NONE;
+    } catch (...) {
+        translate_exception();
+        return nullptr;
     }
-
-    uint64_t getCost() {
-        return ipamir_val_obj(solver);
+}
+static PyObject *eval_signature(PyEvalMaxSATIncr *self, PyObject *) {
+    try {
+        std::string sig = self->solver->signature();
+        return PyUnicode_FromStringAndSize(sig.data(), static_cast<Py_ssize_t>(sig.size()));
+    } catch (...) {
+        translate_exception();
+        return nullptr;
     }
-
-    py::object getValue(int lit) {
-        int val = ipamir_val_lit(solver, lit);
-        if (val == lit) return py::cast(true);
-        if (val == -lit) return py::cast(false);
-        return py::none();
+}
+static PyObject *eval_assume_keywords(PyEvalMaxSATIncr *self, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {"assumptions", nullptr};
+    PyObject *value;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O:assume", const_cast<char **>(names), &value))
+        return nullptr;
+    return eval_assume(self, value);
+}
+static PyObject *eval_value_keywords(PyEvalMaxSATIncr *self, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {"lit", nullptr};
+    PyObject *value;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O:getValue", const_cast<char **>(names),
+                                     &value))
+        return nullptr;
+    return eval_value(self, value);
+}
+static PyMethodDef methods[] = {
+    {"addClause", reinterpret_cast<PyCFunction>(eval_add_clause), METH_VARARGS | METH_KEYWORDS,
+     nullptr},
+    {"addSoftLit", reinterpret_cast<PyCFunction>(eval_add_soft), METH_VARARGS | METH_KEYWORDS,
+     nullptr},
+    {"assume", reinterpret_cast<PyCFunction>(eval_assume_keywords), METH_VARARGS | METH_KEYWORDS,
+     nullptr},
+    {"solve", reinterpret_cast<PyCFunction>(eval_solve), METH_NOARGS, nullptr},
+    {"getCost", reinterpret_cast<PyCFunction>(eval_cost), METH_NOARGS, nullptr},
+    {"getValue", reinterpret_cast<PyCFunction>(eval_value_keywords), METH_VARARGS | METH_KEYWORDS,
+     nullptr},
+    {"signature", reinterpret_cast<PyCFunction>(eval_signature), METH_NOARGS, nullptr},
+    {nullptr, nullptr, 0, nullptr}};
+static PyModuleDef module = {PyModuleDef_HEAD_INIT, "evalmaxsat_incr", "EvalMaxSATIncr (IPAMIR)",
+                             -1, nullptr};
+PyMODINIT_FUNC PyInit_evalmaxsat_incr() {
+    EvalMaxSATIncrType.tp_name = "evalmaxsat_incr.EvalMaxSATIncr";
+    EvalMaxSATIncrType.tp_basicsize = sizeof(PyEvalMaxSATIncr);
+    EvalMaxSATIncrType.tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+    EvalMaxSATIncrType.tp_new = eval_new;
+    EvalMaxSATIncrType.tp_dealloc = reinterpret_cast<destructor>(eval_dealloc);
+    EvalMaxSATIncrType.tp_methods = methods;
+    if (PyType_Ready(&EvalMaxSATIncrType) < 0)
+        return nullptr;
+    PyObject *m = PyModule_Create(&module);
+    if (!m)
+        return nullptr;
+    Py_INCREF(&EvalMaxSATIncrType);
+    if (PyModule_AddObject(m, "EvalMaxSATIncr", reinterpret_cast<PyObject *>(&EvalMaxSATIncrType)) <
+        0) {
+        Py_DECREF(&EvalMaxSATIncrType);
+        Py_DECREF(m);
+        return nullptr;
     }
-
-    std::string signature() {
-        return ipamir_signature();
-    }
-};
-
-PYBIND11_MODULE(evalmaxsat_incr, m) {
-    m.doc() = "pybind11 plugin for EvalMaxSATIncr (IPAMIR)";
-
-    py::class_<EvalMaxSATIncr>(m, "EvalMaxSATIncr")
-        .def(py::init<>())
-        .def("addClause", &EvalMaxSATIncr::addClause, py::arg("clause"), py::arg("weight") = std::nullopt)
-        .def("addSoftLit", &EvalMaxSATIncr::addSoftLit, py::arg("lit"), py::arg("weight"))
-        .def("assume", &EvalMaxSATIncr::assume, py::arg("assumptions"))
-        .def("solve", &EvalMaxSATIncr::solve)
-        .def("getCost", &EvalMaxSATIncr::getCost)
-        .def("getValue", &EvalMaxSATIncr::getValue, py::arg("lit"))
-        .def("signature", &EvalMaxSATIncr::signature);
+    return m;
 }

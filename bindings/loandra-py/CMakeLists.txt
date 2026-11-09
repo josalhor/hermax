@@ -30,6 +30,7 @@ list(FILTER SOURCES EXCLUDE REGEX "/algorithms/Alg_CBLIN\\.cc$")
 list(FILTER SOURCES EXCLUDE REGEX "/algorithms/Alg_OLL_ITER\\.cc$")
 list(FILTER GLUCOSE_SOURCES EXCLUDE REGEX "solvers/glucose4\\.1/simp/Main\\.cc$")
 list(APPEND SOURCES ${GLUCOSE_SOURCES})
+list(APPEND SOURCES loandra_native.cpp)
 
 if(HERMAX_CORE_ARCHIVE)
     add_library(loandra_core STATIC IMPORTED GLOBAL)
@@ -50,21 +51,22 @@ if(NOT HERMAX_CORE_ARCHIVE)
     )
 endif()
 
-# The Python binding includes solver headers and needs the same macros as the
-# original single-target compilation.
-add_definitions(-D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -D SIMP)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNSPACE=Glucose")
-
 if(HERMAX_CORE_ONLY)
     return()
 endif()
 
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')"
+  OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PYTHON_EXTENSION_SUFFIX)
+  message(FATAL_ERROR "Could not determine the Python extension suffix")
+endif()
 
-pybind11_add_module(loandra MODULE NO_EXTRAS python/loandra_bindings.cpp)
-target_compile_options(loandra PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h)
-target_link_libraries(loandra PRIVATE Python3::Module pybind11::module loandra_core)
+add_library(loandra MODULE python/loandra_bindings.cpp)
+set_target_properties(loandra PROPERTIES SUFFIX "${PYTHON_EXTENSION_SUFFIX}")
+target_link_libraries(loandra PRIVATE Python3::Module loandra_core)
 
 find_library(GMP_LIBRARY gmp)
 find_library(GMPXX_LIBRARY gmpxx)
@@ -84,6 +86,7 @@ else()
 endif()
 
 set_target_properties(loandra PROPERTIES
+  PREFIX ""
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
   OUTPUT_NAME "loandra"

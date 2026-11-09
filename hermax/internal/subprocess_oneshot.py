@@ -55,6 +55,19 @@ class OneShotRunResult:
     stderr_raw: bytes
     protocol_error: Optional[str] = None
 
+    @property
+    def stderr_diagnostics(self) -> bytes:
+        """Exclude a validated response frame, retaining any trailing diagnostics."""
+        if self.response is None or self.protocol_error is not None:
+            return self.stderr_raw
+        if len(self.stderr_raw) < _HEADER_STRUCT.size:
+            return self.stderr_raw
+        (payload_size,) = _HEADER_STRUCT.unpack_from(self.stderr_raw)
+        frame_end = _HEADER_STRUCT.size + payload_size
+        if frame_end > len(self.stderr_raw):
+            return self.stderr_raw
+        return self.stderr_raw[frame_end:]
+
 
 def _worker_cmd() -> list[str]:
     return [sys.executable, "-m", "hermax.internal.solver_worker_main"]

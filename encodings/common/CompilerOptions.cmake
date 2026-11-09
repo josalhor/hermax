@@ -12,7 +12,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 option(HERMAX_ENCODER_LTO "Use supported Release-mode encoder LTO" ${_hermax_lto_default})
 
-# Keep pybind11's automatic IPO flags under the same option and configuration.
+# Keep extension IPO flags under the same option and configuration.
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
 set(HERMAX_ENCODER_IPO_SUPPORTED OFF)
 if(HERMAX_ENCODER_LTO AND (CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE STREQUAL "Release"))

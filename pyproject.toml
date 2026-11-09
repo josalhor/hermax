@@ -2,7 +2,6 @@
 requires = [
     "setuptools>=77.0.3",
     "cmake>=3.15",
-    "pybind11>=2.10,<3",
     "wheel"
 ]
 build-backend = "setuptools.build_meta"
@@ -34,7 +33,7 @@ HERMAX_CIBW_COMPLIANCE_TIMEOUT = "180"
 archs = ["AMD64"]
 # MSYS2 requires full upgrades when refreshing package databases.
 before-all = "C:\\msys64\\usr\\bin\\bash -lc \"pacman -Syu --noconfirm --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils mingw-w64-x86_64-make mingw-w64-x86_64-zlib mingw-w64-x86_64-gmp\""
-before-build = "uv pip install cmake pybind11 setuptools wheel delvewheel"
+before-build = "uv pip install cmake setuptools wheel delvewheel"
 repair-wheel-command = "uv run --active python -m delvewheel repair --add-path C:\\msys64\\mingw64\\bin -w {dest_dir} {wheel}"
 
 [tool.cibuildwheel.windows.environment]
@@ -50,7 +49,7 @@ environment-pass = ["GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB", "HERMAX
 # - xz-devel    (lzma/xz)
 # - libzstd-devel (zstd)
 before-all = "yum install -y patch zlib-devel bzip2-devel xz-devel libzstd-devel gmp-devel python3-devel glibc-static zlib-static gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ && yum install -y ccache"
-before-build = "rm -rf build hermax.egg-info *.so *.pyd *.dylib loading/*.so && find hermax -type f \\( -name '*.so' -o -name '*.pyd' -o -name '*.dylib' \\) -delete && uv pip install --system cmake 'pybind11<3' setuptools wheel"
+before-build = "rm -rf build hermax.egg-info *.so *.pyd *.dylib loading/*.so && find hermax -type f \\( -name '*.so' -o -name '*.pyd' -o -name '*.dylib' \\) -delete && uv pip install --system cmake setuptools wheel"
 
 [tool.cibuildwheel.linux.environment]
 # Pin toolchain for Linux
@@ -72,7 +71,7 @@ CMAKE_ARGS = "-DCMAKE_C_COMPILER=/opt/rh/gcc-toolset-11/root/usr/bin/gcc -DCMAKE
 # - xz   (lzma/xz via liblzma)
 # (bzip2 is available on macOS, but can be added explicitly later if needed)
 before-all = "brew install gmp zstd xz ccache"
-before-build = "rm -rf build hermax.egg-info *.so *.pyd *.dylib loading/*.so && find hermax -type f \\( -name '*.so' -o -name '*.pyd' -o -name '*.dylib' \\) -delete && uv pip install --system cmake 'pybind11<3' setuptools wheel"
+before-build = "rm -rf build hermax.egg-info *.so *.pyd *.dylib loading/*.so && find hermax -type f \\( -name '*.so' -o -name '*.pyd' -o -name '*.dylib' \\) -delete && uv pip install --system cmake setuptools wheel"
 
 [tool.cibuildwheel.macos.environment]
 # Homebrew GMP on the macos-15 runner requires macOS 15.
@@ -83,7 +82,7 @@ CCACHE_MAXSIZE = "2G"
 CCACHE_NOHASHDIR = "true"
 
 [tool.cibuildwheel.pyodide]
-before-build = "python -m pip install cmake 'pybind11<3' setuptools wheel"
+before-build = "python -m pip install cmake setuptools wheel"
 test-command = "python -m pytest -q -k 'not test_model_solve_accepts_portfolio_solver_class_with_kwargs' tests/core/test_rc2_reentrant_soft_zero.py tests/model/test_model_solve_convenience.py tests/pyodide/test_pyodide_solver_surface.py"
 
 [tool.cibuildwheel.pyodide.environment]

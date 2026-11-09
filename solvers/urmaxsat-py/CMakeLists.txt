@@ -2,11 +2,10 @@ cmake_minimum_required(VERSION 3.15)
 project(hermax_urmaxsat_py LANGUAGES CXX)
 
 # --------------------------------------------------------
-# pybind11 + Python
+# Python C API module
 # --------------------------------------------------------
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
 
-find_package(pybind11 REQUIRED)
 
 # --------------------------------------------------------
 # Paths injected from setup.py
@@ -30,9 +29,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)  # needed for static->shared link
 
 # --------------------------------------------------------
-# Build pybind module
-# --------------------------------------------------------
-pybind11_add_module(urmaxsat_py MODULE NO_EXTRAS python/urmaxsat_bindings.cpp)
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')"
+  OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PYTHON_EXTENSION_SUFFIX)
+  message(FATAL_ERROR "Could not determine the Python extension suffix")
+endif()
+
+add_library(urmaxsat_py MODULE python/urmaxsat_bindings.cpp)
+set_target_properties(urmaxsat_py PROPERTIES SUFFIX "${PYTHON_EXTENSION_SUFFIX}")
 target_compile_features(urmaxsat_py PRIVATE cxx_std_17)
 target_include_directories(urmaxsat_py PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/../../bindings/common"
@@ -45,7 +51,6 @@ find_library(GMP_LIBRARY gmp REQUIRED)
 
 target_link_libraries(urmaxsat_py PRIVATE
   Python3::Module
-  pybind11::module
   "${UWR_LIB_ABS}"
   "${CADICAL_A_ABS}"
   ${GMP_LIBRARY}

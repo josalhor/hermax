@@ -29,6 +29,7 @@ file(GLOB_RECURSE TOPOR_SOURCES
 list(FILTER SOURCES EXCLUDE REGEX "/Main\\.cc$")
 list(FILTER TOPOR_SOURCES EXCLUDE REGEX "solvers/topor/topor/Main\\.cc$")
 list(APPEND SOURCES ${TOPOR_SOURCES})
+list(APPEND SOURCES tt_openwbo_native.cpp)
 
 if(HERMAX_CORE_ARCHIVE)
     add_library(tt_openwbo_inc_core STATIC IMPORTED GLOBAL)
@@ -54,9 +55,17 @@ if(HERMAX_CORE_ONLY)
 endif()
 
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
 
-pybind11_add_module(tt_openwbo_inc MODULE NO_EXTRAS tt_openwbo_bindings.cpp)
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')"
+  OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PYTHON_EXTENSION_SUFFIX)
+  message(FATAL_ERROR "Could not determine the Python extension suffix")
+endif()
+
+add_library(tt_openwbo_inc MODULE tt_openwbo_bindings.cpp)
+set_target_properties(tt_openwbo_inc PROPERTIES SUFFIX "${PYTHON_EXTENSION_SUFFIX}")
 target_compile_definitions(tt_openwbo_inc PRIVATE
     __STDC_LIMIT_MACROS
     __STDC_FORMAT_MACROS
@@ -66,9 +75,10 @@ target_compile_definitions(tt_openwbo_inc PRIVATE
     CLSIND=uint32_t
     COMPRESS=false
 )
-target_link_libraries(tt_openwbo_inc PRIVATE Python3::Module pybind11::module tt_openwbo_inc_core gmp gmpxx)
+target_link_libraries(tt_openwbo_inc PRIVATE Python3::Module tt_openwbo_inc_core gmp gmpxx)
 
 set_target_properties(tt_openwbo_inc PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+  PREFIX ""
 )

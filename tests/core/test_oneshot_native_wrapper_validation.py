@@ -33,10 +33,6 @@ def _wrapper(cls):
     return solver
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="One-shot native wrappers coerce non-integer hard literals with int()",
-)
 @pytest.mark.parametrize("wrapper", [LoandraSolver, OpenWBOIncSolver, TTOpenWBOIncSolver])
 @pytest.mark.parametrize("raw_literal", [1.5, True, "1"])
 def test_one_shot_native_wrappers_reject_non_integer_hard_literals(wrapper, raw_literal):
@@ -46,10 +42,6 @@ def test_one_shot_native_wrappers_reject_non_integer_hard_literals(wrapper, raw_
         solver.add_clause([raw_literal])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="One-shot native wrappers allocate variables before rejecting a later invalid literal",
-)
 @pytest.mark.parametrize("wrapper", [LoandraSolver, OpenWBOIncSolver, TTOpenWBOIncSolver])
 def test_one_shot_native_wrapper_clause_validation_is_atomic(wrapper):
     solver = _wrapper(wrapper)
@@ -61,10 +53,6 @@ def test_one_shot_native_wrapper_clause_validation_is_atomic(wrapper):
     assert solver.solver.clauses == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="One-shot native wrappers coerce non-integer literals in add_soft_unit()",
-)
 @pytest.mark.parametrize("wrapper", [LoandraSolver, OpenWBOIncSolver, TTOpenWBOIncSolver])
 def test_one_shot_native_wrappers_reject_non_integer_soft_literals(wrapper):
     solver = _wrapper(wrapper)
@@ -73,10 +61,6 @@ def test_one_shot_native_wrappers_reject_non_integer_soft_literals(wrapper):
         solver.add_soft_unit(1.5, 2)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="One-shot native wrappers coerce non-integer weights in add_soft_unit()",
-)
 @pytest.mark.parametrize("wrapper", [LoandraSolver, OpenWBOIncSolver, TTOpenWBOIncSolver])
 @pytest.mark.parametrize("raw_weight", [True, 1.5, "2"])
 def test_one_shot_native_wrappers_reject_non_integer_soft_weights(wrapper, raw_weight):
@@ -86,10 +70,6 @@ def test_one_shot_native_wrappers_reject_non_integer_soft_weights(wrapper, raw_w
         solver.add_soft_unit(1, raw_weight)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="One-shot native wrappers coerce non-integer val() literals with int()",
-)
 @pytest.mark.parametrize("wrapper", [LoandraSolver, TTOpenWBOIncSolver])
 @pytest.mark.parametrize("raw_literal", [1.5, True])
 def test_one_shot_native_wrappers_reject_non_integer_val_literals(wrapper, raw_literal):
@@ -101,10 +81,6 @@ def test_one_shot_native_wrappers_reject_non_integer_val_literals(wrapper, raw_l
         solver.val(raw_literal)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="OpenWBO-Inc coerces boolean val() literals to variable 1",
-)
 def test_openwbo_inc_rejects_boolean_val_literals():
     solver = _wrapper(OpenWBOIncSolver)
     solver.num_vars = 1
@@ -114,10 +90,6 @@ def test_openwbo_inc_rejects_boolean_val_literals():
         solver.val(True)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Several native wrappers cast add_soft_unit() literals before validation",
-)
 @pytest.mark.parametrize(
     "wrapper",
     [

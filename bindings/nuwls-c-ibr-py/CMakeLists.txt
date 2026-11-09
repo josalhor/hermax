@@ -43,6 +43,7 @@ set(NUWLS_SOURCES
     "${NUWLS_ROOT}/clusterings/SequenceStatistic.cc"
     "${NUWLS_ROOT}/solvers/glucose4.1/core/Solver.cc"
     "${NUWLS_ROOT}/solvers/glucose4.1/utils/System.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/nuwls_native.cpp"
 )
 
 if(HERMAX_CORE_ARCHIVE)
@@ -76,21 +77,17 @@ if(HERMAX_CORE_ONLY)
 endif()
 
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
-
-pybind11_add_module(nuwls_c_ibr MODULE NO_EXTRAS python/nuwls_c_ibr_bindings.cpp)
-target_include_directories(nuwls_c_ibr PRIVATE "${NUWLS_ROOT}" "${NUWLS_ROOT}/solvers/glucose4.1")
-if (NOT MSVC)
-    target_compile_options(nuwls_c_ibr PRIVATE -fpermissive)
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')"
+  OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PYTHON_EXTENSION_SUFFIX)
+  message(FATAL_ERROR "Could not determine the Python extension suffix")
 endif()
-target_compile_definitions(nuwls_c_ibr PRIVATE
-    __STDC_LIMIT_MACROS
-    __STDC_FORMAT_MACROS
-    NSPACE=Glucose
-    SOLVERNAME="Glucose4.1"
-    VERSION=core
-)
-target_link_libraries(nuwls_c_ibr PRIVATE Python3::Module pybind11::module nuwls_c_ibr_core)
+
+add_library(nuwls_c_ibr MODULE python/nuwls_c_ibr_bindings.cpp)
+set_target_properties(nuwls_c_ibr PROPERTIES SUFFIX "${PYTHON_EXTENSION_SUFFIX}")
+target_link_libraries(nuwls_c_ibr PRIVATE Python3::Module nuwls_c_ibr_core)
 
 find_library(GMP_LIBRARY gmp)
 find_library(GMPXX_LIBRARY gmpxx)
@@ -102,6 +99,7 @@ if(GMPXX_LIBRARY)
 endif()
 
 set_target_properties(nuwls_c_ibr PROPERTIES
+    PREFIX ""
     OUTPUT_NAME "nuwls_c_ibr"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"

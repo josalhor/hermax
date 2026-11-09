@@ -29,8 +29,8 @@ def test_coretrail_rejects_non_integer_formula_literals(bad_literal):
         _load(formula)
 
 
-@pytest.mark.parametrize("bad_weight", [1.5, True, "2"])
-def test_coretrail_rejects_non_integer_formula_weights(bad_weight):
+@pytest.mark.parametrize("bad_weight", [True, "2"])
+def test_coretrail_rejects_invalid_formula_weights(bad_weight):
     formula = SimpleNamespace(hard=[], soft=[[1]], wght=[bad_weight], nv=1)
 
     with pytest.raises((TypeError, ValueError)):

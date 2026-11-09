@@ -14,6 +14,7 @@ set(WMAXCDCL_SOURCES
     "${WMAXCDCL_CODE_DIR}/core/Solver.cc"
     "${WMAXCDCL_CODE_DIR}/core/sattime.cc"
     "${WMAXCDCL_CODE_DIR}/simp/SimpSolver.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/wmaxcdcl_native.cpp"
 )
 
 if(HERMAX_CORE_ARCHIVE)
@@ -33,13 +34,19 @@ if(HERMAX_CORE_ONLY)
 endif()
 
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
 find_package(ZLIB REQUIRED)
 
-pybind11_add_module(wmaxcdcl MODULE NO_EXTRAS python/wmaxcdcl_bindings.cpp)
-target_include_directories(wmaxcdcl PRIVATE "${WMAXCDCL_CODE_DIR}")
-target_compile_definitions(wmaxcdcl PRIVATE __STDC_LIMIT_MACROS __STDC_FORMAT_MACROS)
-target_link_libraries(wmaxcdcl PRIVATE Python3::Module pybind11::module wmaxcdcl_core ZLIB::ZLIB)
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')"
+  OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PYTHON_EXTENSION_SUFFIX)
+  message(FATAL_ERROR "Could not determine the Python extension suffix")
+endif()
+
+add_library(wmaxcdcl MODULE python/wmaxcdcl_bindings.cpp)
+set_target_properties(wmaxcdcl PROPERTIES SUFFIX "${PYTHON_EXTENSION_SUFFIX}")
+target_link_libraries(wmaxcdcl PRIVATE Python3::Module wmaxcdcl_core ZLIB::ZLIB)
 
 set_target_properties(wmaxcdcl PROPERTIES
   PREFIX ""

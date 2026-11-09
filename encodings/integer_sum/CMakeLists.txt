@@ -13,8 +13,17 @@ if(INTEGER_SUM_CORE_ONLY)
 endif()
 
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 CONFIG REQUIRED)
-pybind11_add_module(_integer_sum_native bindings.cpp)
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')"
+  OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PYTHON_EXTENSION_SUFFIX)
+  message(FATAL_ERROR "Could not determine the Python extension suffix")
+endif()
+
+add_library(_integer_sum_native MODULE bindings.cpp)
+set_target_properties(_integer_sum_native PROPERTIES SUFFIX "${PYTHON_EXTENSION_SUFFIX}")
 hermax_encoder_options(_integer_sum_native)
 target_include_directories(_integer_sum_native PRIVATE ../pblib/pblib/pblib ../../hermax/internal)
-target_link_libraries(_integer_sum_native PRIVATE pblib_core)
+target_link_libraries(_integer_sum_native PRIVATE Python3::Module pblib_core)
+set_target_properties(_integer_sum_native PROPERTIES PREFIX "" OUTPUT_NAME "_integer_sum_native")

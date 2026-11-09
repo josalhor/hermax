@@ -158,9 +158,10 @@ void BLS::LSU() {
       if (newCost == 0) {
         // If there is a model with value 0 then it is an optimal model
         ubCost = newCost;
+        search_complete = true;
 
         printAnswer(_OPTIMUM_);
-        exit(_OPTIMUM_);
+        return;
 
       } else {
           // Unweighted.
@@ -172,15 +173,16 @@ void BLS::LSU() {
         ubCost = newCost;
       }
     } else {
+      search_complete = (res == l_False);
       nbCores++;
       if (model.size() == 0) {
         assert(nbSatisfiable == 0);
         // If no model was found then the MaxSAT formula is unsatisfiable
         printAnswer(_UNSATISFIABLE_);
-        exit(_UNSATISFIABLE_);
+        return;
       } else {
         printAnswer(_OPTIMUM_);
-        exit(_OPTIMUM_);
+        return;
       }
     }
   }
@@ -226,15 +228,16 @@ bool BLS::findNextMCS() {
   
   // Check outcome of first call
   if (res == l_False) {
+    search_complete = true;
     // Hard clause set in unsat!
     if (nbMCS == 0) {
       printAnswer(_UNSATISFIABLE_);
-      exit(_UNSATISFIABLE_);
+      return false;
     }
     else {
       // It is not the first MCS. Hence, all MCS were found.
       printAnswer(_OPTIMUM_);
-      exit(_OPTIMUM_);
+      return false;
     }
   }
   else if (res == l_True) {
@@ -329,7 +332,14 @@ bool BLS::findNextMCS() {
 // Public search method
 void BLS::search() {
 
+  search_complete = false;
   basicSearch(_maxMCS);
+  // Exhausting MCS enumeration already proves UNSAT or optimality.
+  // Continuing into LSU can underflow its bound when the best cost is zero.
+  if (search_complete || (nbSatisfiable > 0 && _smallestMCS == 0)) {
+    search_complete = true;
+    return;
+  }
 
   // Make sure the conflict budget is turned off.
   solver->budgetOff();  

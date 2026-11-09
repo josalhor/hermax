@@ -44,10 +44,6 @@ class _DummySolver(IPAMIRSolver):
         pass
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="IPAMIRSolver.add_soft_relaxed coerces invalid relaxation variables with int()",
-)
 @pytest.mark.parametrize("relax_var", [0, True, 1.5, "2"])
 def test_default_add_soft_relaxed_rejects_invalid_relaxation_variables(relax_var):
     solver = _DummySolver()
@@ -56,10 +52,6 @@ def test_default_add_soft_relaxed_rejects_invalid_relaxation_variables(relax_var
         solver.add_soft_relaxed([1, 2], 3, relax_var=relax_var)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="IPAMIRSolver.add_soft_relaxed adds the hard clause before soft registration succeeds",
-)
 def test_default_add_soft_relaxed_is_atomic_when_soft_registration_fails():
     solver = _DummySolver(fail_set_soft=True)
 
@@ -70,10 +62,6 @@ def test_default_add_soft_relaxed_is_atomic_when_soft_registration_fails():
     assert solver.soft == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="IPAMIRSolver.add_soft_relaxed coerces non-integer clause literals with int()",
-)
 @pytest.mark.parametrize("raw_literal", [1.5, True, "1"])
 def test_default_add_soft_relaxed_rejects_non_integer_clause_literals(raw_literal):
     solver = _DummySolver()

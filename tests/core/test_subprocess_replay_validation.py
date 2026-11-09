@@ -51,3 +51,17 @@ def test_subprocess_replay_rejects_feasible_worker_response_without_model(monkey
 
     assert solver.solve() is False
     assert solver.get_status() is SolveStatus.ERROR
+
+
+def test_worker_stderr_diagnostics_preserve_output_after_protocol_frame():
+    from hermax.internal.subprocess_oneshot import OneShotRunResult, _dumps_frame
+
+    response = {"ok": True, "status": 30}
+    run = OneShotRunResult(
+        ok=True, response=response, exit_code=0, timed_out=False,
+        interrupted=False, killed=False, elapsed_s=0,
+        stdout_raw=b"", stderr_raw=_dumps_frame(response) + b"actual diagnostic",
+    )
+    assert run.stderr_diagnostics == b"actual diagnostic"
+    run.protocol_error = "invalid frame"
+    assert run.stderr_diagnostics == run.stderr_raw

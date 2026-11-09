@@ -44,6 +44,7 @@ set(SPB_SOURCES
     "${SPB_ROOT}/clusterings/SequenceStatistic.cc"
     "${SPB_ROOT}/solvers/glucose4.1/core/Solver.cc"
     "${SPB_ROOT}/solvers/glucose4.1/utils/System.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spb_native.cpp"
 )
 
 if(HERMAX_CORE_ARCHIVE)
@@ -77,21 +78,17 @@ if(HERMAX_CORE_ONLY)
 endif()
 
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
-
-pybind11_add_module(spb_maxsat_c_fps MODULE NO_EXTRAS python/spb_maxsat_c_fps_bindings.cpp)
-target_include_directories(spb_maxsat_c_fps PRIVATE "${SPB_ROOT}" "${SPB_ROOT}/solvers/glucose4.1")
-if (NOT MSVC)
-    target_compile_options(spb_maxsat_c_fps PRIVATE -fpermissive)
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')"
+  OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PYTHON_EXTENSION_SUFFIX)
+  message(FATAL_ERROR "Could not determine the Python extension suffix")
 endif()
-target_compile_definitions(spb_maxsat_c_fps PRIVATE
-    __STDC_LIMIT_MACROS
-    __STDC_FORMAT_MACROS
-    NSPACE=Glucose
-    SOLVERNAME="Glucose4.1"
-    VERSION=core
-)
-target_link_libraries(spb_maxsat_c_fps PRIVATE Python3::Module pybind11::module spb_maxsat_c_fps_core)
+
+add_library(spb_maxsat_c_fps MODULE python/spb_maxsat_c_fps_bindings.cpp)
+set_target_properties(spb_maxsat_c_fps PROPERTIES SUFFIX "${PYTHON_EXTENSION_SUFFIX}")
+target_link_libraries(spb_maxsat_c_fps PRIVATE Python3::Module spb_maxsat_c_fps_core)
 
 find_library(GMP_LIBRARY gmp)
 find_library(GMPXX_LIBRARY gmpxx)
@@ -103,6 +100,7 @@ if(GMPXX_LIBRARY)
 endif()
 
 set_target_properties(spb_maxsat_c_fps PROPERTIES
+    PREFIX ""
     OUTPUT_NAME "spb_maxsat_c_fps"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"

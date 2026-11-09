@@ -219,14 +219,19 @@ $(GLUCOSE_PIC_LIB):
 	DEPDIR="core utils" \
 	EXEC=glucose \
 	CFLAGS="$(CXXFLAGS) -Wall -Wno-parentheses -std=c++20"
-	find $(GLUCOSE_DIR) -name "*.oh" ! -name "Main.oh" | sort | xargs ar rcs $@
+	find $(GLUCOSE_DIR) -name "*.oh" -delete
+	cd $(GLUCOSE_DIR)/core && $(MAKE) -f ../mtl/template.mk libglucose_releaseh.a \
+		LIB=glucose MROOT=.. DEPDIR="core utils" EXEC=glucose \
+		CFLAGS="$(CXXFLAGS) -Wall -Wno-parentheses -std=c++20 -fPIC"
+	cp $(GLUCOSE_DIR)/core/libglucose_releaseh.a $@
 	@echo "Glucose PIC library built successfully"
 
 $(TOPOR_PIC_LIB):
 	@echo "Building Topor PIC library..."
 	# Topor is C++; do not let Hermax's CFLAGS override its C++20 defaults.
-	cd $(TOPOR_DIR) && $(MAKE) librh \
-		CFLAGS="$(CXXFLAGS) -DSKIP_ZLIB -Wall -Wno-parentheses -std=c++20"
+	# The vendor Makefile reuses .oh objects even when prior flags lacked -fPIC.
+	cd $(TOPOR_DIR) && find . -maxdepth 1 -name "*.oh" -delete && rm -f libtopor_shared_release.so && $(MAKE) librh \
+		CXX="$(CXX)" CFLAGS="$(CXXFLAGS) -DSKIP_ZLIB -Wall -Wno-parentheses -std=c++20 -fPIC"
 	find $(TOPOR_DIR) -maxdepth 1 -name "*.oh" ! -name "Main.oh" | sort | xargs ar rcs $@
 	@echo "Topor PIC library built successfully"
 

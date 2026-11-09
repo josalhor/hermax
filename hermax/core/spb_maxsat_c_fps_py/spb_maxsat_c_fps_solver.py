@@ -14,7 +14,7 @@ class SPBMaxSATCFPSSolver(ReplayFormulaSolverBase):
     SPB-MaxSAT-c-FPS fake-incremental wrapper (rebuild-on-solve).
 
     This is an incomplete solver. Feasible solves are reported as
-    ``INTERRUPTED_SAT`` (a valid model was found, but optimality is not proven).
+    ``INTERRUPTED_SAT`` unless the native backend proves optimality.
     """
 
     nonunit_soft_policy = "relax"
@@ -44,15 +44,18 @@ class SPBMaxSATCFPSSolver(ReplayFormulaSolverBase):
             self.solver.addClause([int(lit)], None)
 
         res = bool(self.solver.solve(None))
+        native_status = SolveStatus(self.solver.getStatus())
         if res:
-            model = [int(x) for x in self.solver.getModel()]
+            # The BLS engine adds private relaxation variables while searching.
+            model = [int(x) for x in self.solver.getModel()
+                     if abs(x) <= self._num_vars]
             return ReplaySolveResult(
-                status=SolveStatus.INTERRUPTED_SAT,
+                status=native_status,
                 model=model,
                 cost=None,
             )
 
-        return ReplaySolveResult(status=SolveStatus.UNSAT, model=None, cost=None)
+        return ReplaySolveResult(status=native_status, model=None, cost=None)
 
     def signature(self) -> str:
         return "SPB-MaxSAT-c-FPS (NuWLS-c / BLS, native rebuild wrapper)"

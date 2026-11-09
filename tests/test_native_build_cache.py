@@ -13,7 +13,7 @@ def builder():
     tree = ast.parse(setup_path.read_text())
     tree.body = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))
                  or isinstance(node, ast.ClassDef) and node.name == "CMakeBuild"]
-    namespace = {}
+    namespace = {"__file__": str(setup_path)}
     exec(compile(tree, str(setup_path), "exec"), namespace)
     return namespace["CMakeBuild"].__new__(namespace["CMakeBuild"])
 
@@ -134,3 +134,45 @@ def test_source_fingerprint_tracks_valid_symlink_content(builder, tmp_path):
     expected = builder._native_source_fingerprint([tmp_path])
     source.write_text("int value = 2;")
     assert builder._native_source_fingerprint([tmp_path]) != expected
+
+
+def test_native_adapter_matches_release_core_flags(builder):
+    command = builder._native_adapter_compile_command(
+        {"CXX": "g++", "CXXFLAGS": "-O0 -DUSER_OPTION=1"}, "20"
+    )
+    assert "-DUSER_OPTION=1" in command
+    assert "-DNDEBUG" in command
+    assert [flag for flag in command if flag.startswith("-O")][-1] == "-O3"
+    assert "-std=c++20" in command
+
+
+def test_cache_identity_includes_build_recipe(builder, monkeypatch, tmp_path):
+    globals_ = builder._native_core_cache_dir.__globals__
+    recipe = tmp_path / "setup.py"
+    recipe.write_text("recipe version 1")
+    monkeypatch.setitem(globals_, "__file__", str(recipe))
+    monkeypatch.setattr(globals_["tempfile"], "gettempdir", lambda: str(tmp_path))
+    first = builder._native_core_cache_dir({})
+    assert builder._native_core_cache_dir({}) == first
+    recipe.write_text("recipe version 2")
+    assert builder._native_core_cache_dir({}) != first
+
+
+def test_stored_aperture_archive_survives_source_build_cleanup(builder, tmp_path, monkeypatch):
+    monkeypatch.setenv("CIBUILDWHEEL", "1")
+    monkeypatch.delenv("HERMAX_REUSE_NATIVE_CORES", raising=False)
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "solver.cc").write_text("int value = 1;")
+    build = source / "build"
+    build.mkdir()
+    archive = build / "libaperture_pic.a"
+    archive.write_bytes(b"archive")
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    monkeypatch.setattr(builder, "_native_core_cache_dir", lambda env: cache)
+    stored = builder._store_native_core("aperture", [str(archive)], {}, [source])
+    archive.unlink()
+    assert builder._load_cached_native_core("aperture", {}, [source]) == stored
+    Path(stored[0]).unlink()
+    assert builder._load_cached_native_core("aperture", {}, [source]) is None

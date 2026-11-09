@@ -2,29 +2,10 @@ cmake_minimum_required(VERSION 3.15)
 project(hermax.core.maxhs_py LANGUAGES CXX)
 
 # --------------------------------------------------------
-# pybind11 + Python
+# Python C API
 # --------------------------------------------------------
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
-find_package(Python3 COMPONENTS Development QUIET)
-
-set(PYBIND11_FINDPYTHON ON)
-
-execute_process(
-  COMMAND "${Python3_EXECUTABLE}" -m pybind11 --cmakedir
-  OUTPUT_VARIABLE _pybind11_dir OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-if (EXISTS "${_pybind11_dir}/pybind11Config.cmake")
-  list(APPEND CMAKE_PREFIX_PATH "${_pybind11_dir}")
-  find_package(pybind11 REQUIRED)
-endif()
-if (NOT pybind11_FOUND)
-  include(FetchContent)
-  FetchContent_Declare(pybind11
-    GIT_REPOSITORY https://github.com/pybind/pybind11.git
-    GIT_TAG v2.12.0
-  )
-  FetchContent_MakeAvailable(pybind11)
-endif()
+find_package(Python3 COMPONENTS Development.Module REQUIRED)
 
 # --------------------------------------------------------
 # Paths injected from setup.py
@@ -77,8 +58,18 @@ message(STATUS "Found CPLEX: ${CPLEX_LIB}")
 
 find_library(M_LIB m)
 
-# Build pybind module
-pybind11_add_module(hermax.core.maxhs_py python/maxhs_bindings.cpp)
+# Build Python C API module
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')"
+  OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PYTHON_EXTENSION_SUFFIX)
+  message(FATAL_ERROR "Could not determine the Python extension suffix")
+endif()
+
+add_library(hermax.core.maxhs_py MODULE python/maxhs_bindings.cpp)
+set_target_properties(hermax.core.maxhs_py PROPERTIES SUFFIX "${PYTHON_EXTENSION_SUFFIX}")
+target_link_libraries(hermax.core.maxhs_py PRIVATE Python3::Module)
 target_compile_definitions(hermax.core.maxhs_py PRIVATE IL_STD)
 
 # MaxHS headers
@@ -98,4 +89,5 @@ target_link_libraries(hermax.core.maxhs_py PRIVATE
 # --------------------------------------------------------
 set_target_properties(hermax.core.maxhs_py PROPERTIES
   OUTPUT_NAME "maxhs_py"
+  PREFIX ""
 )

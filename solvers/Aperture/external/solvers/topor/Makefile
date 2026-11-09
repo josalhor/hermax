@@ -72,12 +72,12 @@ $(EXEC)_static:		$(RCOBJS)
 $(EXEC)_shared_release:		lib$(LIB)_shared_release.so Main.oh
 $(EXEC)_shared_debug:		lib$(LIB)_shared_debug.so Main.oq
 
-lib$(LIB)_standard.a:	$(filter-out %/Main.o,  $(COBJS))
-lib$(LIB)_profile.a:	$(filter-out %/Main.op, $(PCOBJS))
-lib$(LIB)_debug.a:	$(filter-out %/Main.od, $(DCOBJS))
-lib$(LIB)_release.a:	$(filter-out %/Main.or, $(RCOBJS))
-lib$(LIB)_shared_release.so:	$(filter-out %/Main.oh, $(HCOBJS))
-lib$(LIB)_shared_debug.so:	$(filter-out %/Main.oq, $(QCOBJS))
+lib$(LIB)_standard.a:	$(filter-out Main.o %/Main.o,  $(COBJS))
+lib$(LIB)_profile.a:	$(filter-out Main.op %/Main.op, $(PCOBJS))
+lib$(LIB)_debug.a:	$(filter-out Main.od %/Main.od, $(DCOBJS))
+lib$(LIB)_release.a:	$(filter-out Main.or %/Main.or, $(RCOBJS))
+lib$(LIB)_shared_release.so:	$(filter-out Main.oh %/Main.oh, $(HCOBJS))
+lib$(LIB)_shared_debug.so:	$(filter-out Main.oq %/Main.oq, $(QCOBJS))
 
 ## Build rule
 %.o %.op %.od %.or %.oh %.oq:	%.cc

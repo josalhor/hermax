@@ -1,137 +1,335 @@
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
-#include <pybind11/functional.h>
-#include <optional>
-#include <functional>
-#include <cmath>
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+#include <cstdint>
+#include <limits>
+#include <vector>
+#include <exception>
+#include <new>
+#include <stdexcept>
+#include <cstdlib>
 #include "../../../solvers/CASHWMaxSAT/uwrmaxsat/ipamir.h"
-
-namespace py = pybind11;
-
-// Helper function for the termination callback
-int terminate_callback_wrapper(void* state) {
-    if (!state) return 0;
-    auto* callback = static_cast<std::function<int()>*>(state);
+struct CallbackState {
+    PyObject *callback;
+    PyObject *owner;
+};
+typedef struct {
+    PyObject_HEAD void *solver;
+    PyObject *callback;
+    CallbackState cb;
+    PyObject *exc_type;
+    PyObject *exc_value;
+    PyObject *exc_tb;
+    int num_vars;
+} PyCASHWMaxSAT;
+static PyTypeObject SolverType = {PyVarObject_HEAD_INIT(nullptr, 0)};
+static void translate() {
     try {
-        return (*callback)();
-    } catch (py::error_already_set& e) {
-        e.restore(); // Propagate Python exception
-        return 1; // Indicate termination due to error
+        throw;
+    } catch (const std::invalid_argument &e) {
+        PyErr_SetString(PyExc_ValueError, e.what());
+    } catch (const std::overflow_error &e) {
+        PyErr_SetString(PyExc_OverflowError, e.what());
+    } catch (const std::bad_alloc &) {
+        PyErr_NoMemory();
+    } catch (const std::exception &e) {
+        PyErr_SetString(PyExc_RuntimeError, e.what());
+    } catch (...) {
+        if (!PyErr_Occurred())
+            PyErr_SetString(PyExc_RuntimeError, "Unknown C++ exception");
     }
 }
-
-class CASHWMaxSAT {
-public:
-    void* solver;
-    std::function<int()> terminate_callback;
-    int num_vars;
-
-    CASHWMaxSAT() : solver(ipamir_init()), num_vars(0) {
-        if (!solver) {
-            throw std::runtime_error("Failed to initialize CASHWMaxSAT solver.");
-        }
+static void release(PyCASHWMaxSAT *s) {
+    if (s->solver) {
+        ipamir_release(s->solver);
+        s->solver = nullptr;
     }
-
-    ~CASHWMaxSAT() {
-        if (solver) {
-            ipamir_release(solver);
-            solver = nullptr;
-        }
+}
+static void ensure(PyCASHWMaxSAT *s) {
+    if (!s->solver)
+        throw std::runtime_error("Solver is closed.");
+}
+static void fetch_callback_error(PyCASHWMaxSAT *s) {
+    PyObject *t = nullptr, *v = nullptr, *tb = nullptr;
+    PyErr_Fetch(&t, &v, &tb);
+    if (!s->exc_type) {
+        s->exc_type = t;
+        s->exc_value = v;
+        s->exc_tb = tb;
+    } else {
+        Py_XDECREF(t);
+        Py_XDECREF(v);
+        Py_XDECREF(tb);
     }
-
-    CASHWMaxSAT(const CASHWMaxSAT&) = delete;
-    CASHWMaxSAT& operator=(const CASHWMaxSAT&) = delete;
-
-    int newVar() {
-        return ++num_vars;
+}
+static bool restore_callback_error(PyCASHWMaxSAT *s) {
+    if (!s->exc_type)
+        return false;
+    PyErr_Restore(s->exc_type, s->exc_value, s->exc_tb);
+    s->exc_type = s->exc_value = s->exc_tb = nullptr;
+    return true;
+}
+static int callback(void *state) {
+    auto *c = (CallbackState *)state;
+    if (!c)
+        return 0;
+    PyGILState_STATE g = PyGILState_Ensure();
+    if (!c->callback) {
+        PyGILState_Release(g);
+        return 0;
     }
-
-    void addClause(const std::vector<int>& clause, std::optional<long long> weight_opt) {
-        for (int lit : clause) {
-            int var = std::abs(lit);
-            if (var > num_vars) {
-                num_vars = var;
+    PyObject *r = PyObject_CallNoArgs(c->callback);
+    int out = 0;
+    if (!r) {
+        fetch_callback_error((PyCASHWMaxSAT *)c->owner);
+        out = 1;
+    } else {
+        long x = PyLong_AsLong(r);
+        if (x == -1 && PyErr_Occurred()) {
+            fetch_callback_error((PyCASHWMaxSAT *)c->owner);
+            out = 1;
+        } else
+            out = (int)x;
+        Py_DECREF(r);
+    }
+    PyGILState_Release(g);
+    return out;
+}
+static PyObject *construct(PyTypeObject *t, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "", const_cast<char **>(names)))
+        return nullptr;
+    auto *s = (PyCASHWMaxSAT *)t->tp_alloc(t, 0);
+    if (!s)
+        return nullptr;
+    s->solver = nullptr;
+    s->callback = nullptr;
+    s->cb.callback = nullptr;
+    s->cb.owner = (PyObject *)s;
+    s->exc_type = s->exc_value = s->exc_tb = nullptr;
+    s->num_vars = 0;
+    try {
+        s->solver = ipamir_init();
+        if (!s->solver)
+            throw std::runtime_error("Failed to initialize solver.");
+    } catch (...) {
+        Py_DECREF((PyObject *)s);
+        translate();
+        return nullptr;
+    }
+    return (PyObject *)s;
+}
+static void dealloc(PyCASHWMaxSAT *s) {
+    release(s);
+    Py_XDECREF(s->callback);
+    Py_XDECREF(s->exc_type);
+    Py_XDECREF(s->exc_value);
+    Py_XDECREF(s->exc_tb);
+    s->callback = nullptr;
+    Py_TYPE(s)->tp_free((PyObject *)s);
+}
+static int readints(PyObject *o, std::vector<int> &v, const char *msg) {
+    PyObject *q = PySequence_Fast(o, msg);
+    if (!q)
+        return -1;
+    try {
+        Py_ssize_t n = PySequence_Fast_GET_SIZE(q);
+        v.reserve((size_t)n);
+        for (Py_ssize_t i = 0; i < n; ++i) {
+            long x = PyLong_AsLong(PySequence_Fast_GET_ITEM(q, i));
+            if (x == -1 && PyErr_Occurred()) {
+                Py_DECREF(q);
+                return -1;
             }
-        }
-
-        if (!weight_opt.has_value()) { // Hard clause
-            for (int lit : clause) {
-                ipamir_add_hard(solver, lit);
+            if (!x || x <= INT_MIN || x > INT_MAX) {
+                Py_DECREF(q);
+                PyErr_SetString(!x ? PyExc_ValueError : PyExc_OverflowError, "invalid literal");
+                return -1;
             }
-            ipamir_add_hard(solver, 0);
-        } else { // Soft clause
-            long long weight = weight_opt.value();
-            if (clause.size() == 1) {
-                ipamir_add_soft_lit(solver, -clause[0], static_cast<uint64_t>(weight));
-            } else {
-                int aux_var = newVar();
-                for (int lit : clause) {
-                    ipamir_add_hard(solver, lit);
-                }
-                ipamir_add_hard(solver, aux_var);
-                ipamir_add_hard(solver, 0);
-                ipamir_add_soft_lit(solver, aux_var, static_cast<uint64_t>(weight));
-            }
+            v.push_back((int)x);
+        }
+    } catch (...) {
+        Py_DECREF(q);
+        translate();
+        return -1;
+    }
+    Py_DECREF(q);
+    return 0;
+}
+static PyObject *newvar(PyCASHWMaxSAT *s, PyObject *) {
+    try {
+        ensure(s);
+        return PyLong_FromLong(++s->num_vars);
+    } catch (...) {
+        translate();
+        return nullptr;
+    }
+}
+static PyObject *addclause(PyCASHWMaxSAT *s, PyObject *a, PyObject *k) {
+    static const char *n[] = {"clause", "weight", nullptr};
+    PyObject *c, *w = Py_None;
+    if (!PyArg_ParseTupleAndKeywords(a, k, "O|O:addClause", (char **)n, &c, &w))
+        return nullptr;
+    std::vector<int> v;
+    if (readints(c, v, "clause must be an iterable of integers") < 0)
+        return nullptr;
+    bool soft = w != Py_None;
+    long long weight = 0;
+    if (soft) {
+        weight = PyLong_AsLongLong(w);
+        if (weight == -1 && PyErr_Occurred())
+            return nullptr;
+        if (weight <= 0) {
+            PyErr_SetString(PyExc_ValueError, "soft weight must be positive");
+            return nullptr;
         }
     }
-
-    void setNoScip() {
-        ipamir_set_no_scip(solver);
+    try {
+        ensure(s);
+        int maxv = s->num_vars;
+        for (int x : v)
+            maxv = std::max(maxv, std::abs(x));
+        if (!soft || v.size() != 1) {
+            for (int x : v)
+                ipamir_add_hard(s->solver, x);
+            if (soft) {
+                int aux = ++maxv;
+                ipamir_add_hard(s->solver, aux);
+                ipamir_add_hard(s->solver, 0);
+                ipamir_add_soft_lit(s->solver, aux, (uint64_t)weight);
+            } else
+                ipamir_add_hard(s->solver, 0);
+        } else
+            ipamir_add_soft_lit(s->solver, -v[0], (uint64_t)weight);
+        s->num_vars = maxv;
+        Py_RETURN_NONE;
+    } catch (...) {
+        translate();
+        return nullptr;
     }
-
-    void assume(const std::vector<int>& assumptions) {
-        for (int lit : assumptions) {
-            ipamir_assume(solver, lit);
+}
+static PyObject *assume(PyCASHWMaxSAT *s, PyObject *o) {
+    std::vector<int> v;
+    if (readints(o, v, "assumptions must be iterable") < 0)
+        return nullptr;
+    try {
+        ensure(s);
+        for (int x : v)
+            ipamir_assume(s->solver, x);
+        Py_RETURN_NONE;
+    } catch (...) {
+        translate();
+        return nullptr;
+    }
+}
+static PyObject *setNoScip(PyCASHWMaxSAT *s, PyObject *) {
+    try {
+        ensure(s);
+        ipamir_set_no_scip(s->solver);
+        Py_RETURN_NONE;
+    } catch (...) {
+        translate();
+        return nullptr;
+    }
+}
+static PyObject *solve(PyCASHWMaxSAT *s, PyObject *) {
+    try {
+        ensure(s);
+        int r = 0;
+        std::exception_ptr e;
+        Py_BEGIN_ALLOW_THREADS try { r = ipamir_solve(s->solver); } catch (...) {
+            e = std::current_exception();
         }
+        Py_END_ALLOW_THREADS if (restore_callback_error(s)) return nullptr;
+        if (e)
+            std::rethrow_exception(e);
+        return PyLong_FromLong(r);
+    } catch (...) {
+        translate();
+        return nullptr;
     }
-
-    int solve() {
-        return ipamir_solve(solver);
+}
+static PyObject *cost(PyCASHWMaxSAT *s, PyObject *) {
+    try {
+        ensure(s);
+        return PyLong_FromUnsignedLongLong(ipamir_val_obj(s->solver));
+    } catch (...) {
+        translate();
+        return nullptr;
     }
-
-    uint64_t getCost() {
-        return ipamir_val_obj(solver);
+}
+static PyObject *value(PyCASHWMaxSAT *s, PyObject *o) {
+    long x = PyLong_AsLong(o);
+    if (x == -1 && PyErr_Occurred())
+        return nullptr;
+    if (!x || x <= INT_MIN || x > INT_MAX) {
+        PyErr_SetString(PyExc_ValueError, "invalid literal");
+        return nullptr;
     }
-
-    py::object getValue(int lit) {
-        int val = ipamir_val_lit(solver, lit);
-        if (val == lit) {
-            return py::cast(true);
-        } else if (val == -lit) {
-            return py::cast(false);
-        } else {
-            return py::none();
-        }
+    try {
+        ensure(s);
+        int r = ipamir_val_lit(s->solver, (int)x);
+        if (r == x)
+            Py_RETURN_TRUE;
+        if (r == -x)
+            Py_RETURN_FALSE;
+        Py_RETURN_NONE;
+    } catch (...) {
+        translate();
+        return nullptr;
     }
-
-    void set_terminate(std::optional<std::function<int()>> callback) {
-        if (callback) {
-            terminate_callback = callback.value();
-            ipamir_set_terminate(solver, &terminate_callback, terminate_callback_wrapper);
-        } else {
-            ipamir_set_terminate(solver, nullptr, nullptr);
-        }
+}
+static PyObject *setterm(PyCASHWMaxSAT *s, PyObject *o) {
+    if (o != Py_None && !PyCallable_Check(o)) {
+        PyErr_SetString(PyExc_TypeError, "callback must be callable or None");
+        return nullptr;
     }
-
-    const char* signature() const {
-        return ipamir_signature();
+    try {
+        ensure(s);
+        PyObject *n = o == Py_None ? nullptr : o;
+        Py_XINCREF(n);
+        Py_XDECREF(s->callback);
+        s->callback = n;
+        s->cb.callback = n;
+        ipamir_set_terminate(s->solver, n ? &s->cb : nullptr, n ? callback : nullptr);
+        Py_RETURN_NONE;
+    } catch (...) {
+        translate();
+        return nullptr;
     }
-};
-
-PYBIND11_MODULE(cashwmaxsat, m) {
-    m.doc() = "pybind11 plugin for CASHWMaxSAT (UWrMaxSat + SCIP)";
-
-    py::class_<CASHWMaxSAT>(m, "CASHWMaxSAT")
-        .def(py::init<>())
-        .def("newVar", &CASHWMaxSAT::newVar, "Generates a new variable ID.")
-        .def("addClause", &CASHWMaxSAT::addClause,
-             py::arg("clause"), py::arg("weight") = std::nullopt,
-             "Adds a clause. If weight is None, it's a hard clause.")
-        .def("setNoScip", &CASHWMaxSAT::setNoScip, "Disable integrated SCIP solver.")
-        .def("assume", &CASHWMaxSAT::assume, "Add assumptions for the next solve call.")
-        .def("solve", &CASHWMaxSAT::solve, "Solve the instance under the current assumptions.")
-        .def("getCost", &CASHWMaxSAT::getCost, "Get the cost of the optimal solution.")
-        .def("getValue", &CASHWMaxSAT::getValue, "Get the truth value of a literal in the model.")
-        .def("set_terminate", &CASHWMaxSAT::set_terminate, "Set a termination callback.")
-        .def("signature", &CASHWMaxSAT::signature, "Get the solver signature string.");
+}
+static PyObject *signature(PyCASHWMaxSAT *, PyObject *) {
+    return PyUnicode_FromString(ipamir_signature());
+}
+static PyMethodDef methods[] = {
+    {"newVar", (PyCFunction)newvar, METH_NOARGS, nullptr},
+    {"addClause", (PyCFunction)(void (*)(void))addclause, METH_VARARGS | METH_KEYWORDS, nullptr},
+    {"assume", (PyCFunction)assume, METH_O, nullptr},
+    {"solve", (PyCFunction)solve, METH_NOARGS, nullptr},
+    {"getCost", (PyCFunction)cost, METH_NOARGS, nullptr},
+    {"getValue", (PyCFunction)value, METH_O, nullptr},
+    {"set_terminate", (PyCFunction)setterm, METH_O, nullptr},
+    {"signature", (PyCFunction)signature, METH_NOARGS, nullptr},
+    {"setNoScip", (PyCFunction)setNoScip, METH_NOARGS, nullptr},
+    {nullptr, nullptr, 0, nullptr}};
+static PyModuleDef module = {PyModuleDef_HEAD_INIT, "cashwmaxsat", "CASHWMaxSAT native binding", -1,
+                             methods};
+PyMODINIT_FUNC PyInit_cashwmaxsat() {
+    SolverType.tp_name = "cashwmaxsat.CASHWMaxSAT";
+    SolverType.tp_basicsize = sizeof(PyCASHWMaxSAT);
+    SolverType.tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+    SolverType.tp_new = construct;
+    SolverType.tp_dealloc = (destructor)dealloc;
+    SolverType.tp_methods = methods;
+    if (PyType_Ready(&SolverType) < 0)
+        return nullptr;
+    PyObject *m = PyModule_Create(&module);
+    if (!m)
+        return nullptr;
+    Py_INCREF(&SolverType);
+    if (PyModule_AddObject(m, "CASHWMaxSAT", (PyObject *)&SolverType) < 0) {
+        Py_DECREF(&SolverType);
+        Py_DECREF(m);
+        return nullptr;
+    }
+    return m;
 }

@@ -1,16 +1,7 @@
 Bindings Reference
 ==================
 
-This page documents the pybind11 APIs exposed by Hermax C and C++ extensions.
-The names and signatures match the exported Python bindings.
-
-pybind11
---------------
-
-Thanks to the pybind11 project:
-https://github.com/pybind/pybind11
-
-pybind11 makes the Hermax bindings easier to build and maintain.
+This page documents the APIs exposed by Hermax C and C++ extensions.
 
 Conventions
 -----------

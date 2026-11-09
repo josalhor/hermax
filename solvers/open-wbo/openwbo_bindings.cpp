@@ -1,375 +1,215 @@
-// openwbo_bindings.cpp
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
-
-#include "algorithms/Alg_OLL.h"
-#include "algorithms/Alg_PartMSU3.h"
-#include "algorithms/Alg_MSU3.h"
-#include "MaxSATFormula.h"
-
-#include <unordered_map>
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+#include "openwbo_native.h"
+#include <new>
 #include <vector>
-#include <memory>
-#include <algorithm>
 #include <stdexcept>
-#include <cstdlib>
+#include <limits>
+#include <exception>
 
-namespace py = pybind11;
-using namespace openwbo;
-
-// C++14 replacement for std::optional<long long>
-struct WeightOpt {
-    bool has_val;
-    long long val;
-
-    WeightOpt() : has_val(false), val(0) {}
-    WeightOpt(long long v) : has_val(true), val(v) {}
-
-    bool has_value() const { return has_val; }
-    long long value() const { return val; }
-    long long operator*() const { return val; }
+struct PySolver {
+    PyObject_HEAD openwbo_native::Solver *solver;
 };
+static PyTypeObject OLLType = {PyVarObject_HEAD_INIT(nullptr, 0)};
+static PyTypeObject PartType = {PyVarObject_HEAD_INIT(nullptr, 0)};
+static PyTypeObject AutoType = {PyVarObject_HEAD_INIT(nullptr, 0)};
 
-// Store as (clause, optional weight). If weight has value => soft; else => hard.
-using ClauseRec = std::pair<std::vector<int>, WeightOpt>;
-
-// ---------- helpers ----------
-
-static inline void append_clause(MaxSATFormula* F,
-                                 const std::vector<int>& clause_ext,
-                                 const WeightOpt& wopt)
-{
-    vec<Lit> lits;
-    lits.capacity(clause_ext.size());
-    for (int lit : clause_ext) {
-        if (lit == 0) throw std::invalid_argument("Literal 0 is invalid");
-        const int v0 = std::abs(lit) - 1;      // Minisat/Open-WBO are 0-based
-        while (v0 >= F->nVars()) F->newVar();
-        lits.push(mkLit(v0, lit < 0));         // mkLit(var0, sign=true means NEGATED)
-    }
-    if (wopt.has_value()) {
-        if (*wopt <= 0) throw std::invalid_argument("Soft weight must be positive");
-        F->addSoftClause(*wopt, lits);
-    } else {
-        F->addHardClause(lits);
+static void translate_exception() {
+    try {
+        throw;
+    } catch (const std::invalid_argument &e) {
+        PyErr_SetString(PyExc_ValueError, e.what());
+    } catch (const std::bad_alloc &) {
+        PyErr_NoMemory();
+    } catch (const std::exception &e) {
+        PyErr_SetString(PyExc_RuntimeError, e.what());
+    } catch (...) {
+        PyErr_SetString(PyExc_RuntimeError, "Unknown C++ exception");
     }
 }
-
-static inline std::vector<ClauseRec>
-normalize_units_by_literal_lastwins(const std::vector<ClauseRec>& clauses)
-{
-    std::vector<ClauseRec> out_nonunits_and_hards;
-    std::unordered_map<int, long long> last_unit_w; // literal -> weight (last-wins)
-
-    for (const auto& cr : clauses) {
-        const auto& cl   = cr.first;
-        const auto& wopt = cr.second;
-        if (!wopt.has_value()) {
-            out_nonunits_and_hards.push_back(cr);              // hard
-        } else if (cl.size() == 1) {
-            last_unit_w[cl[0]] = *wopt;                        // soft unit (merge by literal)
-        } else {
-            out_nonunits_and_hards.push_back(cr);              // soft non-unit (multiset)
-        }
+static PyObject *make_solver(PyTypeObject *type, openwbo_native::Solver::Kind kind) {
+    PySolver *self = (PySolver *)type->tp_alloc(type, 0);
+    if (!self)
+        return nullptr;
+    self->solver = nullptr;
+    try {
+        self->solver = new openwbo_native::Solver(kind);
+    } catch (...) {
+        Py_DECREF((PyObject *)self);
+        translate_exception();
+        return nullptr;
     }
-    // append merged soft units
-    for (const auto& kv : last_unit_w) {
-        out_nonunits_and_hards.emplace_back(
-            std::vector<int>{kv.first},
-            WeightOpt(kv.second)
-        );
-    }
-    return out_nonunits_and_hards;
+    return (PyObject *)self;
 }
-
-static inline uint64_t sum_soft_weights(const std::vector<ClauseRec>& cls) {
-    uint64_t s = 0;
-    for (const auto& cr : cls) if (cr.second.has_value()) s += (uint64_t)*cr.second;
-    return s;
+static PyObject *oll_new(PyTypeObject *t, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "", const_cast<char **>(names)))
+        return nullptr;
+    return make_solver(t, openwbo_native::Solver::Kind::OLL);
 }
-static inline uint64_t count_soft(const std::vector<ClauseRec>& cls) {
-    uint64_t c = 0;
-    for (const auto& cr : cls) if (cr.second.has_value()) ++c;
-    return c;
+static PyObject *part_new(PyTypeObject *t, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "", const_cast<char **>(names)))
+        return nullptr;
+    return make_solver(t, openwbo_native::Solver::Kind::PartMSU3);
 }
-
-static inline bool any_weight_not_one(const std::vector<ClauseRec>& cls) {
-    for (const auto& cr : cls)
-        if (cr.second.has_value() && *cr.second != 1) return true;
-    return false;
+static PyObject *auto_new(PyTypeObject *t, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "", const_cast<char **>(names)))
+        return nullptr;
+    return make_solver(t, openwbo_native::Solver::Kind::Auto);
 }
-
-static inline void set_problem_type_and_top(MaxSATFormula* F,
-                                            const std::vector<ClauseRec>& all_norm) {
-    if (any_weight_not_one(all_norm)) {
-        F->setProblemType(_WEIGHTED_);
-        uint64_t top = sum_soft_weights(all_norm) + 1;
-        if (top == 0) top = 1;
-        F->setHardWeight(top);
-    } else {
-        F->setProblemType(_UNWEIGHTED_);
-        uint64_t top = count_soft(all_norm) + 1;
-        if (top == 0) top = 1;
-        F->setHardWeight(top);
-    }
+static void solver_dealloc(PySolver *self) {
+    delete self->solver;
+    self->solver = nullptr;
+    Py_TYPE(self)->tp_free((PyObject *)self);
 }
-
-// Build formula F from normalized clauses and optional assumptions.
-// Replay order: hards → soft non-units → soft units, then inject assumptions as hard units.
-// n_vars_ext = max external var index (1-based).
-static inline void build_formula(MaxSATFormula* F,
-                                 const std::vector<ClauseRec>& norm,
-                                 int n_vars_ext,
-                                 const std::vector<int>* assumptions_opt)
-{
-    for (int i = 0; i < n_vars_ext; ++i) F->newVar();
-
-    std::vector<ClauseRec> hards, soft_nonunits, soft_units;
-    hards.reserve(norm.size()); soft_nonunits.reserve(norm.size()); soft_units.reserve(norm.size());
-
-    for (const auto& cr : norm) {
-        const auto& cl = cr.first;
-        const auto& w  = cr.second;
-        if (!w.has_value())               hards.push_back(cr);
-        else if (cl.size() == 1)          soft_units.push_back(cr);
-        else                              soft_nonunits.push_back(cr);
-    }
-
-    for (const auto& cr : hards)         append_clause(F, cr.first, cr.second);
-    for (const auto& cr : soft_nonunits) append_clause(F, cr.first, cr.second);
-    for (const auto& cr : soft_units)    append_clause(F, cr.first, cr.second);
-
-    if (assumptions_opt) {
-        for (int a : *assumptions_opt) {
-            if (a == 0) throw std::invalid_argument("Assumption literal 0 is invalid");
-            append_clause(F, std::vector<int>{a}, WeightOpt()); // hard unit
-        }
-    }
-
-    set_problem_type_and_top(F, norm);
-}
-
-// ---------- OLL wrapper (rebuild-on-solve) ----------
-
-class OLLWrapper {
-public:
-    OLLWrapper() : n_vars_ext_(0) {}
-
-    int newVar() { return ++n_vars_ext_; }
-
-    void addClause(const std::vector<int>& clause_ext, py::object weight_obj) {
-        int maxv = n_vars_ext_;
-        for (int lit : clause_ext) {
-            if (lit == 0) throw std::invalid_argument("Literal 0 is invalid");
-            maxv = std::max(maxv, std::abs(lit));
-        }
-        n_vars_ext_ = maxv;
-
-        if (weight_obj.is_none()) {
-            clauses_.push_back({clause_ext, WeightOpt()});              // hard
-        } else {
-            long long w = weight_obj.cast<long long>();
-            if (w <= 0) throw std::invalid_argument("Soft weight must be positive");
-            clauses_.push_back({clause_ext, WeightOpt(w)}); // soft
-        }
-    }
-
-    bool solve(py::object assumptions = py::none()) {
-        std::vector<int> assumps;
-        if (!assumptions.is_none()) {
-            assumps = assumptions.cast<std::vector<int>>();
-        }
-        auto norm = normalize_units_by_literal_lastwins(clauses_);
-
-        std::unique_ptr<MaxSATFormula> F(new MaxSATFormula());
-        build_formula(F.get(), norm, n_vars_ext_, assumptions.is_none() ? nullptr : &assumps);
-
-        solver_.reset(new OLL(/*verbosity=*/0, /*cardinality=*/1));
-        MaxSATFormula* rawF = F.release();
-        solver_->loadFormula(rawF);
-
-        StatusCode st = solver_->search();
-        return st == _OPTIMUM_ || st == _SATISFIABLE_;
-    }
-
-    uint64_t getCost() const { return solver_ ? solver_->getCost() : 0; }
-    bool getValue(int var_ext) const {
-        if (!solver_ || var_ext <= 0 || var_ext > n_vars_ext_) return false;
-        return solver_->getValue(var_ext - 1) > 0;
-    }
-
-private:
-    int n_vars_ext_;
-    std::vector<ClauseRec> clauses_;
-    std::unique_ptr<MaxSAT> solver_;
-};
-
-// ---------- PartMSU3 wrapper (rebuild-on-solve + fallback to MSU3) ----------
-
-class PartMSU3Wrapper {
-public:
-    PartMSU3Wrapper() : n_vars_ext_(0) {}
-
-    int newVar() { return ++n_vars_ext_; }
-
-    void addClause(const std::vector<int>& clause_ext, py::object weight_obj) {
-        int maxv = n_vars_ext_;
-        for (int lit : clause_ext) {
-            if (lit == 0) throw std::invalid_argument("Literal 0 is invalid");
-            maxv = std::max(maxv, std::abs(lit));
-        }
-        n_vars_ext_ = maxv;
-
-        if (weight_obj.is_none()) {
-            clauses_.push_back({clause_ext, WeightOpt()});
-        } else {
-            long long w = weight_obj.cast<long long>();
-            if (w != 1) throw py::value_error("PartMSU3 only supports soft weight == 1.");
-            clauses_.push_back({clause_ext, WeightOpt(w)});
-        }
-    }
-
-    bool solve(py::object assumptions = py::none()) {
-        std::vector<int> assumps;
-        if (!assumptions.is_none()) assumps = assumptions.cast<std::vector<int>>();
-        auto norm = normalize_units_by_literal_lastwins(clauses_);
-
-        std::unique_ptr<MaxSATFormula> F(new MaxSATFormula());
-        build_formula(F.get(), norm, n_vars_ext_, assumptions.is_none() ? nullptr : &assumps);
-
-        std::unique_ptr<PartMSU3> pmsu(new PartMSU3(/*verbosity=*/0, /*partition_strategy=*/2,
-                                                    /*graph_type=*/2, /*cardinality=*/1));
-        MaxSATFormula* rawF = F.release();
-        pmsu->loadFormula(rawF);
-
-        // choose/fallback
-        int algo_id = pmsu->chooseAlgorithm();
-        if (algo_id == 2) {
-            MaxSATFormula* reclaimed = pmsu->releaseFormula();
-            pmsu.reset();
-            // Fallback: plain MSU3
-            std::unique_ptr<MSU3> msu(new MSU3(/*verbosity=*/0));
-            msu->loadFormula(reclaimed);
-            solver_ = std::move(msu);
-        } else {
-            solver_ = std::move(pmsu);
-        }
-
-        StatusCode st = solver_->search();
-        return st == _OPTIMUM_ || st == _SATISFIABLE_;
-    }
-
-    uint64_t getCost() const { return solver_ ? solver_->getCost() : 0; }
-    bool getValue(int var_ext) const {
-        if (!solver_ || var_ext <= 0 || var_ext > n_vars_ext_) return false;
-        return solver_->getValue(var_ext - 1) > 0;
-    }
-
-private:
-    int n_vars_ext_;
-    std::vector<ClauseRec> clauses_;
-    std::unique_ptr<MaxSAT> solver_; // PartMSU3 or MSU3 after chooseAlgorithm()
-};
-
-// ---------- Auto wrapper (pick OLL vs PartMSU3/MSU3) ----------
-
-class OpenWBOAutoWrapper {
-public:
-    OpenWBOAutoWrapper() : n_vars_ext_(0) {}
-
-    int newVar() { return ++n_vars_ext_; }
-
-    void addClause(const std::vector<int>& clause_ext, py::object weight_obj) {
-        int maxv = n_vars_ext_;
-        for (int lit : clause_ext) {
-            if (lit == 0) throw std::invalid_argument("Literal 0 is invalid");
-            maxv = std::max(maxv, std::abs(lit));
-        }
-        n_vars_ext_ = maxv;
-
-        if (weight_obj.is_none()) {
-            clauses_.push_back({clause_ext, WeightOpt()});
-        } else {
-            long long w = weight_obj.cast<long long>();
-            if (w <= 0) throw std::invalid_argument("Soft weight must be positive");
-            clauses_.push_back({clause_ext, WeightOpt(w)});
-        }
-    }
-
-    bool solve(py::object assumptions = py::none()) {
-        std::vector<int> assumps;
-        if (!assumptions.is_none()) assumps = assumptions.cast<std::vector<int>>();
-
-        auto norm = normalize_units_by_literal_lastwins(clauses_);
-
-        std::unique_ptr<MaxSATFormula> F(new MaxSATFormula());
-        build_formula(F.get(), norm, n_vars_ext_, assumptions.is_none() ? nullptr : &assumps);
-
-        // Decide engine: weighted → OLL; else PartMSU3 with fallback to MSU3
-        if (any_weight_not_one(norm)) {
-            std::unique_ptr<OLL> oll(new OLL(/*verbosity=*/0, /*cardinality=*/1));
-            MaxSATFormula* rawF = F.release();
-            oll->loadFormula(rawF);
-            solver_ = std::move(oll);
-        } else {
-            std::unique_ptr<PartMSU3> pmsu(new PartMSU3(/*verbosity=*/0, /*partition_strategy=*/2,
-                                                        /*graph_type=*/2, /*cardinality=*/1));
-            MaxSATFormula* rawF = F.release();
-            pmsu->loadFormula(rawF);
-            int algo_id = pmsu->chooseAlgorithm();
-            if (algo_id == 2) {
-                MaxSATFormula* reclaimed = pmsu->releaseFormula();
-                pmsu.reset();
-                std::unique_ptr<MSU3> msu(new MSU3(/*verbosity=*/0));
-                msu->loadFormula(reclaimed);
-                solver_ = std::move(msu);
-            } else {
-                solver_ = std::move(pmsu);
+static int sequence_ints(PyObject *obj, std::vector<int> &out, const char *what) {
+    PyObject *seq = PySequence_Fast(obj, what);
+    if (!seq)
+        return -1;
+    Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
+    try {
+        out.reserve((size_t)n);
+        for (Py_ssize_t i = 0; i < n; ++i) {
+            long v = PyLong_AsLong(PySequence_Fast_GET_ITEM(seq, i));
+            if (v == -1 && PyErr_Occurred()) {
+                Py_DECREF(seq);
+                return -1;
             }
+            if (v <= std::numeric_limits<int>::min() || v > std::numeric_limits<int>::max()) {
+                Py_DECREF(seq);
+                PyErr_SetString(PyExc_OverflowError, "integer does not fit in C int");
+                return -1;
+            }
+            out.push_back((int)v);
         }
-
-        StatusCode st = solver_->search();
-        return st == _OPTIMUM_ || st == _SATISFIABLE_;
+    } catch (...) {
+        Py_DECREF(seq);
+        translate_exception();
+        return -1;
     }
-
-    uint64_t getCost() const { return solver_ ? solver_->getCost() : 0; }
-    bool getValue(int var_ext) const {
-        if (!solver_ || var_ext <= 0 || var_ext > n_vars_ext_) return false;
-        return solver_->getValue(var_ext - 1) > 0;
+    Py_DECREF(seq);
+    return 0;
+}
+static PyObject *solver_new_var(PySolver *s, PyObject *) {
+    try {
+        return PyLong_FromLong(s->solver->new_var());
+    } catch (...) {
+        translate_exception();
+        return nullptr;
     }
-
-private:
-    int n_vars_ext_;
-    std::vector<ClauseRec> clauses_;
-    std::unique_ptr<MaxSAT> solver_;
-};
-
-// ---------- module ----------
-
-PYBIND11_MODULE(openwbo, m) {
-    m.doc() = "Open-WBO (OLL, PartMSU3/MSU3, Auto) — rebuild-on-solve + unit-by-literal last-wins + assumptions";
-
-    py::class_<OLLWrapper>(m, "OLL")
-        .def(py::init<>())
-        .def("newVar", &OLLWrapper::newVar)
-        .def("addClause", &OLLWrapper::addClause, py::arg("clause"), py::arg("weight") = py::none())
-        .def("solve", &OLLWrapper::solve, py::arg("assumptions") = py::none())
-        .def("getCost", &OLLWrapper::getCost)
-        .def("getValue", &OLLWrapper::getValue);
-
-    py::class_<PartMSU3Wrapper>(m, "PartMSU3")
-        .def(py::init<>())
-        .def("newVar", &PartMSU3Wrapper::newVar)
-        .def("addClause", &PartMSU3Wrapper::addClause, py::arg("clause"), py::arg("weight") = py::none())
-        .def("solve", &PartMSU3Wrapper::solve, py::arg("assumptions") = py::none())
-        .def("getCost", &PartMSU3Wrapper::getCost)
-        .def("getValue", &PartMSU3Wrapper::getValue);
-
-    py::class_<OpenWBOAutoWrapper>(m, "Auto")
-        .def(py::init<>())
-        .def("newVar", &OpenWBOAutoWrapper::newVar)
-        .def("addClause", &OpenWBOAutoWrapper::addClause, py::arg("clause"), py::arg("weight") = py::none())
-        .def("solve", &OpenWBOAutoWrapper::solve, py::arg("assumptions") = py::none())
-        .def("getCost", &OpenWBOAutoWrapper::getCost)
-        .def("getValue", &OpenWBOAutoWrapper::getValue);
+}
+static PyObject *solver_add_clause(PySolver *s, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {"clause", "weight", nullptr};
+    PyObject *clause, *weight = Py_None;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|O:addClause", (char **)names, &clause,
+                                     &weight))
+        return nullptr;
+    std::vector<int> lits;
+    if (sequence_ints(clause, lits, "clause must be an iterable of integers") < 0)
+        return nullptr;
+    bool has = weight != Py_None;
+    long long w = 0;
+    if (has) {
+        w = PyLong_AsLongLong(weight);
+        if (w == -1 && PyErr_Occurred())
+            return nullptr;
+    }
+    try {
+        s->solver->add_clause(lits, has, w);
+        Py_RETURN_NONE;
+    } catch (...) {
+        translate_exception();
+        return nullptr;
+    }
+}
+static PyObject *solver_solve(PySolver *s, PyObject *args, PyObject *kwargs) {
+    static const char *names[] = {"assumptions", nullptr};
+    PyObject *assumptions = Py_None;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|O:solve", (char **)names, &assumptions))
+        return nullptr;
+    std::vector<int> a;
+    bool has = assumptions != Py_None;
+    if (has && sequence_ints(assumptions, a, "assumptions must be an iterable of integers") < 0)
+        return nullptr;
+    bool result = false;
+    std::exception_ptr error;
+    Py_BEGIN_ALLOW_THREADS try { result = s->solver->solve(a, has); } catch (...) {
+        error = std::current_exception();
+    }
+    Py_END_ALLOW_THREADS if (error) {
+        try {
+            std::rethrow_exception(error);
+        } catch (...) {
+            translate_exception();
+            return nullptr;
+        }
+    }
+    return PyBool_FromLong(result);
+}
+static PyObject *solver_get_cost(PySolver *s, PyObject *) {
+    try {
+        return PyLong_FromUnsignedLongLong(s->solver->get_cost());
+    } catch (...) {
+        translate_exception();
+        return nullptr;
+    }
+}
+static PyObject *solver_get_value(PySolver *s, PyObject *arg) {
+    long v = PyLong_AsLong(arg);
+    if (v == -1 && PyErr_Occurred())
+        return nullptr;
+    if (v <= std::numeric_limits<int>::min() || v > std::numeric_limits<int>::max()) {
+        PyErr_SetString(PyExc_OverflowError, "variable does not fit in C int");
+        return nullptr;
+    }
+    try {
+        return PyBool_FromLong(s->solver->get_value((int)v));
+    } catch (...) {
+        translate_exception();
+        return nullptr;
+    }
+}
+static PyMethodDef methods[] = {
+    {"newVar", (PyCFunction)solver_new_var, METH_NOARGS, nullptr},
+    {"addClause", (PyCFunction)(void (*)(void))solver_add_clause, METH_VARARGS | METH_KEYWORDS,
+     nullptr},
+    {"solve", (PyCFunction)(void (*)(void))solver_solve, METH_VARARGS | METH_KEYWORDS, nullptr},
+    {"getCost", (PyCFunction)solver_get_cost, METH_NOARGS, nullptr},
+    {"getValue", (PyCFunction)solver_get_value, METH_O, nullptr},
+    {nullptr, nullptr, 0, nullptr}};
+static int ready_type(PyTypeObject *t, const char *name, newfunc ctor) {
+    t->tp_name = name;
+    t->tp_basicsize = sizeof(PySolver);
+    t->tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+    t->tp_new = ctor;
+    t->tp_dealloc = (destructor)solver_dealloc;
+    t->tp_methods = methods;
+    return PyType_Ready(t);
+}
+static PyModuleDef module = {PyModuleDef_HEAD_INIT, "openwbo",
+                             "Open-WBO (OLL, PartMSU3/MSU3, Auto) — rebuild-on-solve + "
+                             "unit-by-literal last-wins + assumptions",
+                             -1, nullptr};
+static int add_type(PyObject *m, const char *name, PyTypeObject *type) {
+    Py_INCREF(type);
+    if (PyModule_AddObject(m, name, (PyObject *)type) < 0) {
+        Py_DECREF(type);
+        return -1;
+    }
+    return 0;
+}
+PyMODINIT_FUNC PyInit_openwbo(void) {
+    PyObject *m = PyModule_Create(&module);
+    if (!m)
+        return nullptr;
+    if (ready_type(&OLLType, "openwbo.OLL", oll_new) < 0 ||
+        ready_type(&PartType, "openwbo.PartMSU3", part_new) < 0 ||
+        ready_type(&AutoType, "openwbo.Auto", auto_new) < 0 || add_type(m, "OLL", &OLLType) < 0 ||
+        add_type(m, "PartMSU3", &PartType) < 0 || add_type(m, "Auto", &AutoType) < 0) {
+        Py_DECREF(m);
+        return nullptr;
+    }
+    return m;
 }

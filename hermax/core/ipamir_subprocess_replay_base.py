@@ -115,7 +115,7 @@ class OneShotSubprocessReplaySolverBase(ReplayFormulaSolverBase, abc.ABC):
         run = run_oneshot_worker(req, time_limit=time_limit, grace_s=self._time_limit_grace)
         self._last_elapsed_s = run.elapsed_s
         self._last_protocol_error = run.protocol_error
-        self._last_worker_stderr = (run.stderr_raw or b"").decode("utf-8", errors="replace")
+        self._last_worker_stderr = run.stderr_diagnostics.decode("utf-8", errors="replace")
         self._last_worker_stdout = (run.stdout_raw or b"").decode("utf-8", errors="replace")
 
         if run.timed_out and not is_usable_response_after_time_limit(run.response):

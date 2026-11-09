@@ -31,6 +31,7 @@ set(SOURCES
     solvers/glucose4.1/core/Solver.cc
     solvers/glucose4.1/utils/System.cc
     solvers/glucose4.1/simp/SimpSolver.cc
+    openwbo_native.cpp
 )
 
 if(HERMAX_CORE_ARCHIVE)
@@ -58,23 +59,24 @@ if(NOT HERMAX_CORE_ARCHIVE)
     )
 endif()
 
-# The binding includes solver headers too, so keep the original module-wide
-# definitions when linking a prebuilt solver archive.
-add_definitions(-D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -D SIMP)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNSPACE=Glucose")
-
 if(HERMAX_CORE_ONLY)
     return()
 endif()
 
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 REQUIRED)
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')"
+  OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PYTHON_EXTENSION_SUFFIX)
+  message(FATAL_ERROR "Could not determine the Python extension suffix")
+endif()
 
-# Create the ABI-specific Python module from the reusable solver core.
-pybind11_add_module(openwbo MODULE NO_EXTRAS openwbo_bindings.cpp)
-target_include_directories(openwbo PRIVATE . solvers/glucose4.1)
-target_compile_options(openwbo PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ns_compat.h)
-target_link_libraries(openwbo PRIVATE Python3::Module pybind11::module openwbo_core)
+add_library(openwbo MODULE openwbo_bindings.cpp)
+set_target_properties(openwbo PROPERTIES SUFFIX "${PYTHON_EXTENSION_SUFFIX}")
+target_include_directories(openwbo PRIVATE .)
+target_link_libraries(openwbo PRIVATE Python3::Module openwbo_core)
+set_target_properties(openwbo PROPERTIES PREFIX "")
 
 # Link against GMP library (and gmpxx for headers)
 find_library(GMP_LIBRARY gmp)

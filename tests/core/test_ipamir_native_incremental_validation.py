@@ -77,10 +77,6 @@ class _NativeProbe(NativeIncrementalSolverBase):
         return "native-probe"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="NativeIncrementalSolverBase._normalize_lit coerces non-integer literals with int()",
-)
 @pytest.mark.parametrize("raw_literal", [1.5, True, "1"])
 def test_native_solver_rejects_non_integer_clause_literals(raw_literal):
     solver = _NativeProbe(_NativeBackend())
@@ -89,10 +85,6 @@ def test_native_solver_rejects_non_integer_clause_literals(raw_literal):
         solver.add_clause([raw_literal])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Native clause insertion allocates journal variables before native insertion succeeds",
-)
 def test_native_clause_failure_does_not_leave_phantom_variables():
     backend = _NativeBackend(fail_add=True)
     solver = _NativeProbe(backend)
@@ -104,10 +96,6 @@ def test_native_clause_failure_does_not_leave_phantom_variables():
     assert solver._journal.hard_clauses == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Native soft insertion allocates journal variables before native insertion succeeds",
-)
 def test_native_soft_failure_does_not_leave_phantom_variables():
     backend = _NativeBackend(fail_soft=True)
     solver = _NativeProbe(backend)
@@ -119,10 +107,6 @@ def test_native_soft_failure_does_not_leave_phantom_variables():
     assert solver._journal.soft_units == {}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="NativeIncrementalSolverBase.new_var updates the journal before native allocation succeeds",
-)
 def test_native_variable_allocation_failure_does_not_leave_phantom_variables():
     solver = _NativeProbe(_NativeBackend(fail_new=True))
 
@@ -132,10 +116,6 @@ def test_native_variable_allocation_failure_does_not_leave_phantom_variables():
     assert solver.num_vars == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="NativeIncrementalSolverBase persists variables introduced only by temporary assumptions",
-)
 def test_native_solver_assumptions_do_not_extend_persistent_formula():
     solver = _NativeProbe(_NativeBackend())
     assert solver.num_vars == 0
