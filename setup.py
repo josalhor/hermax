@@ -67,7 +67,9 @@ class CMakeBuild(build_ext):
     @staticmethod
     def _native_adapter_compile_command(env, standard):
         """Match the Release flags used by the core linked to each adapter."""
-        return [env.get("CXX", "c++"), *shlex.split(env.get("CXXFLAGS", "")),
+        compiler = env.get("CXX", "c++")
+        compiler = shutil.which(compiler, path=env.get("PATH")) or compiler
+        return [compiler, *shlex.split(env.get("CXXFLAGS", "")),
                 "-O3", "-DNDEBUG", f"-std=c++{standard}", "-fPIC"]
 
     def _native_core_reuse_enabled(self):
