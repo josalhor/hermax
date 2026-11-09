@@ -121,10 +121,14 @@ def test_reported_mixed_weighted_case_has_bounded_construction():
     import subprocess
     import sys
 
-    pytest.importorskip("resource")
     code = """
-import resource
-resource.setrlimit(resource.RLIMIT_AS, (1024**3, 1024**3))
+import sys
+# RLIMIT_AS is reliable on Linux; macOS can reject it before model code runs.
+if sys.platform.startswith("linux"):
+    import resource
+    _, hard = resource.getrlimit(resource.RLIMIT_AS)
+    cap = 1024**3 if hard == resource.RLIM_INFINITY else min(1024**3, hard)
+    resource.setrlimit(resource.RLIMIT_AS, (cap, hard))
 from hermax.model import Model
 m=Model()
 xs=[m.int(f'x{i}',0,512) for i in range(6)]

@@ -29,7 +29,6 @@ PIP_NO_BUILD_ISOLATION = "1"
 HERMAX_CIBW_TEST_PROFILE = "full"
 HERMAX_CIBW_ALLOW_TEST_FAILURE = "0"
 HERMAX_CIBW_COMPLIANCE_TIMEOUT = "180"
-HERMAX_REUSE_NATIVE_CORES = "1"
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
@@ -44,6 +43,7 @@ MSYSTEM = "MINGW64"
 MINGW_PREFIX = "C:\\msys64\\mingw64"
 
 [tool.cibuildwheel.linux]
+environment-pass = ["GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB", "HERMAX_NATIVE_BUILD_SESSION", "HERMAX_REUSE_NATIVE_CORES"]
 # Future native-loading integration deps:
 # - zlib-devel  (gzip)
 # - bzip2-devel (bz2)

@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -44,7 +45,7 @@ def _cibw_cplex_env(
     extra: list[str],
 ) -> tuple[dict[str, str], list[str]]:
     env = os.environ.copy()
-    env.setdefault("HERMAX_REUSE_NATIVE_CORES", "1")
+    env.setdefault("HERMAX_NATIVE_BUILD_SESSION", uuid.uuid4().hex)
     cplex_studio, cplex_inc_dir, cplex_lib_dir = _require_cplex_env(env)
 
     env["CIBW_CONTAINER_ENGINE"] = f"podman; create_args: --volume {cplex_studio}:{cplex_studio}:ro"
@@ -53,7 +54,6 @@ def _cibw_cplex_env(
         f"CPLEX_LIB_DIR={cplex_lib_dir} "
         "HERMAX_ENABLE_MAXHS=on "
         "HERMAX_ENABLE_IMAXHS=on "
-        f"HERMAX_REUSE_NATIVE_CORES={env['HERMAX_REUSE_NATIVE_CORES']} "
         "SKIP_MAXHS=0 "
         "SKIP_IMAXHS=0 "
         f"HERMAX_CIBW_TEST_PROFILE={env.get('HERMAX_CIBW_TEST_PROFILE', 'full')} "
@@ -87,8 +87,7 @@ def _remove_path(path: Path) -> None:
 
 def _forward_wheel_build_env(env: dict[str, str]) -> None:
     """Pass host build switches explicitly into Linux wheel containers."""
-    # Keep the archive cache opt-outable, but enable it for normal wheel builds.
-    env.setdefault("HERMAX_REUSE_NATIVE_CORES", "1")
+    env.setdefault("HERMAX_NATIVE_BUILD_SESSION", uuid.uuid4().hex)
 
     # Linux wheels run in a container, so explicitly whitelist host variables.
     # Do not override CIBW_ENVIRONMENT_LINUX: doing so replaces the toolchain
@@ -96,7 +95,9 @@ def _forward_wheel_build_env(env: dict[str, str]) -> None:
     # host and inherit these values normally.
     key = "CIBW_ENVIRONMENT_PASS_LINUX"
     names = env.get(key, "").split()
-    for name in ("HERMAX_REUSE_NATIVE_CORES", "HERMAX_SOLVER_INCLUDE"):
+    for name in ("HERMAX_REUSE_NATIVE_CORES", "HERMAX_SOLVER_INCLUDE",
+                 "HERMAX_NATIVE_BUILD_SESSION", "GITHUB_RUN_ID",
+                 "GITHUB_RUN_ATTEMPT", "GITHUB_JOB"):
         if name == "HERMAX_SOLVER_INCLUDE" and not env.get(name, "").strip():
             continue
         if name not in names:
@@ -164,6 +165,7 @@ def cmd_wheels(args: argparse.Namespace) -> int:
 def _build_wheels(extra: list[str], *, py_tag: str | None = None) -> int:
     WHEELHOUSE.mkdir(exist_ok=True)
     env = os.environ.copy()
+    env.setdefault("HERMAX_NATIVE_BUILD_SESSION", uuid.uuid4().hex)
     if py_tag is not None:
         env["CIBW_BUILD"] = py_tag
     # cibuildwheel does not automatically inherit arbitrary host variables.
