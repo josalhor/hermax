@@ -75,8 +75,9 @@ before-all = "brew install gmp zstd xz ccache"
 before-build = "rm -rf build hermax.egg-info *.so *.pyd *.dylib loading/*.so && find hermax -type f \\( -name '*.so' -o -name '*.pyd' -o -name '*.dylib' \\) -delete && uv pip install --system cmake 'pybind11<3' setuptools wheel"
 
 [tool.cibuildwheel.macos.environment]
-MACOSX_DEPLOYMENT_TARGET = "14.0"
-CMAKE_ARGS = "-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0"
+# Homebrew GMP on the macos-15 runner requires macOS 15.
+MACOSX_DEPLOYMENT_TARGET = "15.0"
+CMAKE_ARGS = "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0"
 CCACHE_DIR = "/tmp/ccache"
 CCACHE_MAXSIZE = "2G"
 CCACHE_NOHASHDIR = "true"
