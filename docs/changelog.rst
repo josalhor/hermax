@@ -2,6 +2,13 @@ Changelog
 =========
 
 
+Version 1.3.4
+-------------
+
+Highlights
+~~~~~~~~~~
+* Added variable durations, demands and capacity to ``model.cumulative()``
+
 Version 1.3.3
 -------------
 

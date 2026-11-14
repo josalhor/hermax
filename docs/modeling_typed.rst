@@ -537,6 +537,15 @@ Cumulative resources
    resource = model.cumulative(starts, durations=[3, 2], demands=[2, 1], capacity=2)
    model &= resource
 
+Durations, demands and capacity may also be same-model ``IntVar`` objects:
+
+.. code-block:: python
+
+   duration = model.int_vector("duration", 2, lb=0, ub=4)
+   demand = model.int_vector("demand", 2, lb=0, ub=3)
+   capacity = model.int("capacity", lb=0, ub=5)
+   model &= model.cumulative(starts, duration, demand, capacity)
+
 References
 ----------
 

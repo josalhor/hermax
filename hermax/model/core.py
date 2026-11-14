@@ -2194,23 +2194,29 @@ class Model:
         return mdd(self, items, transitions, start)
 
     def no_overlap(self, starts, durations, *, backend="auto"):
-        """Return non-overlap of fixed nonnegative durations; zero occupies no time."""
+        """Return non-overlap of nonnegative durations; zero occupies no time."""
         starts = tuple(starts)
         return self.cumulative(starts, durations, [1] * len(starts), 1, backend=backend)
 
     def cumulative(
         self,
         starts: Sequence[IntVar],
-        durations: Sequence[int],
-        demands: Sequence[int],
-        capacity: int,
+        durations: Sequence[int | IntVar],
+        demands: Sequence[int | IntVar],
+        capacity: int | IntVar,
         *,
         backend: str = "auto",
     ) -> ClauseGroup:
-        """Return a fixed-duration resource constraint; post it with ``model &=``.
+        """Return a resource constraint; post it with ``model &=``.
 
-        ``time`` checks each integer time tick. ``task`` checks possible job
-        start times. ``auto`` chooses from the domains and horizon width.
+        Durations, demands and capacity accept integers or same-model IntVars.
+        Variable values must be nonnegative when the constraint holds; zero
+        duration consumes no resource. Fixed negative arguments are rejected.
+
+        For fixed arguments, ``task`` checks possible job start times. For
+        variable arguments, ``task`` checks actual variable-valued starts and
+        ``time`` checks integer ticks in the start horizon. ``auto`` chooses
+        between these strategies using the start domains.
         """
         return cumulative_constraint(self, starts, durations, demands, capacity, backend=backend)
 
