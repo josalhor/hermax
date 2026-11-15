@@ -1,6 +1,6 @@
 """Compact SAT encodings for finite-domain global constraints."""
 from numbers import Integral
-from .expressions import Clause, ClauseGroup
+from .expressions import Clause, ClauseGroup, _BooleanComposition, DeferredClauseGroup, Literal
 from .variables import IntVar
 
 
@@ -13,11 +13,38 @@ def _items(model, items):
     return items
 
 
-def _group(model, parts):
-    result = ClauseGroup(model, [])
+def _flatten(model, parts):
+    clauses, amo, eo = [], [], []
     for part in parts:
-        result = result & model._as_clausegroup(part)
-    return result
+        group = model._as_clausegroup(part)
+        while isinstance(group, DeferredClauseGroup):
+            group = group._realize()
+        clauses.extend(group._clauses)
+        amo.extend(group._copy_groups(group._amo_groups))
+        eo.extend(group._copy_groups(group._eo_groups))
+    return ClauseGroup._from_dimacs_trusted(model, clauses, amo_groups=amo, eo_groups=eo)
+
+
+def _defined(model, formula):
+    if isinstance(formula, Literal):
+        return formula
+    flag = model.bool()
+    model._register_literal_definition(
+        flag, formula.iff(flag) if hasattr(formula, "iff")
+        else model._as_clausegroup(formula).iff(flag))
+    return flag
+
+
+def _group(model, parts):
+    parts = tuple(parts)
+    def negative():
+        flags = [_defined(model, part) for part in parts]
+        return _flatten(model, [Clause(model, [~flag for flag in flags])])
+    return _BooleanComposition(model, lambda: _flatten(model, parts), negative)
+
+
+def _excluded(model, x, values):
+    return Clause(model, [x == v for v in values if x.lb <= v <= x.ub])
 
 
 def all_different_except(model, items, excluded=(0,)):
@@ -31,11 +58,8 @@ def all_different_except(model, items, excluded=(0,)):
         for i, x in enumerate(items):
             for y in items[i+1:]:
                 # Equal pairs are allowed only at an excluded value.
-                allowed = model.bool()
-                matches = [x == v for v in excluded]
-                parts.append(Clause(model, [~allowed, *matches]))
-                parts.append((x == y).only_if(allowed))
-                parts.append((x != y).only_if(~allowed))
+                excluded_x = _defined(model, _excluded(model, x, excluded))
+                parts.append((x != y).only_if(~excluded_x))
     else:
         columns = {}
         for x in items:
@@ -60,7 +84,7 @@ def precedence(model, items, values):
                 parts.append((x == b).implies(seen))
                 if i < len(items)-1:
                     prefix = model.bool()
-                    parts.append((seen | (x == a)).iff(prefix))
+                    model._register_literal_definition(prefix, (seen | (x == a)).iff(prefix))
                     seen = prefix
     return _group(model, parts)
 
@@ -69,24 +93,23 @@ def regular(model, items, transitions, start, accepting):
     items = _items(model, items)
     transitions = tuple(transitions)
     accepting = set(accepting)
-    states = {start, *accepting}
     for a,v,b in transitions:
         if not isinstance(v, Integral):
             raise TypeError('Transition labels must be integers.')
-        states.update((a,b))
-    ids = {state:i for i,state in enumerate(states)}
     if not items:
         return _group(model, [start in accepting])
-    tag = str(model.fresh_internal_bool().id)
-    previous = model.int('_regular_' + tag + '_start', ids[start], ids[start])
-    parts = []
-    rows = [(ids[a],int(v),ids[b]) for a,v,b in transitions]
-    for i, x in enumerate(items):
-        nxt = model.int('_regular_' + tag + '_' + str(i), 0, len(ids)-1)
-        parts.append(model.table([previous,x,nxt], allowed=rows))
-        previous = nxt
-    parts.append(Clause(model, [previous == ids[a] for a in accepting]))
-    return _group(model, parts)
+    previous = {start: model._get_bool_constant_literal(True)}
+    for x in items:
+        incoming = {}
+        for a, value, b in transitions:
+            if a not in previous or not x.lb <= int(value) <= x.ub:
+                continue
+            term = _defined(model, previous[a] & (x == int(value)))
+            incoming.setdefault(b, []).append(term)
+        previous = {state: _defined(model, Clause(model, terms))
+                    for state, terms in incoming.items()}
+    return _group(model, [Clause(model, [flag for state, flag in previous.items()
+                                       if state in accepting])])
 
 
 def mdd(model, items, transitions, start):
@@ -120,20 +143,22 @@ def mdd(model, items, transitions, start):
             continue
         terms = []
         for value,child in edges.get(node, {}).items():
+            if not items[level].lb <= value <= items[level].ub:
+                continue
             match = items[level] == value
             if child == terminal:
                 terms.append(match)
             else:
                 suffix, term = signals[child], model.bool()
-                parts.extend([~term | match, ~term | suffix, ~match | ~suffix | term])
+                model._register_literal_definition(term, _flatten(model, [~term | match, ~term | suffix, ~match | ~suffix | term]))
                 terms.append(term)
         signal = model.bool()
         signals[node] = signal
         if terms:
             clause = Clause(model, terms)
-            parts.append(clause.iff(signal))
+            model._register_literal_definition(signal, clause.iff(signal))
         else:
-            parts.append(~signal)
+            model._register_literal_definition(signal, model._as_clausegroup(~signal))
     parts.append(signals[start])
     return _group(model, parts)
 
@@ -151,6 +176,17 @@ def all_equal_except(model, items, excluded=(0,)):
     parts = []
     for x in items:
         active = model.bool()
-        parts.append(Clause(model, [active, *[x == int(v) for v in set(excluded)]]))
+        parts.append(Clause(model, [active, *[x == int(v) for v in set(excluded) if x.lb <= int(v) <= x.ub]]))
         parts.append((x == representative).only_if(active))
-    return _group(model, parts)
+    def negative():
+        witnesses = []
+        excluded_values = set(map(int, excluded))
+        excluded_flags = [_defined(model, _excluded(model, x, excluded_values))
+                          for x in items]
+        for i, x in enumerate(items):
+            for j in range(i + 1, len(items)):
+                different = _defined(model, x != items[j])
+                witnesses.append(_defined(
+                    model, ~excluded_flags[i] & ~excluded_flags[j] & different))
+        return _flatten(model, [Clause(model, witnesses)])
+    return _BooleanComposition(model, lambda: _flatten(model, parts), negative)
