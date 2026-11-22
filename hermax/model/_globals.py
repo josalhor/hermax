@@ -75,16 +75,22 @@ def precedence(model, items, values):
     values = tuple(values)
     if any(not isinstance(v, Integral) for v in values):
         raise TypeError('Precedence values must be integers.')
+
+    def matches(item, value):
+        if item.lb <= value <= item.ub:
+            return item == int(value)
+        return model._get_bool_constant_literal(False)
+
     parts = []
     if items:
         for a,b in zip(values, values[1:]):
-            parts.append(~(items[0] == b))
-            seen = items[0] == a
+            parts.append(~matches(items[0], b))
+            seen = matches(items[0], a)
             for i,x in enumerate(items[1:],1):
-                parts.append((x == b).implies(seen))
+                parts.append(matches(x, b).implies(seen))
                 if i < len(items)-1:
                     prefix = model.bool()
-                    model._register_literal_definition(prefix, (seen | (x == a)).iff(prefix))
+                    model._register_literal_definition(prefix, (seen | matches(x, a)).iff(prefix))
                     seen = prefix
     return _group(model, parts)
 

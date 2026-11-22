@@ -7,6 +7,22 @@ from hermax.model import Model
 from tests.model.test_soft_behavior import FakeIPSoft
 
 
+@pytest.mark.parametrize("incremental", [True, False])
+def test_numeric_handle_keeps_small_replacement_weight(incremental):
+    m = Model()
+    x, y = m.bool("x"), m.bool("y")
+    m &= x | y
+    term = m.obj.add(x, weight=1e16)
+    m.obj.add(y, weight=0.5)
+
+    m.obj.update(term, weight=1)
+    result = m.solve(incremental=incremental)
+
+    assert result.status == "optimum"
+    assert result.cost == 0.5
+    assert (result[x], result[y]) == (False, True)
+
+
 @pytest.mark.parametrize(
     "form", ["literal", "term", "sum", "integer", "signed", "constant"]
 )

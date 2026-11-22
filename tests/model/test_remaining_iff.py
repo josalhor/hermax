@@ -8,6 +8,29 @@ import pytest
 from hermax.model import Clause, ClauseGroup, Model
 
 
+@pytest.mark.parametrize("kind", ["distance", "increasing", "element"])
+@pytest.mark.parametrize("second", [62, 63])
+def test_binary_global_iff_checks_relation_not_comparison_auxiliaries(kind, second):
+    model = Model()
+    x, y = model.int_vector("values", 2, 0, 63)
+    flag = model.bool("flag")
+    if kind == "distance":
+        constraint = x.distance_at_most(y, 0)
+    elif kind == "increasing":
+        constraint = model.vector([x, y]).increasing()
+    else:
+        index = model.int("index", 0, 1)
+        model &= index == 0
+        constraint = model.vector([x, y])[index] <= y
+    model &= constraint.iff(flag)
+    model &= x == 63
+    model &= y == second
+    expected = flag if second == 63 else ~flag
+
+    assert model.solve(assumptions=[expected]).status == "sat"
+    assert model.solve(assumptions=[~expected]).status == "unsat"
+
+
 @pytest.mark.parametrize("kind", ["and", "gated", "distance", "increasing", "lex", "vector_ne", "element"])
 def test_integer_and_composite_iff(kind):
     for xv, yv, zv, bv in itertools.product(range(2), range(2), range(2), (False, True)):

@@ -115,22 +115,26 @@ class _ObjectiveProxy:
         self._generation += 1
         return self
 
-    def _change_lit_weights(self, changes: dict[int, int | float], offset_delta: int | float):
+    def _change_lit_weights(self, weights, offset, *, old_weights=None, old_offset=0):
         m = self._model
+        if old_weights is None:
+            old_weights = {}
         targets = {}
-        for dim, delta in changes.items():
-            if not delta:
+        for dim in weights.keys() | old_weights.keys():
+            old_weight = old_weights.get(dim, 0)
+            new_weight = weights.get(dim, 0)
+            if old_weight == new_weight:
                 continue
             sid = self._lit_to_sid.get(dim)
             index = m._soft_id_to_index.get(sid)
             current = m._soft[index][0] if index is not None else 0
-            targets[dim] = current + delta
+            targets[dim] = (current - old_weight) + new_weight
         updates, additions = self._plan_lit_weights(targets)
         created = apply_soft_weights(m, updates, additions)
         self._lit_to_sid.update(created)
         self._lit_weights.update(targets)
-        m._objective_constant += offset_delta
-        self._offset += offset_delta
+        if old_offset != offset:
+            m._objective_constant = self._offset = (self._offset - old_offset) + offset
 
     def set(self, constraint, *, weight: int = 1):
         """Replace the entire objective with a numeric cost expression."""
@@ -172,11 +176,7 @@ class _ObjectiveProxy:
         value = raw if m._objective_precision_decimals is not None else scaled
         snapshot = prepare_objective(self._model, term._expression, lower=bool(value))
         weights, offset = normalize_prepared_objective(self._model, snapshot, weight=value) if value else ({}, 0)
-        changes = {
-            dim: weights.get(dim, 0) - term._weights.get(dim, 0)
-            for dim in term._weights.keys() | weights.keys()
-        }
-        self._change_lit_weights(changes, offset - term._offset)
+        self._change_lit_weights(weights, offset, old_weights=term._weights, old_offset=term._offset)
         term._expression = snapshot
         term._weight, term._weights, term._offset = value, weights, offset
 
@@ -720,12 +720,12 @@ class _IncrementalCoordinator:
         model = self.sat_solver.get_model() or []
         status = "sat"
         cost = None
-        if int(self._model._objective_constant) != 0:
+        if self._model._objective_constant != 0:
             # A constant objective has no soft clauses. SAT already produced
             # an optimal assignment because every satisfying assignment has
             # the same objective value.
             status = "optimum"
-            cost = self._model._format_objective_cost(int(self._model._objective_constant))
+            cost = self._model._format_objective_cost(self._model._objective_constant)
         return SolveResult(
             self._model,
             status=status,
@@ -769,7 +769,7 @@ class _IncrementalCoordinator:
                     m.DEBUG_DELTA,
                     f"update_soft route maxsat sid={sid} lit={int(lit)} new={int(new_weight)}",
                 )
-            total = self.soft_weight_by_lit[lit] + new_weight - old_w
+            total = (self.soft_weight_by_lit[lit] - old_w) + new_weight
             self.ip_solver.set_soft(int(lit), total)
             self.soft_weight_by_lit[lit] = total
 
@@ -3541,11 +3541,11 @@ class Model:
         )
         sat_status = result.status
         objective_cost = None
-        if sat_status == "sat" and int(self._objective_constant) != 0:
+        if sat_status == "sat" and self._objective_constant != 0:
             # A constant objective has no soft clauses. SAT can still report
             # its exact optimum without switching to a MaxSAT backend.
             sat_status = "optimum"
-            objective_cost = self._format_objective_cost(int(self._objective_constant))
+            objective_cost = self._format_objective_cost(self._objective_constant)
         return SolveResult(
             self,
             status=sat_status,

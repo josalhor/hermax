@@ -57,3 +57,17 @@ def test_exclusions_outside_every_domain(kind):
     m &= xs[0]==1
     m &= xs[1]==(1 if kind=='equal' else 2)
     assert m.solve().ok
+
+
+@pytest.mark.parametrize("first, expected", [(1, True), (0, False)])
+def test_precedence_with_labels_missing_from_individual_domains(first, expected):
+    model = Model()
+    x = model.int("x", 0, 1)
+    y = model.int("y", 2, 3)
+    z = model.int("z", 4, 4)
+    flag = model.bool("flag")
+    model &= model.precedence([x, y, z], [1, 4]).iff(flag)
+    model &= x == first
+
+    assert model.solve(assumptions=[flag if expected else ~flag]).status == "sat"
+    assert model.solve(assumptions=[~flag if expected else flag]).status == "unsat"

@@ -115,18 +115,31 @@ def test_obj_clear_resets_negative_offset_and_replacement_starts_clean():
 
 
 @pytest.mark.parametrize("incremental", [True, False])
-def test_constant_negative_objective_is_reported_on_sat_path(incremental):
+@pytest.mark.parametrize("weight", [3, 1.75, 0.75])
+def test_constant_negative_objective_is_reported_on_sat_path(incremental, weight):
     m = Model()
     x = m.bool("x")
     m &= x
-    m.obj = -3
+    m.obj.add(-1, weight=weight)
 
     result = m.solve(incremental=incremental)
 
     assert result.ok
     assert result.status == "optimum"
-    assert result.cost == -3
+    assert result.cost == -weight
     assert result[x] is True
+
+
+def test_obj_set_keeps_small_replacement_weight_in_live_solver():
+    m = Model()
+    x = m.bool("x")
+    m &= x
+    m.obj.set(x, weight=1e16)
+    assert m.solve().cost == 1e16
+
+    m.obj.set(x, weight=1)
+
+    assert m.solve().cost == 1
 
 
 def test_obj_iadd_still_additive():

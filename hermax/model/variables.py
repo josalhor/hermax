@@ -50,6 +50,9 @@ _INTEGER_COMPARISONS = {
     ">=": _operator.ge, ">": _operator.gt,
     "==": _operator.eq, "!=": _operator.ne,
 }
+_OPPOSITE_INTEGER_COMPARISONS = {
+    "<=": ">", "<": ">=", ">=": "<", ">": "<=", "==": "!=", "!=": "==",
+}
 
 
 def _integer_runs(values: Sequence[int]) -> list[tuple[int, int]]:
@@ -623,12 +626,12 @@ class _IndexedInt:
         if not (isinstance(rhs, IntVar) or isinstance(rhs, int) and not isinstance(rhs, bool)):
             raise TypeError(f"{self._comparison_label} comparison does not support RHS {type(rhs)!r}")
 
-        def build() -> ClauseGroup:
+        def build(operation: str) -> ClauseGroup:
             if isinstance(rhs, IntVar):
                 _ensure_same_model_pair_fast(self, rhs)
             clauses: list[Clause] = []
             idx = self._index_var
-            compare = _INTEGER_COMPARISONS[op]
+            compare = _INTEGER_COMPARISONS[operation]
             for k in range(idx.lb, idx.ub + 1):
                 branch = compare(self._item_at(k), rhs)
                 if isinstance(branch, bool):
@@ -642,7 +645,9 @@ class _IndexedInt:
                     clauses.extend(self._model._as_clausegroup(branch).only_if(condition))
             return ClauseGroup(self._model, clauses)
 
-        return DeferredClauseGroup(self._model, build)
+        return _ReifiableClauseGroup(
+            self._model, lambda: build(op), lambda: build(_OPPOSITE_INTEGER_COMPARISONS[op])
+        )
 
     def __le__(self, rhs):
         return self._evaluate_comparator("<=", rhs)
@@ -1283,8 +1288,7 @@ class IntVar:
     def distance_at_most(self, other: "IntVar", max_distance: int) -> ClauseGroup:
         """Return a constraint enforcing ``|self - other| <= max_distance``.
 
-        This uses ladder-native implications and introduces no auxiliary
-        variables.
+        Supports reification with ``.iff()``.
         """
         if not isinstance(other, IntVar):
             raise TypeError("distance_at_most() expects IntVar")
@@ -1294,11 +1298,10 @@ class IntVar:
         if max_distance < 0:
             raise ValueError("max_distance must be >= 0")
 
-        clauses = self._order_implications(other, max_distance)
-        clauses.extend(other._order_implications(self, max_distance))
-        if any(not clause.dimacs for clause in clauses):
-            clauses = [Clause(self._model, [])]
-        return ClauseGroup(self._model, clauses)
+        return (
+            self._relop_intvar(other, "<=", -max_distance)
+            & other._relop_intvar(self, "<=", -max_distance)
+        )
 
     def _relop_intvar(self, other: "IntVar", op: str, offset: int = 0) -> ClauseGroup:
         _ensure_same_model_pair_fast(self, other)
@@ -2089,11 +2092,24 @@ class IntVector(_BaseVector):
 
     def increasing(self) -> ClauseGroup:
         """Return nondecreasing chain constraints ``x[i] <= x[i+1]``."""
-        clauses: list[Clause] = []
-        for i in range(len(self._items) - 1):
-            rel = self._items[i]._relop_intvar(self._items[i + 1], "<=")
-            clauses.extend(rel)
-        return ClauseGroup(self._model, clauses)
+        model = self._model
+
+        def positive():
+            return ClauseGroup(model, [
+                clause for left, right in zip(self._items, self._items[1:])
+                for clause in (left <= right)
+            ])
+
+        def negative():
+            clauses, witnesses = [], []
+            for left, right in zip(self._items, self._items[1:]):
+                witness = model.bool()
+                witnesses.append(witness)
+                clauses.extend((left > right).only_if(witness))
+            clauses.append(Clause(model, witnesses))
+            return ClauseGroup(model, clauses)
+
+        return _ReifiableClauseGroup(model, positive, negative)
 
     def lexicographic_less_or_equal(self, other: "IntVector") -> ClauseGroup:
         """Return non-strict lexicographic ordering using the strict encoder."""
