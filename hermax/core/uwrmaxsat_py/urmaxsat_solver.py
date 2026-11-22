@@ -9,7 +9,7 @@ from hermax.core.ipamir_solver_interface import SolveStatus, is_feasible
 
 class UWrMaxSATSolver(NativeIncrementalSolverBase):
     """
-    UWrMaxSAT: an efficient MaxSAT solver with bundled version marker 1.7.3.
+    UWrMaxSAT: an efficient MaxSAT solver.
     This solver provides native incremental support through the IPAMIR interface.
 
     UWrMaxSAT is known for its efficiency in handling various MaxSAT instances, 
@@ -17,7 +17,7 @@ class UWrMaxSATSolver(NativeIncrementalSolverBase):
     """
     @classmethod
     def version(cls):
-        return "1.7.3"
+        return "2.0.6"
 
     def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
         self.solver = _urmaxsat.UWrMaxSAT()

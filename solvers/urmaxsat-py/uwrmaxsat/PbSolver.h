@@ -49,6 +49,9 @@ void clear_shared_formulas(void);
 
 DefineHash(Lit, return (uint)toInt(key); )
 
+DefineHash(vec<Lit> *, uint h = 0; for (int i = 0; i < key->size(); i++) h = (h << 3) + Hash<Lit>()((*key)[i]); return h; )
+DefineEqual(vec<Lit> *, if (key1->size() != key2->size()) return false; else { for (int i = key1->size() - 1; i >= 0; i--) if (toInt((*key1)[i]) != toInt((*key2)[i])) return false; return true;} )
+
 //=================================================================================================
 // Linear -- a class for storing pseudo-boolean constraints:
 
@@ -59,12 +62,13 @@ public:
     int     size;       // Terms in constraint.
     Int     lo, hi;     // Sum should be in interval [lo,hi] (inclusive).
     Lit     lit;        // Literal implies constraint (lit_Undef for normal case).
+    Int     weight;     // If lit != lit_Undef, then it is the weight of this soft constraint
 private:
     char    data[0];    // (must be last element of the struct)
 public:
     // NOTE: Cannot be used by normal 'new' operator!
-    Linear(const vec<Lit>& ps, const vec<Int>& Cs, Int low, Int high, Lit ll) {
-        orig_size = size = ps.size(), lo = low, hi = high; lit = ll;
+    Linear(const vec<Lit>& ps, const vec<Int>& Cs, Int low, Int high, Lit ll, Int wght) {
+        orig_size = size = ps.size(), lo = low, hi = high; lit = ll; weight = wght;
         char* p = data;
         for (int i = 0; i < ps.size(); i++) *(Lit*)p = ps[i], p += sizeof(Lit);
         for (int i = 0; i < Cs.size(); i++) new ((Int*)p) Int(Cs[i]), p += sizeof(Int); }
@@ -73,6 +77,15 @@ public:
     {
         for (int i = 0; i < size; i++)
             (*this)(i).~Int();
+    }
+    void copyTo(Linear* &nc) const {
+        vec<Lit> ps(size);
+        vec<Int> Cs(size);
+        for (int i = 0; i < size; i++) ps[i] = (*this)[i], Cs[i] = (*this)(i);
+
+        if (nc != NULL) nc->~Linear();
+        nc = new (xmalloc<char>(sizeof(Linear) + size*(sizeof(Lit) + sizeof(Int))))
+                Linear(ps, Cs, lo, hi, lit, weight);
     }
 
     Lit operator [] (int i) const { return *(Lit*)(data + sizeof(Lit)*i); }
@@ -97,9 +110,19 @@ protected:
 public:
     vec<Linear*>        constrs;        // Vector with all constraints.
     Linear*             goal;           // Non-normalized goal function (used in optimization). NULL means no goal function specified. NOTE! We are always minimizing.
+    weight_t            goal_gcd;       // gcd of goal coefficients or soft_cls weights
     Int                 LB_goalvalue, UB_goalvalue;  // Lower and upper bounds on the goal value
+    Int                 LB_last_prt;    // Last printed lower bound on the goal value
+    double              LB_last_prt_time;// CPU time, when LB was printed last time
     vec<Minisat::Lit>   base_assump;    // Used to efficiently encode (using sorters) changing goal bounds in binary search 
     bool                statsPrinted;
+    // WBO soft constraints
+    vec<vec<Minisat::Lit> > wbo_soft_cls; // clauses detected in soft constraints in a WBO file
+    vec<Linear*>        wbo_soft_constrs; // other soft constraints (not clauses) in the WBO file
+    // nonlinear PB constraints
+    int                nfactors;         // the number of AND factors in constraints
+    Map<vec<Lit> *, Lit > AndFactors;      // AND factors in PB constrs; the last lit in each vector
+                                         // is equivalent to the coniunction of all-but-last lits
 
 protected:
     vec<int>            n_occurs;       // Lit -> int: Number of occurrences.
@@ -121,7 +144,7 @@ public:
         return sat_solver.addClause_(tmp_clause); }
 protected:        
     bool    normalizePb(vec<Lit>& ps, vec<Int>& Cs, Int& C, Lit& lit);
-    void    storePb   (const vec<Lit>& ps, const vec<Int>& Cs, Int lo, Int hi, Lit lit);
+    void    storePb   (const vec<Lit>& ps, const vec<Int>& Cs, Int lo, Int hi, Lit lit, Int weight);
     void    setupOccurs();   // Called on demand from 'propagate()'.
     void    findIntervals();
     bool    rewriteAlmostClauses();
@@ -132,20 +155,27 @@ public:
     PbSolver(bool print_info = true, bool use_preprocessing = false) 
                 : sat_solver(print_info)
                 , goal(NULL)
+                , goal_gcd(1)
                 , LB_goalvalue(Int_MIN)
                 , UB_goalvalue(Int_MAX)
+                , LB_last_prt(Int_MIN)
+                , LB_last_prt_time(0)
                 , statsPrinted(false)
+                , nfactors(0)
+                , AndFactors(lit_Undef, 100)
                 , propQ_head(0)
                 //, stats(sat_solver.stats_ref())
                 , declared_n_vars(-1)
                 , declared_n_constrs(-1)
                 , declared_n_eq_constrs(-1)
                 , declared_intsize(-1)
+                , declared_n_products(-1)
                 , totalSorters(0), totalSorterInputs(0.0), totalReusedInputs(0.0), totalReusedPercent(0.0)
                 , best_goalvalue(Int_MAX)
                 , asynch_interrupt(false)
                 , cpu_interrupt(false)
                 , use_base_assump(false)
+                , top_soft_cost(Int_MAX)
                 {
                     // Turn off preprocessing if wanted.
                     if (!use_preprocessing) 
@@ -158,11 +188,23 @@ public:
         best_goalvalue = Int_MAX;
 
     }
-
+    void print_LB(Int scip_LB, bool force = false) {
+        extern int opt_LB_prt_period;
+        double ctime = cpuTime();
+        char *tmp;
+        Int LB = max(scip_LB, LB_goalvalue);
+        if ((force || ctime > LB_last_prt_time + opt_LB_prt_period) && LB  > LB_last_prt) {
+            tmp = toString(LB * goal_gcd);
+            printf("c LB %s\n", tmp); fflush(stdout);
+            LB_last_prt_time = ctime;
+            LB_last_prt = LB_goalvalue;
+            xfree(tmp);
+        }
+    }
     // Helpers (semi-internal):
     //
-    virtual lbool   value(Var x) const { return sat_solver.value(x); }
-    virtual lbool   value(Lit p) const { return sat_solver.value(p); }
+    virtual lbool   value(Var x) { return sat_solver.value(x); }
+    virtual lbool   value(Lit p) { return sat_solver.value(p); }
     int     nVars()      const { return sat_solver.nVars(); }
     int     nClauses()   const { return sat_solver.nClauses(); }
     int     nConstrs()   const { return constrs.size(); }
@@ -175,6 +217,7 @@ public:
     int     declared_n_constrs;         // Number of constraints declared in file header (-1 = not specified).
     int     declared_n_eq_constrs;      // Number of equal constraints declared in file header (-1 = not specified).
     int     declared_intsize;           // The size of integers required to handle an instance, declared in file header (-1 = not specified).
+    int     declared_n_products;        // The number of products declared in file header (-1 = not specified).
     int     pb_n_vars;                  // Actual number of variables (before clausification).
     int     pb_n_constrs;               // Actual number of constraints (before clausification).
 
@@ -186,13 +229,17 @@ public:
     vec<bool>           best_model;     // Best model found (size is 'pb_n_vars').
     Int                 best_goalvalue; // Value of goal function for that model (or 'Int_MAX' if no models were found).
     bool                asynch_interrupt, cpu_interrupt, use_base_assump;
+    Int                 top_soft_cost;  // Specified in WBO files. The solution cost must be < than this.
 
     // Problem specification:
     //
     int     getVar         (cchar* name);
-    void    allocConstrs   (int n_vars, int n_constrs, int n_eq_constrs, int intsize);
+    void    allocConstrs   (int n_vars, int n_constrs, int n_eq_constrs, int intsize, int n_products);
+    Lit     addSimpConstr(Int a, Lit x, int ineq, Int rhs);
     void    addGoal        (const vec<Lit>& ps, const vec<Int>& Cs);
-    bool    addConstr      (const vec<Lit>& ps, const vec<Int>& Cs, Int rhs, int ineq, Lit& lit);
+    Lit     addTerm        (vec<Lit>& ps);
+    bool    addConstr      (const vec<Lit>& ps, const vec<Int>& Cs, Int rhs, int ineq, Lit& lit, Int wght = 1.0);
+    void    addTopCost     (Int top_cost) { top_soft_cost = top_cost; }
 
     // Solve:
     //

@@ -28,7 +28,8 @@
 
 enum OptFinder {OPT_NONE, OPT_SCIP, OPT_MSAT};
 
-Int evalGoal(const vec<Pair<weight_t, Minisat::vec<Lit>* > >& soft_cls, vec<bool>& model, Minisat::vec<Lit>& soft_unsat);
+Int evalGoal(const vec<Pair<weight_t, Minisat::vec<Lit>* > >& soft_cls, vec<bool>& model,
+        Minisat::vec<Lit>& soft_unsat, const vec<Linear *> &wbo_soft_constrs);
 
 static inline int hleft (int i)  { return i * 2; }
 static inline int hright(int i)  { return i * 2 + 1; }
@@ -107,7 +108,6 @@ class MsSolver final : public PbSolver {
         , scip_foundUB(false)
         , scip_LB(Int_MIN)
         , scip_UB(Int_MAX)
-        , goal_gcd(1)
         , last_soft_added_to_sat(INT_MAX)
         , max_input_lit(lit_Undef)
         , termCallbackState(nullptr)
@@ -126,11 +126,12 @@ class MsSolver final : public PbSolver {
     Int                 scip_LB, scip_UB;// When SCIP timeouts, they will contains lower and upper bounds computed by SCIP
     vec<Pair<weight_t, Minisat::vec<Lit>* > > orig_soft_cls; // Soft clauses before preprocessing by MaxPre; empty if MaxPre is not used
     vec<Pair<weight_t, Minisat::vec<Lit>* > > soft_cls; // Relaxed non-unit soft clauses with weights; a relaxing var is the last one in a vector. 
-    weight_t            goal_gcd; // gcd of soft_cls weights
+    vec<Pair<Lit,int> > psCs;     // sorted soft literals with indices to soft_cls
     int                 top_for_strat, top_for_hard; // Top indices to soft_cls for stratification and hardening operations.
     int                 last_soft_added_to_sat; // An index tp soft_cls, above which soft clauses of length > 1 are added to sat solver.
     Map<Lit, Int>       harden_lits;    // The weights of literals included into "At most 1" clauses (MaxSAT preprocessing of soft clauese).
     vec<AtMost1> am1_rels;              // The weights of relaxing vars in "At most 1" clauses
+    vec<Int>            gbmo_splitting_weights; // Generalized Boolean multilevel optimization
     // IPAMIR interface
     vec<Lit>            harden_assump;  // IPAMIR: harden soft literals are put here instead of creating unit clauses
     vec<Lit>            global_assumptions; // IPAMIR: sorted literals used in IPAMIR assumptions are in this vector
@@ -149,7 +150,8 @@ class MsSolver final : public PbSolver {
         scip_foundLB = scip_foundUB = false;
         scip_LB = Int_MIN, scip_UB = Int_MAX;
         goal_gcd = 1;
-        harden_lits.clear(); am1_rels.clear(); harden_assump.clear();
+        harden_lits.clear(); am1_rels.clear(); harden_assump.clear(); psCs.clear();
+        gbmo_splitting_weights.clear();
         assumptions.copyTo(global_assumptions);
         global_assump_vars.clear();
         if (global_assumptions.size() > 0) {
@@ -169,8 +171,8 @@ class MsSolver final : public PbSolver {
         else res = sat_solver.addClause(p); 
         return res; 
     }
-    virtual lbool   value(Var x) const { return sat_solver.value(x); }
-    virtual lbool   value(Lit p) const { return sat_solver.value(p); }
+    virtual lbool   value(Var x) { return sat_solver.value(x); }
+    virtual lbool   value(Lit p) { return sat_solver.value(p); }
     bool    addUnit  (Lit p) {
         if (value(p) == l_Undef) trail.push(p);
         return addUnitClause(p);
@@ -195,4 +197,7 @@ class MsSolver final : public PbSolver {
                                            IntLitQueue& delayed_assump, Int& delayed_assump_sum);
 } ;
 
+Int  evalPsCs(vec<Lit>& ps, vec<Int>&Cs, vec<bool>& model, vec<AtMost1>& am1_rels);
+bool separate_gbmo_subgoal(vec<Int>& splitting_weights, vec<Lit>& goal_ps, vec<Int>& goal_Cs,
+        vec<Lit>& remain_goal_ps, vec<Int>& remain_goal_Cs, Int& remain_weight);
 #endif

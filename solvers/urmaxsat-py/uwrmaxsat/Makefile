@@ -29,9 +29,9 @@ else
 endif
 
 # Sets of compile flags for different build types
-MINISATP_REL    ?= -std=c++11 -O3 -D NDEBUG -Wno-strict-aliasing -D CADICAL $(MAXPRE) $(BIGWEIGHTS)
-MINISATP_DEB    ?= -std=c++11 -O0 -D DEBUG  -Wno-strict-aliasing -D CADICAL $(MAXPRE) $(BIGWEIGHTS)
-MINISATP_PRF    ?= -std=c++11 -O3 -D NDEBUG -Wno-strict-aliasing -D CADICAL $(MAXPRE) $(BIGWEIGHTS)
+MINISATP_REL    ?= -std=c++14 -O3 -D NDEBUG -Wno-strict-aliasing -D CADICAL $(MAXPRE) $(BIGWEIGHTS)
+MINISATP_DEB    ?= -std=c++14 -O0 -D DEBUG  -Wno-strict-aliasing -D CADICAL $(MAXPRE) $(BIGWEIGHTS)
+MINISATP_PRF    ?= -std=c++14 -O3 -D NDEBUG -Wno-strict-aliasing -D CADICAL $(MAXPRE) $(BIGWEIGHTS)
 MINISATP_FPIC   ?= -fpic
 
 # GNU Standard Install Variables
@@ -70,8 +70,8 @@ config:
            echo 'MCL_LIB?='                           ; \
            echo 'endif'                               ; \
            echo 'ifneq ($$(USESCIP),)'                  ; \
-	   echo 'MCL_INCLUDE+=-I../scipoptsuite-9.2.2/scip/src -I../scipoptsuite-9.2.2/build/scip' ; \
-	   echo 'MCL_LIB+=-L../scipoptsuite-9.2.2/build/lib -lscip -lsoplex-pic'                 ; \
+	   echo 'MCL_INCLUDE+=-I../scipoptsuite-10.0.2/scip/src -I../scipoptsuite-10.0.2/build/scip' ; \
+	   echo 'MCL_LIB+=-L../scipoptsuite-10.0.2/build/lib -lscip -lsoplex-pic'                 ; \
            echo 'endif'                                ; \
 	   echo 'prefix?=$(prefix)'                   ) > config.mk
 
@@ -85,9 +85,9 @@ MINISATP_SLIB = libuwrmaxsat.a#  Name of MiniSat+ static library.
 MINISATP_DLIB = libuwrmaxsat.so# Name of MiniSat+ shared library.
 
 # Shared Library Version
-SOMAJOR=1
-SOMINOR=7
-SORELEASE?=.3#   Declare empty to leave out from library file name.
+SOMAJOR=2
+SOMINOR=0
+SORELEASE?=.6#   Declare empty to leave out from library file name.
 
 MINISATP_CXXFLAGS = -IADTs -include Global.h -include Main.h -D_FILE_OFFSET_BITS=64 -D __STDC_LIMIT_MACROS -Wall -Wno-parentheses -Wextra  $(MCL_INCLUDE) $(MINISAT_INCLUDE)
 MINISATP_LDFLAGS  = -Wall  $(MCL_LIB) $(MINISAT_LIB) -lz -lgmp

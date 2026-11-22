@@ -12,7 +12,7 @@ from hermax.core.coretrail_py import CoreTrailSolver
 
 class UWrMaxSAT(UWrMaxSATSolver):
     """
-    UWrMaxSAT: an efficient MaxSAT solver with bundled version marker 1.7.3.
+    UWrMaxSAT: an efficient MaxSAT solver.
     This solver provides native incremental support through the IPAMIR interface.
 
     UWrMaxSAT is known for its efficiency in handling various MaxSAT instances, 

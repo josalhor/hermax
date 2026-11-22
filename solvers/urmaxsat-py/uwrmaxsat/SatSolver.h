@@ -74,6 +74,17 @@ using weight_t = int64_t;
 #define WEIGHT_MAX std::numeric_limits<weight_t>::max()
 #endif
 
+template<class vecType>
+bool satisfied_soft_cls(vecType *cls, vec<bool>& model)
+{
+    assert(cls != NULL);
+    for (int i = cls->size() - 2; i >= 0; i--)
+        if ((( sign((*cls)[i]) && !model[var((*cls)[i])])
+          || (!sign((*cls)[i]) &&  model[var((*cls)[i])])))
+            return true;
+    return false;
+}
+
 class ExtSimpSolver: public SimpSolver {
 private:
     Minisat::vec<uint32_t> elimClauses;
@@ -102,6 +113,7 @@ public:
 #endif
         );
     }
+    Var defined_var(int i); // vars in CaDiCaL 3.0 should be explicitly declared
 #if !defined(CADICAL) && !defined(CRYPTOMS)
     const Minisat::Clause& getClause  (int i, bool &is_satisfied) const;
 #endif

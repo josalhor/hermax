@@ -5,6 +5,7 @@ Version 1.3.5
 ----------
 
 * Removed EvalMaxSAT and SCIP bundles
+* Updated UWrMaxSAT to 2.0.6.
 * Added solver version identifiers and included third party notices.
 
 Version 1.3.4

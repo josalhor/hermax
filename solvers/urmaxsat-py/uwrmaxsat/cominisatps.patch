@@ -834,7 +834,6 @@ diff -urB cominisatps-SAT2016/utils/System.h cominisatps/utils/System.h
  #if defined(_MSC_VER) || defined(__MINGW32__)
  #include <time.h>
  
-#include <chrono>
 -static inline double Minisat::cpuTime(void) { return (double)clock() / CLOCKS_PER_SEC; }
 +static inline double COMinisatPS::cpuTime(void) { return (double)clock() / CLOCKS_PER_SEC; }
  

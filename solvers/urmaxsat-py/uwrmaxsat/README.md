@@ -1,4 +1,4 @@
-**UWrMaxSat** is a quite new solver for MaxSAT and pseudo-Boolean problems. It has been created at the University of Wroclaw and can be characterized as a complete solver for partial weighted MaxSAT instances, and, independently, for linear pseudo-Boolean optimizing and decision ones.
+**UWrMaxSat** is a quite new solver for MaxSAT and pseudo-Boolean problems. It has been created at the University of Wroclaw and can be characterized as a complete solver for partial weighted MaxSAT instances, and, independently, for linear pseudo-Boolean optimizing and decision ones. Starting from version 2.0, it accepts also non-linear pseudo-Boolean instances and weighted Boolean optimization (WBO) formulas. See MaxSAT Evaluation pages for exact descriptions of those formats.
 
 When citing, always reference my [ICTAI 2020](https://www.ictai2020.org/) conference paper, bibtex record is [here](https://www.computer.org/csdl/api/v1/citation/bibtex/proceedings/1pP3sSVh3BS/922800a132).
 
@@ -43,10 +43,10 @@ Since version 1.7.0 the default SAT solver is changed to CaDiCaL by Armin Biere.
 4. build the SCIP solver library (if you want to use it)  
     * 4.1 get sources of scipoptsuite from https://scipopt.org/index.php#download  
     * 4.2 untar and build a static library it:  
-        tar zxvf scipoptsuite-9.2.2.tgz  
-        cd scipoptsuite-9.2.2  
+        tar zxf scipoptsuite-10.0.3.tgz  
+        cd scipoptsuite-10.0.3  
         mkdir build && cd build  
-        cmake -DSYM=nauty -DSHARED=off -DNO_EXTERNAL_CODE=on -DSOPLEX=on -DGMP=on -DMPFR=on -DBOOTS=on -DTPI=tny ..  
+        cmake -DSYM=snauty -DSHARED=off -DNO_EXTERNAL_CODE=on -DSOPLEX=on -DGMP=on -DMPFR=on -DBOOST=on -DTPI=tny ..  
         cmake --build . --config Release --target libscip libsoplex-pic  
         cd ../..  
 
@@ -73,7 +73,7 @@ Since version 1.7.0 the default SAT solver is changed to CaDiCaL by Armin Biere.
    - To build a dynamic library you have to compile the static libraries above with the compiler option -fPIC  
      and, in the last step, replace 'make r' with 'make lsh'. The compiler option can be added to the steps above  
      as follows:  
-       (2) The SAT solver library should be configured with the command: CXXFLAGS=-fPIC ./configure  
+       (2) The CaDiCaL SAT solver add CXXFLAGS=-fPIC at the beginning of the line containg ./configure  
        (3) The MaxPre Makefile should be modified with: sed -i 's/-g/-fPIC -D NDEBUG/' src/Makefile  
        (4) Add the following option to the first line starting with cmake:    
            -DSCIP_COMP_OPTIONS=-fPIC  

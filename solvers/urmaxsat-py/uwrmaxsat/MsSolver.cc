@@ -73,34 +73,37 @@ static void clear_assumptions(Minisat::vec<Lit>& assump_ps, vec<Int>& assump_Cs)
         assump_ps.shrink(removed), assump_Cs.shrink(removed);
 }
 
-bool satisfied_soft_cls(Minisat::vec<Lit> *cls, vec<bool>& model)
-{
-    assert(cls != NULL);
-    for (int i = cls->size() - 2; i >= 0; i--)
-        if ((( sign((*cls)[i]) && !model[var((*cls)[i])])
-          || (!sign((*cls)[i]) &&  model[var((*cls)[i])])))
-            return true;
-    return false;
-}
-
+extern Int evalGoal(Linear& goal, vec<bool>& model);
 
 Int evalGoal(const vec<Pair<weight_t, Minisat::vec<Lit>* > >& soft_cls, vec<bool>& model,
-        Minisat::vec<Lit>&soft_unsat)
+        Minisat::vec<Lit>&soft_unsat, const vec<Linear *> &wbo_soft_constrs)
 {
     Int sum = 0;
-    bool sat = false;
     soft_unsat.clear();
+    if (opt_wbo)
+        for (int i = wbo_soft_constrs.size() - 1; i >= 0; i--) {
+            Linear &c = *wbo_soft_constrs[i];
+            Int val = evalGoal(c, model);
+            model[var(c.lit)] = (c.lo <= val && val <= c.hi ? !sign(c.lit) : sign(c.lit));
+        }
     for (int i = 0; i < soft_cls.size(); i++) {
-        Lit p = soft_cls[i].snd->last(); if (soft_cls[i].snd->size() == 1) p = ~p;
+        bool sat;
+        Lit p = soft_cls[i].snd->last();
         assert(var(p) < model.size());
-        if ((( sign(p) && !model[var(p)]) || (!sign(p) &&  model[var(p)]))
-            && !(sat = satisfied_soft_cls(soft_cls[i].snd, model))) {
+
+        if (soft_cls[i].snd->size() == 1) {
+            sat = (sign(p) && !model[var(p)]) || (!sign(p) &&  model[var(p)]);
+            p = ~p;
+        } else {
+            sat = satisfied_soft_cls(soft_cls[i].snd, model);
+            model[var(p)] = (sat ? sign(p) : !sign(p));
+        }
+        if (! sat) {
             if (opt_output_top > 0) soft_unsat.push(~p);
             sum += soft_cls[i].fst;
         } else if (opt_output_top > 0) {
             soft_unsat.push(p);
         }
-        if (sat) { sat = false; model[var(p)] = !model[var(p)]; }
     }
     return sum;
 }
@@ -116,7 +119,6 @@ void core_minimization(SimpSolver &sat_solver, Minisat::vec<Lit> &mus)
     int sat_calls = 0;
 
     min_count++;
-    if (opt_verbosity > 1) reportf("CoreMin(%d): ", min_count);
     for (int i = 0; last_size > 1 && i < last_size && sat_solver.conflicts <= totalConflicts; ) {
         Lit p = mus[i];
         for (int j = i+1; j < last_size; j++) mus[j-1] = mus[j];
@@ -136,13 +138,13 @@ void core_minimization(SimpSolver &sat_solver, Minisat::vec<Lit> &mus)
             for (int i = mus.size() - 1; i >= 0; i--) mus[i] = ~sat_solver.conflict[i];
         }
         if (opt_verbosity > 1)
-            reportf("reached %d conflicts in %d SAT calls; ", opt_coremin_cfl, sat_calls + 1);
+            reportf("CoreMin: reached %d conflicts in %d SAT calls; ", opt_coremin_cfl, sat_calls + 1);
     }
     sat_solver.budgetOff(); sat_solver.verbosity = verb;
 
     for (int i = mus.size() - 1; i >= 0; i--) mus[i] = ~mus[i];
     if (opt_verbosity > 1)
-        reportf("removed %d out of %d lits\n", init_size - mus.size(), init_size);
+        reportf("CoreMin(%d): removed %d out of %d lits\n", min_count, init_size - mus.size(), init_size);
 }
 
 /*static void core_trimming(SimpSolver &sat_solver, int max_size, int n)
@@ -181,7 +183,6 @@ static Int next_sum(Int bound, const vec<Int>& cs)
 
 }
 
-static
 Int evalPsCs(vec<Lit>& ps, vec<Int>&Cs, vec<bool>& model, vec<AtMost1>& am1_rels)
 {
     Int sum = 0;
@@ -267,7 +268,7 @@ static weight_t do_stratification(MsSolver& S, vec<weight_t>& sorted_assump_Cs, 
                 if (!S.global_assump_vars.at(var(p)))
                     assump_ps[to] = p, assump_Cs[to++] = soft_cls[i].fst;
             }
-            S.last_soft_added_to_sat = start;
+            if (!opt_wbo) S.last_soft_added_to_sat = start;
             Sort::sort(&soft_cls[start], sz + in_global_assumps);
             top_for_strat = start;
             break;
@@ -293,7 +294,7 @@ void MsSolver::harden_soft_cls(Minisat::vec<Lit>& assump_ps, vec<Int>& assump_Cs
         } else if (soft_cls[i].fst > ub_goalvalue) {
             if (opt_minimization == 1) {
                 harden_lits.set(p, Int(soft_cls[i].fst));
-                if (i <= top_for_strat && soft_cls[i].snd->size() > 1) {
+                if (i <= top_for_strat && soft_cls[i].snd->size() > 1 && !opt_wbo) {
                     sat_solver.addClause(*soft_cls[i].snd);
                     last_soft_added_to_sat = i;
                 }
@@ -404,7 +405,7 @@ void reset_soft_cls(vec<Pair<weight_t,Minisat::vec<Lit>*>> &soft_cls, vec<Pair<w
         for (int i = soft_cls.size() - 1; i >= 0; i--) soft_cls[i].fst *= goal_gcd;
 }
 
-static bool separate_gbmo_subgoal(vec<Int>& splitting_weights, vec<Lit>& goal_ps, vec<Int>& goal_Cs,
+bool separate_gbmo_subgoal(vec<Int>& splitting_weights, vec<Lit>& goal_ps, vec<Int>& goal_Cs,
         vec<Lit>& remain_goal_ps, vec<Int>& remain_goal_Cs, Int& remain_weight)
 {
     remain_goal_ps.clear(); remain_goal_Cs.clear(); remain_weight = 0;
@@ -436,7 +437,7 @@ static bool separate_gbmo_subgoal(vec<Int>& splitting_weights, vec<Lit>& goal_ps
 #ifdef CADICAL
 #define LimitTime(lim) sat_solver.limitTime(lim)
 #else
-#define LimitTime(lim) COMinisatPS::limitTime(lim)
+#define LimitTime(lim) limitTime(lim)
 #endif
 
 void MsSolver::maxsat_solve(solve_Command cmd)
@@ -448,7 +449,7 @@ void MsSolver::maxsat_solve(solve_Command cmd)
     bool          start_delayed_scip_solver = false;
 #endif
     bool opt_alternating_bin_search = (opt_minimization == 1 && opt_to_bin_search);
-    bool pb_decision_problem = (!opt_maxsat && !ipamir_used && soft_cls.size() == 0);
+    bool pb_decision_problem = (!opt_maxsat && !opt_wbo && !ipamir_used && soft_cls.size() == 0);
 
     if (!okay() || nVars() == 0) {
         if (opt_verbosity >= 1) {
@@ -472,7 +473,8 @@ void MsSolver::maxsat_solve(solve_Command cmd)
             reportf("Converting %d PB-constraints to clauses...\n", constrs.size());
         propagate();
 #ifdef USE_SCIP
-        if (opt_use_scip_slvr && declared_intsize <= std::numeric_limits<double>::digits - 6) {
+        if (opt_use_scip_slvr && declared_intsize <= std::numeric_limits<double>::digits - 6 &&
+                constrs.size() < 600000 && soft_cls.size() < 100000) {
             opt_force_scip = true;
             scip_init(scip_solver, sat_solver.nVars());
             scip_solver.pb_decision_problem = pb_decision_problem;
@@ -504,6 +506,13 @@ void MsSolver::maxsat_solve(solve_Command cmd)
         for (int j = soft_cls[i].snd->size() - 1; j >= 0; j--)
             sat_solver.setFrozen(var((*soft_cls[i].snd)[j]), true);
 
+#ifndef HERMAX_EMBEDDED
+    signal(SIGINT, SIGINT_interrupt);
+#endif
+#ifdef SIGXCPU
+    signal(SIGXCPU,SIGINT_interrupt);
+#endif
+
     sat_solver.verbosity = opt_verbosity - 1;
 
     if (opt_output_top < 0) {
@@ -529,7 +538,16 @@ void MsSolver::maxsat_solve(solve_Command cmd)
             for (Var x = 0; x < pb_n_vars; x++)
                 assert(sat_solver.modelValue(x) != l_Undef),
                     best_model.push(sat_solver.modelValue(x) == l_True);
-
+            if (opt_wbo) {
+                for (int i = wbo_soft_cls.size() - 1; i >= 0; i--) {
+                    bool sat = satisfied_soft_cls(&wbo_soft_cls[i], best_model);
+                    Lit p = wbo_soft_cls[i].last();
+                    best_model[var(p)] = (sat ? sign(p) : !sign(p));
+                }
+            }
+#ifdef USE_SCIP
+            if (pb_decision_problem) opt_scip_delay = 0;
+#endif
         }
         if (status == l_Undef && termCallback != nullptr && 0 != termCallback(termCallbackState))
             asynch_interrupt = true;
@@ -546,14 +564,11 @@ void MsSolver::maxsat_solve(solve_Command cmd)
             }
             return;
         } else if (status == l_True) {
-            for (int i = 0; i < soft_cls.size(); i++)
-                if (soft_cls[i].snd->size() > 1)
-                    best_model[var(soft_cls[i].snd->last())] = !sign(soft_cls[i].snd->last());
-            Minisat::vec<Lit> soft_unsat;
-            sat_solver.optimizeModel(soft_cls, best_model, 0, soft_cls.size() - 1);
-            best_goalvalue = fixed_goalval + evalGoal(soft_cls, best_model, soft_unsat);
+            Minisat::vec<Lit> su; // soft_unsat - not used in this context
+            best_goalvalue = fixed_goalval + evalGoal(soft_cls, best_model, su, wbo_soft_constrs);
             char* tmp = toString(best_goalvalue);
-            if (opt_satisfiable_out && (opt_satlive || opt_verbosity == 0))
+            if (opt_satisfiable_out && (!opt_wbo || best_goalvalue < top_soft_cost) &&
+                  (opt_satlive || opt_verbosity == 0))
                 printf("o %s\n", tmp), fflush(stdout);
             else if (opt_verbosity > 0 || !opt_satisfiable_out && !ipamir_used)
                 reportf("Found solution: %s\n", tmp);
@@ -577,13 +592,6 @@ void MsSolver::maxsat_solve(solve_Command cmd)
         sat_solver.toDimacs(opt_cnf),
         exit(0);
 
-#ifndef HERMAX_EMBEDDED
-    signal(SIGINT, SIGINT_interrupt);
-#endif
-#ifdef SIGXCPU
-    signal(SIGXCPU,SIGINT_interrupt);
-#endif
-
     Map<int,int> assump_map(-1);
     vec<Linear*> saved_constrs;
     vec<Lit> goal_ps;
@@ -595,9 +603,8 @@ void MsSolver::maxsat_solve(solve_Command cmd)
     Lit assump_lit = lit_Undef;
     Int     try_lessthan = opt_goal, max_assump_Cs = Int_MIN;
     int     n_solutions = 0;    // (only for AllSolutions mode)
-    vec<Pair<Lit,int> > psCs;
     vec<int8_t> multi_level_opt;
-    vec<Int> gbmo_splitting_weights, gbmo_remain_goal_Cs;
+    vec<Int> gbmo_remain_goal_Cs;
     vec<Lit> gbmo_remain_goal_ps;
     Int gbmo_goalval = 0, gbmo_remain_weight = 0;
     bool opt_delay_init_constraints = false,
@@ -667,6 +674,19 @@ void MsSolver::maxsat_solve(solve_Command cmd)
     }
     LB_goalval += fixed_goalval, UB_goalval += fixed_goalval;
     Sort::sort(psCs);
+    if (opt_wbo) { // add clauses extracted from soft constraints by PbSolver::rewriteAlmostClauses()
+        for (int i = wbo_soft_cls.size() - 1; i >= 0; i--) {
+            Lit p = ~wbo_soft_cls[i].last();
+            int it = Sort::lower_bound(psCs, Pair_new(p,0));
+            if (it < psCs.size() && psCs[it].fst == p) {
+                Minisat::vec<Lit> &cls = *soft_cls[psCs[it].snd].snd;
+                cls.clear();
+                for (int j = 0; j < wbo_soft_cls[i].size(); j++) cls.push(wbo_soft_cls[i][j]);
+            }
+        }
+        wbo_soft_cls.clear();
+        last_soft_added_to_sat = 0;
+    }
     if (weighted_instance) Sort::sortUnique(sorted_assump_Cs);
     if (LB_goalvalue < LB_goalval) LB_goalvalue = LB_goalval;
     if (UB_goalvalue == Int_MAX)   UB_goalvalue = UB_goalval;
@@ -710,7 +730,7 @@ void MsSolver::maxsat_solve(solve_Command cmd)
         extern void separationIndex(const vec<weight_t>& cs, vec<int>& separation_points);
         vec<int> gbmo_points; // generalized Boolean multilevel optimization points (GBMO)
         separationIndex(sortedCs, gbmo_points); // find GBMO
-        for (int i = 0; i < gbmo_points.size(); i++)
+        for (int i = gbmo_points.size() - 1; i >= 0; i--)
             gbmo_splitting_weights.push(Int(sortedCs[gbmo_points[i]])),
             multi_level_opt[Sort::bin_search(sorted_assump_Cs, sortedCs[gbmo_points[i]])] |= 2;
         if (gbmo_points.size() > 0 && opt_verbosity >= 1)
@@ -759,10 +779,22 @@ void MsSolver::maxsat_solve(solve_Command cmd)
     lbool status;
     do { // a loop to process GBMO splitting points
     while (1) {
-        if (opt_minimization != 1 && opt_to_bin_search && opt_alternating_bin_search)
-            opt_minimization = 2 - opt_minimization;
+      if (opt_unsat_cpu == 0 && opt_minimization == 1 && opt_to_bin_search)
+          goto SwitchSearchMethod;
+      if (opt_minimization != 1 && opt_to_bin_search && opt_alternating_bin_search)
+        opt_minimization = 2 - opt_minimization;
 #ifdef USE_SCIP
-      if (scip_solver.must_be_started && (cpuTime() >= opt_scip_delay || start_delayed_scip_solver)) {
+      {
+           std::lock_guard<std::mutex> lck(fixed_vars_mtx);
+           if (scip_solver.fixed_vars.size() > 0) {
+             for (int i = scip_solver.fixed_vars.size() - 1; i >= 0; i--)
+               if (sat_solver.value(var(scip_solver.fixed_vars[i])) == l_Undef)
+                   addUnitClause(scip_solver.fixed_vars[i]);
+             scip_solver.fixed_vars.clear();
+           }
+      }
+      if (scip_solver.must_be_started &&
+              (cpuTime() >= scip_solver.starting_time || start_delayed_scip_solver)) {
         scip_solver.must_be_started = start_delayed_scip_solver = false;
         if (opt_cpu_lim > cpuTime()) LimitTime(opt_cpu_lim); else break;
         sat_solver.clearInterrupt();
@@ -773,6 +805,7 @@ void MsSolver::maxsat_solve(solve_Command cmd)
             reportf("SCIP started with lower and upper bounds: [%s, %s]\n", t1, t2);
             xfree(t1); xfree(t2);
         }
+        scip_fix_sat_fixed_vars(&scip_solver, this);
         if (opt_scip_parallel)
             scip_solver.asynch_result = std::async(std::launch::async, scip_solve_async, &scip_solver, this);
         else {
@@ -784,7 +817,9 @@ void MsSolver::maxsat_solve(solve_Command cmd)
 #ifndef HERMAX_EMBEDDED
         signal(SIGINT, SIGINT_interrupt);
 #endif
+#ifdef SIGALRM
         signal(SIGALRM, SIGINT_interrupt);
+#endif
         signal(SIGTERM, SIGTERM_handler);
 #ifdef SIGXCPU
         signal(SIGXCPU,SIGINT_interrupt);
@@ -852,8 +887,13 @@ void MsSolver::maxsat_solve(solve_Command cmd)
             constrs.clear();
             continue;
         }
+        satisfied = true;
         if (pb_decision_problem) {
-           asynch_interrupt = opt_satisfiable_out = true; break;
+            best_model.clear();
+            for (Var x = 0; x < pb_n_vars; x++)
+                assert(sat_solver.modelValue(x) != l_Undef),
+                    best_model.push(sat_solver.modelValue(x) == l_True);
+           break;
         }
         Int lastCs = 1;
         if(opt_minimization != 1 && assump_ps.size() == 1 && assump_ps.last() == assump_lit) {
@@ -861,7 +901,6 @@ void MsSolver::maxsat_solve(solve_Command cmd)
           lastCs = assump_Cs.last();
           assump_ps.pop(); assump_Cs.pop(); assump_lit = lit_Undef;
         }
-        satisfied = true;
 
         if (cmd == sc_AllSolutions){
             Minisat::vec<Lit>    ban;
@@ -881,11 +920,8 @@ void MsSolver::maxsat_solve(solve_Command cmd)
             for (Var x = 0; x < pb_n_vars; x++)
                 assert(sat_solver.modelValue(x) != l_Undef),
                 model.push(sat_solver.modelValue(x) == l_True);
-            for (int i = 0; i < top_for_strat; i++)
-                if (soft_cls[i].snd->size() > 1)
-                    model[var(soft_cls[i].snd->last())] = !sign(soft_cls[i].snd->last());
             sat_solver.optimizeModel(soft_cls, model, top_for_strat, top_for_hard - 1);
-            Int goalvalue = evalGoal(soft_cls, model, soft_unsat) + fixed_goalval;
+            Int goalvalue = evalGoal(soft_cls, model, soft_unsat, wbo_soft_constrs) + fixed_goalval;
             extern bool opt_satisfiable_out;
             if (goalvalue < best_goalvalue || opt_output_top > 0 && goalvalue == best_goalvalue) {
                 {
@@ -901,7 +937,8 @@ void MsSolver::maxsat_solve(solve_Command cmd)
 #endif
                 }
                 char* tmp = toString(best_goalvalue * goal_gcd);
-                if (opt_satisfiable_out && opt_output_top < 0 && (opt_satlive || opt_verbosity == 0))
+                if (opt_satisfiable_out && opt_output_top < 0 &&
+                      (!opt_wbo || best_goalvalue < top_soft_cost) && (opt_satlive || opt_verbosity == 0))
                     printf("o %s\n", tmp), fflush(stdout);
                 else if (opt_verbosity > 0 || !opt_satisfiable_out && !ipamir_used)
                     reportf("%s solution: %s\n", (optimum_found ? "Next" : "Found"), tmp);
@@ -997,7 +1034,7 @@ void MsSolver::maxsat_solve(solve_Command cmd)
         } else harden_soft_cls(assump_ps, assump_Cs, sorted_assump_Cs, delayed_assump, delayed_assump_sum);
         if (opt_minimization == 0 || best_goalvalue - LB_goalvalue < opt_seq_thres) {
             opt_minimization = 0;
-            assump_lit = (assump_ps.size() == 0 ? lit_Undef : mkLit(sat_solver.newVar(VAR_UPOL, !opt_branch_pbvars), true));
+            assump_lit = (assump_ps.size() == 0 && gbmo_remain_goal_ps.size() == 0 ? lit_Undef : mkLit(sat_solver.newVar(VAR_UPOL, !opt_branch_pbvars), true));
             try_lessthan = best_goalvalue;
             if (scip_foundUB && scip_UB < try_lessthan) try_lessthan = scip_UB + 1;
         } else {
@@ -1115,8 +1152,8 @@ void MsSolver::maxsat_solve(solve_Command cmd)
         if ((LB_goalvalue == best_goalvalue ||
                 satisfied && best_goalvalue - LB_goalvalue < gbmo_remain_weight) &&
                 (opt_minimization != 1 || last_soft_in_best_model <= last_soft_in_queue)) {
-            if (opt_minimization >= 1 && opt_verbosity >= 2) {
-                char *t; reportf("Lower bound: %s\n", t=toString(LB_goalvalue * goal_gcd)); xfree(t); }
+            if (opt_minimization >= 1 && opt_verbosity >= 2)
+                print_LB((scip_foundLB ? scip_LB : Int_MIN), true); 
             break;
         }
 
@@ -1181,7 +1218,7 @@ void MsSolver::maxsat_solve(solve_Command cmd)
                 saved_constrs_Cs.push(assump_Cs.last());
             } else if (goal_ps.size() > 1) {
                 saved_constrs.push(new (mem.alloc(sizeof(Linear) + goal_ps.size()*(sizeof(Lit) + sizeof(Int))))
-                        Linear(goal_ps, goal_Cs, Int_MIN, 1, assump_lit));
+                        Linear(goal_ps, goal_Cs, Int_MIN, 1, assump_lit, Int(1)));
                 assump_map.set(toInt(assump_lit),saved_constrs.size() - 1);
                 saved_constrs_Cs.push(assump_Cs.last());
             }
@@ -1210,13 +1247,13 @@ void MsSolver::maxsat_solve(solve_Command cmd)
         if (weighted_instance && satisfied && sat_solver.conflicts > 10000)
             harden_soft_cls(assump_ps, assump_Cs, sorted_assump_Cs, delayed_assump, delayed_assump_sum);
         if (opt_minimization >= 1 && opt_verbosity >= 2) {
-            char *t; reportf("Lower bound: %s, assump. size: %d, stratif. level: %d (cls: %d, wght: %s)\n", t=toString(LB_goalvalue * goal_gcd),
-                    assump_ps.size(), sorted_assump_Cs.size(), top_for_strat, toString(sorted_assump_Cs.size() > 0 ? sorted_assump_Cs.last() : 0)); xfree(t); }
-        if (opt_minimization == 2 && opt_verbosity == 1 && use_base_assump) {
-            char *t; reportf("Lower bound: %s\n", t=toString(LB_goalvalue * goal_gcd)); xfree(t); }
+            char *t; reportf("LB: %s, assump. size: %d, stratif. level: %d (cls: %d, wght: %s), conflicts: %lu\n", t=toString(LB_goalvalue * goal_gcd),
+                    assump_ps.size(), sorted_assump_Cs.size(), top_for_strat, toString(sorted_assump_Cs.size() > 0 ? sorted_assump_Cs.last() : 0), sat_solver.conflicts); xfree(t); }
+        if (opt_minimization == 2 && opt_verbosity == 1 && use_base_assump)
+            print_LB((scip_foundLB ? scip_LB : Int_MIN), true);
 SwitchSearchMethod:
         if (opt_minimization == 1 && opt_to_bin_search && LB_goalvalue + 5 < UB_goalvalue &&
-            cpuTime() >= opt_unsat_cpu + start_solving_cpu && sat_solver.conflicts > opt_unsat_conflicts) {
+            cpuTime() >= opt_unsat_cpu + start_solving_cpu && sat_solver.conflicts >= opt_unsat_conflicts) {
             int cnt = 0;
             for (int j = 0, i = 0; i < psCs.size(); i++) {
                 const Int &w = soft_cls[psCs[i].snd].fst;
@@ -1257,12 +1294,17 @@ SwitchSearchMethod:
                 for (int i = 0; i < am1_rels.size(); i++)
                     goal_ps.push(~am1_rels[i].lit), goal_Cs.push(am1_rels[i].weight),
                         sumCs += goal_Cs.last();
-                {   Int lower_bound = LB_goalvalue-fixed_goalval-harden_goalval; int j = 0;
+                {   Int lower_bound = (scip_foundLB ? max(scip_LB, LB_goalvalue) : LB_goalvalue)
+                                         - fixed_goalval - harden_goalval;
+                    int j = 0;
                     for (int i = 0; i < goal_Cs.size(); i++)
-                        if (sumCs - goal_Cs[i] < lower_bound) {
+                        if (sumCs - goal_Cs[i] < lower_bound || value(goal_ps[i]) == l_True) {
                             if (!harden_lits.has(goal_ps[i])) top_for_hard--;
                             addUnitClause(goal_ps[i]), harden_goalval += goal_Cs[i];
-                        } else { if (j < i) goal_ps[j] = goal_ps[i], goal_Cs[j] = goal_Cs[i]; j++; }
+                        } else if (value(goal_ps[i]) == l_Undef) { 
+                            if (j < i) goal_ps[j] = goal_ps[i], goal_Cs[j] = goal_Cs[i];
+                            j++;
+                        }
                     if (j < goal_ps.size()) goal_ps.shrink(goal_ps.size() - j), goal_Cs.shrink(goal_Cs.size() - j);
                 }
                 top_for_strat = 0; sorted_assump_Cs.clear(); harden_lits.clear();
@@ -1288,7 +1330,7 @@ SwitchSearchMethod:
                 if (satisfied) {
                     try_lessthan = best_goalvalue;
                     if (scip_foundUB && scip_UB < try_lessthan) try_lessthan = scip_UB + 1;
-                    assump_lit = (assump_ps.size() == 0 ? lit_Undef :
+                    assump_lit = (assump_ps.size() == 0 && gbmo_remain_goal_ps.size() == 0 ? lit_Undef :
                                                           mkLit(sat_solver.newVar(VAR_UPOL, !opt_branch_pbvars), true));
                     if (assump_lit != lit_Undef && !use_base_assump) assump_ps.push(assump_lit), assump_Cs.push(try_lessthan);
                     if (gbmo_goalval > 0)
@@ -1301,10 +1343,11 @@ SwitchSearchMethod:
             }
         }
       }
+      if (opt_minimization >= 1 && opt_verbosity >= 1) print_LB(scip_foundLB ? scip_LB : Int_MIN);
     } // END OF LOOP: while(1)
       if (gbmo_remain_goal_ps.size() == 0 || !satisfied) break;
 
-      try_lessthan = best_goalvalue - fixed_goalval - harden_goalval - gbmo_goalval;
+      try_lessthan = evalPsCs(goal_ps, goal_Cs, best_model, am1_rels);
       assump_lit = lit_Undef;
       if (!addConstr(goal_ps, goal_Cs, try_lessthan, -1, assump_lit))
           break; // unsat
@@ -1328,7 +1371,7 @@ SwitchSearchMethod:
       Int diff = fixed_goalval + harden_goalval + gbmo_goalval;
       if (gbmo_goalval > 0)
           gbmo_goalval = evalPsCs(gbmo_remain_goal_ps, gbmo_remain_goal_Cs, best_model, am1_rels);
-      assump_lit = (assump_ps.size() == 0 ? lit_Undef :
+      assump_lit = (assump_ps.size() == 0 && gbmo_remain_goal_ps.size() == 0 ? lit_Undef :
               mkLit(sat_solver.newVar(VAR_UPOL, !opt_branch_pbvars), true));
       if (!addConstr(goal_ps, goal_Cs, try_lessthan - diff, -2, assump_lit))
           break; // unsat
@@ -1357,9 +1400,14 @@ SwitchSearchMethod:
     if (opt_verbosity >= 1 && opt_output_top < 0){
         if      (!satisfied)
             reportf(asynch_interrupt ? "\bUNKNOWN\b\n" : "\bUNSATISFIABLE\b\n");
-        else if (soft_cls.size() == 0 && best_goalvalue == Int_MAX)
+        else if (soft_cls.size() == 0 && best_goalvalue == Int_MAX) {
             reportf("\bSATISFIABLE: No goal function specified.\b\n");
-        else if (cmd == sc_FirstSolution){
+            if (!ipamir_used)
+                if (pb_decision_problem)    // force a correct output for
+                    opt_satisfiable_out = asynch_interrupt = true; // pseudo-Boolean decision problems
+                else opt_satisfiable_out = false;
+            best_goalvalue = 0;
+        } else if (cmd == sc_FirstSolution){
             char* tmp = toString(best_goalvalue);
             reportf("\bFirst solution found: %s\b\n", tmp);
             xfree(tmp);
@@ -1384,7 +1432,12 @@ SwitchSearchMethod:
             && opt_finder != OPT_SCIP
 #endif
             ) pb_solver->printStats();
-    if (ipamir_used) sat_solver.clearInterrupt();
+    if (ipamir_used) {
+        sat_solver.clearInterrupt();
+#ifdef USE_SCIP
+        if (scip_solver.scip != nullptr) scip_solver.clear();
+#endif
+    }
 }
 
 int lower_bound(vec<Lit>& set, Lit elem)
@@ -1556,3 +1609,4 @@ void MsSolver::preprocess_soft_cls(Minisat::vec<Lit>& assump_ps, vec<Int>& assum
     if (opt_verbosity >= 2 && am1_cnt > 0)
         reportf("Found %d AtMostOne cores of avg size: %.2f\n", am1_cnt, (double)am1_len_sum/am1_cnt);
 }
+

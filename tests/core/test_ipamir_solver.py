@@ -399,10 +399,6 @@ class IncompletePresetPortfolioSolver(IncompletePortfolioSolver):
 class TestUWrMaxSATSolverTerminationCallback(TestIPAMIRSolver):
     SOLVER_CLASS = UWrMaxSATSolver
 
-    @pytest.mark.xfail(strict=False, reason="Bundled UWr can violate assumptions during model postprocessing")
-    def test_assumptions_preserve_relaxation_model_and_cost(self):
-        super().test_assumptions_preserve_relaxation_model_and_cost()
-
 
 class TestApertureSolverConformance(TestIPAMIRSolver):
     SOLVER_CLASS = ApertureSolver

@@ -34,6 +34,14 @@ static Var mapVar(Var x, Minisat::vec<Var>& map, Var& max)
 }
 #endif
 
+Var ExtSimpSolver::defined_var(int i) {
+#if defined(CADICAL)
+    return cadical_declared_var(i + 1);
+#else
+    return i >= 0 && i < nVars() ? i : var_Undef;
+#endif
+}
+
 #if !defined(CADICAL) && !defined(CRYPTOMS)
 const Minisat::Clause& ExtSimpSolver::getClause  (int i, bool &is_satisfied) const
 {
@@ -69,13 +77,13 @@ void ExtSimpSolver::extendGivenModel(vec<lbool> &model)
         Lit x;
         for (j = elimClauses[i--]; j > 0; j--, i--) { // clause processing
             x = Minisat::toLit(elimClauses[i]);
-            if ((model[var(x)] ^ sign(x)) == l_True) { // the clause is satisfied
+            if (var(x) < model.size() && (model[var(x)] ^ sign(x)) == l_True) { // clause is satisfied
                 i -= elimClauses[i-j] + 1; // skip witnesses
                 goto next;             }
         }
         for (j = elimClauses[i--]; j > 0; j--, i--) { // witnesses processing
             x = Minisat::toLit(elimClauses[i]);
-            if ((model[var(x)] ^ sign(x)) != l_True) //  x is not satisfied
+            if (var(x) < model.size() && (model[var(x)] ^ sign(x)) != l_True) //  x is not satisfied
                 model[var(x)] = (model[var(x)] == l_True ? l_False : l_True); // x is flipped
         }
 next:;
@@ -96,26 +104,30 @@ next:;
 #endif
 }
 
+#if defined(CADICAL)
 void ExtSimpSolver::optimizeModel(const vec<Pair<weight_t, Minisat::vec<Lit>* > >& soft_cls,
         vec<bool>& model, int from_soft, int to_soft)
 {
-#if defined(CADICAL)
-    extern bool satisfied_soft_cls(Minisat::vec<Lit> *cls, vec<bool>& model);
+    if (solver->status() != 10) // SATISFIED
+        return;
     Int sum = 0;
-    bool sat = false, opt = false;
+    bool opt = false;
     for (int i = to_soft; i >= from_soft; i--) {
         Lit p = soft_cls[i].snd->last(); if (soft_cls[i].snd->size() == 1) p = ~p;
         assert(var(p) < model.size());
         if ((( sign(p) && !model[var(p)]) || (!sign(p) &&  model[var(p)])) 
-            && !(sat = satisfied_soft_cls(soft_cls[i].snd, model))) {
-            if (solver->flip(var(p) + 1)) model[var(p)] = !model[var(p)], opt = true;
+            && !satisfied_soft_cls(soft_cls[i].snd, model)) {
+            if (solver->flip(abs(lit2val(p)))) model[var(p)] = !model[var(p)], opt = true;
         }
-        if (sat) { sat = false; model[var(p)] = !model[var(p)]; }
     }
     if (opt)
-        for (int v = model.size() - 1 ; v >= 0; v--) model[v] = solver->val(v + 1) > 0;
-#endif
+        for (int v = model.size() - 1 ; v >= 0; v--)
+            model[v] = solver->val(abs(lit2val(mkLit(v)))) > 0;
 }
+#else
+void ExtSimpSolver::optimizeModel(const vec<Pair<weight_t, Minisat::vec<Lit>* > >& ,
+        vec<bool>& , int , int ) {}
+#endif
 
 void ExtSimpSolver::printVarsCls(bool encoding, const vec<Pair<weight_t, Minisat::vec<Lit>* > > *soft_cls, int soft_cnt)
 {
@@ -212,8 +224,8 @@ bool ExtSimpSolver::impliedObservedLits(Lit lit, Minisat::vec<Lit>& props, const
     if (ret != l_False && extPropagator->dec_level > 1) {
         for (const int clit : extPropagator->last_trails[1 - extPropagator->dec_level % 2]) {
             if (clit != 0) {
-                Lit l = mkLit(abs(clit) - 1, clit < 0);
-                if (l != lit) props.push(l);
+                Lit l = val2lit(clit);
+                if (l != lit_Undef && l != lit) props.push(l);
             }
         }
     }

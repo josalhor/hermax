@@ -43,13 +43,14 @@ Read a DIMACS file and apply the SAT-solver to it.
 
 #ifdef USE_SCIP
 #include <mutex>
-std::mutex stdout_mtx, optsol_mtx;
+std::mutex stdout_mtx, optsol_mtx, fixed_vars_mtx;
 #endif
 
 //=================================================================================================
 // Command line options:
 
 bool     opt_maxsat    = false;
+bool     opt_wbo       = false;
 bool     opt_satlive   = true;
 bool     opt_ansi      = true;
 char*    opt_cnf       = NULL;
@@ -90,6 +91,7 @@ bool     opt_reuse_sorters = true;
 uint64_t opt_unsat_conflicts = 5000000;
 int      opt_coremin_cfl   = 5000;
 int      opt_coremin_1cfl  = 500;
+int      opt_LB_prt_period = 60;
 int      exit_code         = 0;
 #ifdef MAXPRE
 char     opt_maxpre_str[80]= "[uvsrgc]";
@@ -106,11 +108,11 @@ double   opt_scip_cpu_add  = 600;
 bool     opt_scip_parallel = true;
 time_t   wall_clock_time;
 bool     opt_force_scip = false;
-double   opt_scip_delay = 0;
+double   opt_scip_delay = 120;
+bool     opt_scip_gbmo = false;
 #endif
 
 char*    opt_input  = NULL;
-char*    opt_result = NULL;
 
 // -- statistics;
 unsigned long long int srtEncodings = 0, addEncodings = 0, bddEncodings = 0;
@@ -166,7 +168,8 @@ void outputResult(const PbSolver& S, bool optimum)
 
     if (opt_output_top < 0) {
         if (optimum){
-            if (S.best_goalvalue == Int_MAX) printf("s UNSATISFIABLE\n"), exit_code = 20;
+            if (S.best_goalvalue == Int_MAX || (opt_wbo && S.best_goalvalue >= S.top_soft_cost))
+                printf("s UNSATISFIABLE\n"), exit_code = 20;
             else {
                 if (!opt_satisfiable_out) {
                     char* tmp = toString(S.best_goalvalue);
@@ -176,13 +179,15 @@ void outputResult(const PbSolver& S, bool optimum)
                 printf("s OPTIMUM FOUND\n"), exit_code = 30;
             }
         }else{
-            if (S.best_goalvalue == Int_MAX) printf("s UNKNOWN\n"), exit_code = 0;
-            else                             printf("%c SATISFIABLE\n", (opt_satisfiable_out ? 's' : 'c')), exit_code = 10;
+            if (S.best_goalvalue == Int_MAX || (opt_wbo && S.best_goalvalue >= S.top_soft_cost))
+                 printf("s UNKNOWN\n"), exit_code = 0;
+            else printf("%c SATISFIABLE\n", (opt_satisfiable_out ? 's' : 'c')), exit_code = 10;
         }
         resultsPrinted = true;
     } else if (opt_output_top == 1) resultsPrinted = true;
 
-    if (opt_model_out && S.best_goalvalue != Int_MAX){
+    if (opt_model_out && S.best_goalvalue != Int_MAX &&
+            (!opt_wbo || S.best_goalvalue < S.top_soft_cost)){
 #ifdef MAXPRE
         if (opt_use_maxpre) {
             std::vector<int> trueLiterals, model;
@@ -201,7 +206,8 @@ void outputResult(const PbSolver& S, bool optimum)
                     if (j < 0) sum += pb_solver->orig_soft_cls[i].fst;
                 }
                 char *tmp = nullptr;
-                if (sum < S.best_goalvalue) printf("o %s\n", tmp=toString(sum)), xfree(tmp);
+                if (sum < S.best_goalvalue && (!opt_wbo || sum < S.top_soft_cost))
+                    printf("o %s\n", tmp=toString(sum)), xfree(tmp);
             }
             if (opt_bin_model_out) {
                 printf("v ");
@@ -239,7 +245,8 @@ void handlerOutputResult(const PbSolver& S, bool optimum = true)
     static char buf[BUF_SIZE];
     static int lst = 0;
     if (!opt_satlive || resultsPrinted || opt_output_top >= 0) return;
-    if (opt_model_out && S.best_goalvalue != Int_MAX){
+    if (opt_model_out && S.best_goalvalue != Int_MAX &&
+            (!opt_wbo || S.best_goalvalue < S.top_soft_cost)){
 #ifdef MAXPRE
         if (opt_use_maxpre) {
             std::vector<int> trueLiterals, model;
@@ -320,12 +327,17 @@ void handlerOutputResult(const PbSolver& S, bool optimum = true)
     }
     const char *out = NULL;
     if (optimum){
-        if (S.best_goalvalue == Int_MAX) out = "s UNSATISFIABLE\n", exit_code = 20;
-        else                             out = "s OPTIMUM FOUND\n", exit_code = 30;
+        if (S.best_goalvalue == Int_MAX || (opt_wbo && S.best_goalvalue >= S.top_soft_cost))
+            out = "s UNSATISFIABLE\n", exit_code = 20;
+        else
+            out = "s OPTIMUM FOUND\n", exit_code = 30;
     }else{
-        if (S.best_goalvalue == Int_MAX) out = "s UNKNOWN\n", exit_code = 0;
-        else if (opt_satisfiable_out)    out = "s SATISFIABLE\n", exit_code = 10;
-        else                             out = "c SATISFIABLE\n", exit_code = 10;
+        if (S.best_goalvalue == Int_MAX || (opt_wbo && S.best_goalvalue >= S.top_soft_cost))
+            out = "s UNKNOWN\n", exit_code = 0;
+        else if (opt_satisfiable_out)
+            out = "s SATISFIABLE\n", exit_code = 10;
+        else
+            out = "c SATISFIABLE\n", exit_code = 10;
     }
     if (out != NULL) strcpy(buf + lst, out), lst += strlen(out);
     lst = write(1, buf, lst); lst = 0;
@@ -397,12 +409,11 @@ PbSolver::solve_Command convert(Command cmd) {
 
 static cchar* doc =
     "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-    "UWrMaxSat %s -- University of Wrocław MaxSAT solver by Marek Piotrów (2019-2024)\n" 
+    "UWrMaxSat %s -- University of Wrocław MaxSAT solver by Marek Piotrów (2019-%d)\n" 
     "and PB solver by Marek Piotrów and Michał Karpiński (2018) -- an extension of\n"
     "MiniSat+ 1.1, based on MiniSat 2.2.0  -- (C) Niklas Een, Niklas Sorensson (2012)\n"
-    "with COMiniSatPS by Chanseok Oh (2016) as the SAT solver\n"
     "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-    "USAGE: uwrmaxsat <input-file> [<result-file>] [-<option> ...]\n"
+    "USAGE: uwrmaxsat <input-file> [-<option> ...]\n"
     "\n"
     "Solver options:\n"
     "  -ca -adders   Convert PB-constrs to clauses through adders.\n"
@@ -434,6 +445,7 @@ static cchar* doc =
     "\n"
     "Input options:\n"
     "  -m -maxsat    Use the MaxSAT input file format (wcnf).\n"
+    "  -wbo          Use the WBO input file format (wbo).\n"
     "  -of -old-fmt  Use old variant of OPB file format.\n"
     "\n"
     "Output options:\n"
@@ -444,6 +456,7 @@ static cchar* doc =
     "  -nm -no-model Supress model output.\n"
     "  -bm -bin-model Output MaxSAT model as a binary (0-1) string.\n"
     "  -top=         Output only a given number top models as v-lines. No o-lines and s-lines.\n"
+    "  -lb-prt-sec=  The number of secs between two prints of lower bound on the goal value.[def: %d]\n"
     "\n"
     "MaxSAT specific options:\n"
     "  -no-msu       Use PB specific search algoritms for MaxSAT (see -alt, -bin, -seq).\n"
@@ -469,7 +482,8 @@ static cchar* doc =
     "  -scip-cpu-add= Time in seconds for SCIP solver to increase timeout if the gap <= 10%%. [def: %gs]\n"
     "  -no-par       Do not run SCIP solver in a separate thread. Timeout is changed to %gs if not set by user. \n" 
     "  -force-scip   Force to run SCIP solver. (The default setting is to use it for small instances.)\n"
-    "  -scip-delay=  Time in seconds to delay SCIP start. Zero - no delay (default)\n"
+    "  -scip-delay=  Time in seconds to delay SCIP start. Zero - no delay. [def: %gs]\n"
+    "  -scip-gbmo    If generalized Boolean multi-level opt points are found, use them to split SCIP objective.\n"
 #endif
     "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
 ;
@@ -500,19 +514,23 @@ static bool oneof(cchar* arg, cchar* alternatives)
 static void parseOptions(int argc, char** argv, bool check_files)
 {
     vec<char*>  args;   // Non-options
+    std::time_t t = std::time(nullptr);
+    std::tm *const pTInfo = std::localtime(&t);
+    int lyear = 1900 + pTInfo->tm_year;
 
     for (int i = 1; i < argc; i++){
         char*   arg = argv[i];
         if (arg[0] == '-'){
             if (oneof(arg,"h,help")) 
-                fprintf(stderr, doc, UWR_VERSION, opt_bdd_thres, opt_sort_thres, opt_goal_bias, opt_base_max, 
-                        opt_base_max, opt_unsat_conflicts, opt_coremin_cfl, opt_coremin_1cfl
+                fprintf(stderr, doc, UWR_VERSION, lyear, opt_bdd_thres, opt_sort_thres, opt_goal_bias, opt_base_max, 
+                        opt_base_max, opt_LB_prt_period, opt_unsat_conflicts, opt_coremin_cfl, opt_coremin_1cfl
 #ifdef MAXPRE
                         , opt_maxpre_str
 #endif
 #ifdef USE_SCIP
                         , opt_scip_cpu_add
                         , opt_scip_cpu_default
+                        , opt_scip_delay
 #endif
                         ), exit(0);
 
@@ -559,11 +577,13 @@ static void parseOptions(int argc, char** argv, bool check_files)
 
             else if (oneof(arg, "of,old-fmt" )) opt_old_format = true;
             else if (oneof(arg, "m,maxsat"  )) opt_maxsat  = true;
+            else if (oneof(arg, "wbo"       )) opt_wbo  = true;
             else if (oneof(arg, "lex-opt"   )) opt_lexicographic = true;
             else if (oneof(arg, "no-bin"    )) opt_to_bin_search = false;
             else if (oneof(arg, "no-ms-pre" )) opt_maxsat_prepr = false;
             else if (strncmp(arg, "-coremin-cfl=", 13) == 0)  opt_coremin_cfl = atoi(arg+13);
             else if (strncmp(arg, "-coremin-1cfl=", 14) == 0) opt_coremin_1cfl = atoi(arg+14);
+            else if (strncmp(arg, "-lb-prt-sec=", 12) == 0) opt_LB_prt_period = atoi(arg+12);
 #ifdef MAXPRE
             else if (oneof(arg, "maxpre" ))    opt_use_maxpre = true;
 #endif
@@ -574,6 +594,7 @@ static void parseOptions(int argc, char** argv, bool check_files)
             else if (strncmp(arg, "-scip-cpu-add=",14) == 0) opt_scip_cpu_add  = atoi(arg+14);
             else if (strncmp(arg, "-scip-delay=",  12) == 0) opt_scip_delay  = atoi(arg+12);
             else if (oneof(arg, "no-par"    )) opt_scip_parallel = false, opt_scip_cpu = (opt_scip_cpu == 0 ? opt_scip_cpu_default : opt_scip_cpu);
+            else if (oneof(arg, "scip-gbmo" )) opt_scip_gbmo = true;
 #endif
             else if (oneof(arg, "s,satlive" )) opt_satlive = false;
             else if (oneof(arg, "a,ansi"    )) opt_ansi    = false;
@@ -609,24 +630,23 @@ static void parseOptions(int argc, char** argv, bool check_files)
     }
 
     if (args.size() == 0 && check_files)
-        fprintf(stderr, doc, UWR_VERSION, opt_bdd_thres, opt_sort_thres, opt_goal_bias, opt_base_max, 
-                        opt_base_max, opt_unsat_conflicts, opt_coremin_cfl, opt_coremin_1cfl
+        fprintf(stderr, doc, UWR_VERSION, lyear, opt_bdd_thres, opt_sort_thres, opt_goal_bias, opt_base_max, 
+              opt_base_max, opt_LB_prt_period, opt_unsat_conflicts, opt_coremin_cfl, opt_coremin_1cfl
 #ifdef MAXPRE
                         , opt_maxpre_str
 #endif
 #ifdef USE_SCIP
                         , opt_scip_cpu_add
                         , opt_scip_cpu_default
+                        , opt_scip_delay
 #endif
                         ), exit(0);
 #ifdef USE_SCIP
     if (opt_command != cmd_Minimize || opt_output_top > 0) opt_use_scip_slvr = false;
 #endif
-    if (args.size() >= 1)
+    if (args.size() == 1)
         opt_input = args[0];
-    if (args.size() == 2)
-        opt_result = args[1];
-    else if (args.size() > 2)
+    else if (args.size() > 1)
         fprintf(stderr, "ERROR! Too many files specified on commandline.\n"),
         exit(0);
 }

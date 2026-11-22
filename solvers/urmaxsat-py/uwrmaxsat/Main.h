@@ -24,12 +24,13 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #ifndef Main_h
 #define Main_h
 
+#include <ctime>
 #include "Int.h"
 #include "PbSolver.h"
 
 #ifdef USE_SCIP
 #include <mutex>
-extern std::mutex stdout_mtx, optsol_mtx;
+extern std::mutex stdout_mtx, optsol_mtx, fixed_vars_mtx;
 #endif
 
 //=================================================================================================
@@ -41,6 +42,7 @@ enum Command  { cmd_Minimize, cmd_FirstSolution, cmd_AllSolutions };
 
 // -- output options:
 extern bool     opt_maxsat;
+extern bool     opt_wbo;
 extern bool     opt_satlive;
 extern bool     opt_ansi;
 extern char*    opt_cnf;

@@ -162,11 +162,29 @@ static char* parseIdent(B& in, vec<char>& tmp) {   // 'tmp' is cleared, then fil
 
 
 template<class B, class S>
+void parseTerm(B& in, S& solver, vec<Lit>& out_ps, vec<char>& tmp)
+    // 'tmp' is a tempory, passed to avoid frequent memory reallocation.
+{
+    bool sign;
+    vec<Lit> factor;
+
+    factor.push(out_ps.last());
+    do {
+        sign = (*in == '~');
+        if (sign) ++in;
+        factor.push(mkLit(solver.getVar(parseIdent(in, tmp)), sign));
+        skipWhitespace(in);
+    } while (*in == '~' || (*in >= 'a' && *in <= 'z') || (*in >= 'A' && *in <= 'Z') ||
+                (*in >= '0' && *in <= '9') || *in == '_');
+    out_ps.last() = solver.addTerm(factor); // a returned lit is equivalent to the factor 
+}
+
+template<class B, class S>
 void parseExpr(B& in, S& solver, vec<Lit>& out_ps, vec<Int>& out_Cs, vec<char>& tmp, bool old_format)
     // NOTE! only uses "getVar()" method of solver; doesn't add anything.
     // 'tmp' is a tempory, passed to avoid frequent memory reallocation.
 {
-    bool empty = true;
+    bool empty = true, sign;
     for(;;){
         skipWhitespace(in);
         if ((*in < '0' || *in > '9') && *in != '+' && *in != '-') break;
@@ -174,8 +192,14 @@ void parseExpr(B& in, S& solver, vec<Lit>& out_ps, vec<Int>& out_Cs, vec<char>& 
         skipWhitespace(in);
         if (old_format){
             if (*in != '*') throw xstrdup("Missing '*' after coefficient.");
-            ++in; }
-        out_ps.push(mkLit(solver.getVar(parseIdent(in, tmp))));
+            ++in;
+            skipWhitespace(in); }
+        if (sign = (*in == '~')) ++in;
+        out_ps.push(mkLit(solver.getVar(parseIdent(in, tmp)), sign));
+        skipWhitespace(in);
+        if (*in == '~' || (*in >= 'a' && *in <= 'z') || (*in >= 'A' && *in <= 'Z') ||
+                (*in >= '0' && *in <= '9') || *in == '_')
+            parseTerm(in, solver, out_ps, tmp);
         empty = false;
     }
     if (empty) throw xstrdup("Empty expression.");
@@ -185,7 +209,7 @@ void parseExpr(B& in, S& solver, vec<Lit>& out_ps, vec<Int>& out_Cs, vec<char>& 
 template<class B, class S>
 void parseSize(B& in, S& solver)
 {
-    int n_vars, n_constrs, n_eq_constrs = -1, intsize = -1;
+    int n_vars, n_constrs, n_eq_constrs = -1, intsize = -1, n_products = -1;
 
     if (*in != '*') return;
     ++in;
@@ -202,9 +226,13 @@ void parseSize(B& in, S& solver)
     if (skipText(in, "#equal=")) {
         n_eq_constrs = toint(parseInt(in));
         skipWhitespace(in);
-        if (skipText(in, "intsize=")) intsize = toint(parseInt(in));
+        if (skipText(in, "intsize=")) {
+            intsize = toint(parseInt(in));
+            skipWhitespace(in);
+            if (skipText(in, "#product=")) n_products = toint(parseInt(in));
+        }
     }
-    solver.allocConstrs(n_vars, n_constrs, n_eq_constrs, intsize);
+    solver.allocConstrs(n_vars, n_constrs, n_eq_constrs, intsize, n_products);
 
   Abort:
     skipLine(in);
@@ -258,12 +286,59 @@ int parseInequality(B& in)
 }
 
 template<class B, class S>
-bool parseConstrs(B& in, S& solver, bool old_format)
+void parseSoft(B& in, S& solver)
 {
-    vec<Lit> ps; vec<Int> Cs; vec<char> tmp;
-    int     ineq;
-    Int     rhs;
+    Int top_cost(0);
+
+    skipWhitespace(in);
+    if (skipText(in, "soft:")) { // A top soft cost specified.
+        skipWhitespace(in);
+        if (*in == '\n') skipLine(in);
+        if (*in == ';'){
+            ++in;
+            skipLine(in);
+        }else{
+            top_cost = parseInt(in);
+            skipWhitespace(in);
+            if (!skipText(in, ";")) throw xstrdup("Expecting ';' after top-cost value.");
+        }
+        skipEndOfLine(in);
+    }
+    if (top_cost == 0) top_cost = Int_MAX;
+    solver.addTopCost(top_cost);
+}
+
+template<class B>
+Int parse_wbo_weight(B& in)
+{
+    Int weight(-1);
+    skipWhitespace(in);
+    if (*in == '['){
+        ++in;
+        weight = parseInt(in);
+        skipWhitespace(in);
+        if (*in == ']') ++in;
+        else
+            throw nsprintf("Expected ']', not: %c", *in);
+        if (weight <= 0) {
+            char xbuf[100], *x = toString(weight);
+            strncpy(xbuf,x,sizeof(xbuf) - 1);
+            xfree(x);
+            throw nsprintf("Unexpected weight in WBO soft constraint: %s", xbuf);
+        }
+    }
+    return weight;
+}
+
+template<class B, class S>
+bool parseConstrs(B& in, S& solver, bool old_format, bool wbo_format)
+{
+    vec<Lit> ps, gps; vec<Int> Cs, gCs; vec<char> tmp;
+    int     ineq, nsoft = 0;
+    Int     rhs, weight;
     while (*in != EOF){
+        if (wbo_format) weight = parse_wbo_weight(in);
+        else weight = -1;
         parseExpr(in, solver, ps, Cs, tmp, old_format);
         ineq = parseInequality(in);
         rhs  = parseInt(in);
@@ -272,12 +347,33 @@ bool parseConstrs(B& in, S& solver, bool old_format)
         if (!skipText(in, ";")) throw xstrdup("Expecting ';' after constraint.");
         skipEndOfLine(in);
 
-        Lit lit = lit_Undef;
-        if (!solver.addConstr(ps, Cs, rhs, ineq, lit))
-            return false;
+        if (weight != 0) {
+            Lit lit;
+            bool constr_added = false;
+            if (weight > 0 && weight < solver.top_soft_cost) {
+                if (ps.size() == 1) {
+                    Lit p = solver.addSimpConstr(Cs[0], ps[0], ineq, rhs);
+                    if (p == COMinisatPS::lit_Error) ((MsSolver*)&solver)->fixed_goalval += weight;
+                    else if (p != lit_Undef) {
+                        gps.push(p), gCs.push(weight);
+                        solver.sat_solver.setFrozen(var(p), true);
+                    }
+                    constr_added = true;
+                } else {
+                    ++nsoft; tmp.growTo(15,0);
+                    snprintf(&tmp[0], tmp.size(), "#%d", nsoft);
+                    lit = mkLit(solver.getVar(tmp));
+                    gps.push(~lit); gCs.push(weight);
+                    solver.sat_solver.setFrozen(var(lit), true);
+                }
+            } else lit = lit_Undef;
+            if (!constr_added && !solver.addConstr(ps, Cs, rhs, ineq, lit, weight))
+                return false;
+        }
         ps.clear();
         Cs.clear();
     }
+    if (wbo_format) solver.addGoal(gps,gCs);
     return true;
 }
 
@@ -312,7 +408,7 @@ static void parse_p_line(B& in, S& solver, bool& wcnf_format, Int& hard_bound)
         hard_bound = parseInt(in);
 
     if (!opt_use_maxpre) {
-        solver.allocConstrs(n_vars, n_constrs, 0, 0);
+        solver.allocConstrs(n_vars, n_constrs, 0, 0, 0);
         for (int i = 1; i <= n_vars; i++) {
             snprintf(&tmp[0], tmp.size(), "%d", i);
             solver.getVar(tmp);
@@ -496,7 +592,7 @@ static bool parse_PB(B& in, S& solver, bool old_format, bool abort_on_error)
     try{
         parseSize(in, solver);
         parseGoal(in, solver, old_format);
-        return parseConstrs(in, solver, old_format);
+        return parseConstrs(in, solver, old_format, false);
     }catch (cchar* msg){
         if (abort_on_error){
             reportf("PARSE ERROR! [line %d] %s\n", in.line, msg);
@@ -544,6 +640,33 @@ static bool parse_WCNF(B& in, S& solver, bool abort_on_error)
 void parse_WCNF_file(cchar* filename, MsSolver& solver, bool abort_on_error) {
     FileBuffer buf(filename);
     parse_WCNF(buf, solver, abort_on_error); }
+
+// WBO parser functions: Returns TRUE if successful, FALSE if conflict detected during parsing.
+// If 'abort_on_error' is false, a 'cchar*' error message may be thrown.
+//
+template<class B, class S>
+static bool parse_WBO(B& in, S& solver, bool abort_on_error)
+{
+    try{
+        parseSize(in, solver);
+        parseSoft(in, solver);
+        return parseConstrs(in, solver, false, true);
+    }catch (cchar* msg){
+        if (abort_on_error){
+            reportf("PARSE ERROR! [line %d] %s\n", in.line, msg);
+            xfree(msg);
+            if (opt_satlive && !opt_try)
+                printf("s UNKNOWN\n");
+            exit(0);
+        }else
+            throw msg;
+    }
+
+}
+
+void parse_WBO_file(cchar* filename, MsSolver& solver, bool abort_on_error) {
+    FileBuffer buf(filename);
+    parse_WBO(buf, solver, abort_on_error); }
 
 //=================================================================================================
 // Debug:
