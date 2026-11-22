@@ -14,9 +14,6 @@ class SolverSpec:
 SOLVER_SPECS: list[SolverSpec] = [
     SolverSpec("UWrMaxSAT", "hermax.core.uwrmaxsat_py", "UWrMaxSATSolver"),
     SolverSpec("UWrMaxSATComp", "hermax.core.uwrmaxsat_comp_py", "UWrMaxSATCompSolver"),
-    SolverSpec("EvalMaxSAT", "hermax.core.evalmaxsat_latest_py", "EvalMaxSATLatestSolver"),
-    SolverSpec("EvalMaxSATLatest", "hermax.core.evalmaxsat_latest_py", "EvalMaxSATLatestSolver"),
-    SolverSpec("EvalMaxSATIncr", "hermax.core.evalmaxsat_incr_py", "EvalMaxSATIncrSolver"),
     SolverSpec("RC2Reentrant", "hermax.core.rc2.rc2_reentrant", "RC2Reentrant"),
     SolverSpec("OpenWBO-OLL", "hermax.core.openwbo_py", "OLLSolver"),
     SolverSpec("OpenWBO-PartMSU3", "hermax.core.openwbo_py", "PartMSU3Solver"),

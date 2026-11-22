@@ -111,7 +111,6 @@ def main() -> int:
             "examples/quickstart_model.py",
             "examples/incremental_assumptions.py",
             "examples/non_incremental_rc2_reentrant.py",
-            "examples/evalmaxsat_incr_relaxation.py",
             "examples/load_wcnf_formula.py",
             "examples/optilog_formula_compat.py",
             "examples/portfolio_mixed.py",

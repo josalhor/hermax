@@ -14,7 +14,6 @@ ACNF_FUZZER_PATH = os.path.join(SCRIPT_DIR, "generateACNF.sh")
 SOLVERS = {
     "Aperture_Glucose": {"path": os.path.join(SCRIPT_DIR, "solvers", "aperture_Glucose"), "acnf_capable": True},
     "Aperture_IntelSAT": {"path": os.path.join(SCRIPT_DIR, "solvers", "aperture_IntelSAT"), "acnf_capable": True},
-    "EvalMaxSAT": {"path": os.path.join(SCRIPT_DIR, "solvers", "EvalMaxSAT_bin"), "acnf_capable": False},
 }
 
 EXPECTED_SOLVER_RETURN_CODES = {0, 10, 20}

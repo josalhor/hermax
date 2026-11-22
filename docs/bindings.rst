@@ -122,78 +122,6 @@ CASHWMaxSAT
       Return backend signature string.
 
 
-EvalMaxSAT
------------------
-
-
-
-.. py:class:: evalmaxsat_latest.EvalMaxSAT
-
-   .. py:method:: newVar(decisionVar: bool = True) -> int
-
-      Allocate a fresh variable (optionally as decision variable).
-
-   .. py:method:: addClause(clause: list[int], weight: int | None = None) -> int
-
-      Add hard or soft clause. Returns backend result code/aux identifier from
-      EvalMaxSAT core.
-
-   .. py:method:: solve() -> bool
-
-      Solve instance; ``True`` on satisfiable/optimum state.
-
-   .. py:method:: getCost() -> int
-
-      Return objective value.
-
-   .. py:method:: getValue(lit: int) -> bool
-
-      Return truth value of literal in current model.
-
-   .. py:method:: getModel() -> list[int]
-
-      Return full signed assignment vector ``[±1, ±2, ...]``.
-
-   .. py:method:: setNInputVars(n: int) -> None
-
-      Set number of input variables in backend.
-
-EvalMaxSAT (IPAMIR)
----------------------------------------
-
-
-
-.. py:class:: evalmaxsat_incr.EvalMaxSATIncr
-
-   .. py:method:: addClause(clause: list[int], weight: int | None = None) -> None
-
-      Add hard clause or unit soft clause. Non-unit soft clauses raise
-      ``RuntimeError`` and must be encoded via relaxation in Python.
-
-   .. py:method:: addSoftLit(lit: int, weight: int) -> None
-
-      Add a native soft literal term.
-
-   .. py:method:: assume(assumptions: list[int]) -> None
-
-      Add assumptions for next solve.
-
-   .. py:method:: solve() -> int
-
-      Solve and return IPAMIR status code.
-
-   .. py:method:: getCost() -> int
-
-      Return objective value of the last successful solve.
-
-   .. py:method:: getValue(lit: int) -> bool | None
-
-      Return literal truth value in current model, else ``None``.
-
-   .. py:method:: signature() -> str
-
-      Return backend signature string.
-
 Open-WBO-Inc (Incomplete)
 ----------------------------
 
@@ -424,7 +352,6 @@ References
 ----------
 
 * Marek Piotrów. *UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems*. ICTAI 2020.
-* Florent Avellaneda. *EvalMaxSAT*. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
 * Alexey Ignatiev, Antonio Morgado, Joao Marques-Silva. *RC2: An Efficient MaxSAT Solver*. JSAT 11(1), 2019.
 * Hannes Ihalainen, Jeremias Berg, Matti Jarvisalo. *Refined Core Relaxation for Core-Guided MaxSAT Solving*. CP 2021.
 * Ruben Martins, Vasco Manquinho, Ines Lynce. *Open-WBO: A Modular MaxSAT Solver*. SAT 2014.

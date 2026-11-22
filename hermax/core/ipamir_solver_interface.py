@@ -65,6 +65,17 @@ class IPAMIRSolver(abc.ABC):
 
     supports_float_weights = False
 
+    @classmethod
+    def version(cls) -> str:
+        """Return a backend version or source identifier, or ``"unknown"`` if unknown.
+
+        This class-level metadata does not instantiate the solver. A version
+        identifies the bundled backend, not Hermax, a wrapper, or a SAT solver
+        used internally by the backend.
+        """
+        return "unknown"
+
+
     def add_clauses(self, clauses) -> None:
         """Add hard clauses from an iterable, preserving their order.
 

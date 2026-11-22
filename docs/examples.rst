@@ -138,7 +138,7 @@ Load from WCNF Formula
 Use ``hermax.formula.load_formula`` to load a formula file and pass it to a
 solver. Existing PySAT formula objects can also be supplied directly [3]_.
 
-Related API: :class:`hermax.incremental.EvalMaxSAT`.
+Related API: :class:`hermax.incremental.CoreTrail`.
 
 .. literalinclude:: ../examples/load_wcnf_formula.py
    :language: python

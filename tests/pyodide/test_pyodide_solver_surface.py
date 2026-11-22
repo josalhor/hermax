@@ -46,8 +46,6 @@ def test_unavailable_native_solvers_raise_clear_import_error():
         "UWrMaxSATSolver",
         "UWrMaxSATCompSolver",
         "CASHWMaxSATSolver",
-        "EvalMaxSATLatestSolver",
-        "EvalMaxSATIncrSolver",
         "WMaxCDCLSolver",
         "SPBMaxSATCFPSSolver",
         "NuWLSCIBRSolver",

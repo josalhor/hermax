@@ -13,6 +13,10 @@ from hermax.core.ipamir_solver_interface import SolveStatus
 class UWrMaxSATCompReentrant(ReplayFormulaSolverBase):
     """Replay wrapper around UWrMaxSAT competition backend."""
 
+    @classmethod
+    def version(cls):
+        return "1.4"
+
     nonunit_soft_policy = "store"
 
     def _normalize_nonnegative_weight(self, weight: int) -> int:

@@ -96,7 +96,7 @@ Hermax documentation set:
   *UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems*.
   ICTAI 2020.
 * Florent Avellaneda.
-  *EvalMaxSAT*. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
+  *EvalMaxSAT* (historical Hermax backend). MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
 * Alexey Ignatiev, Antonio Morgado, Joao Marques-Silva.
   *RC2: An Efficient MaxSAT Solver*. JSAT 11(1), 2019.
 * Hannes Ihalainen, Jeremias Berg, Matti Järvisalo.

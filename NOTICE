@@ -3,7 +3,7 @@ Copyright 2026 Josep Maria Salvia Hornos
 
 This product includes software developed in the Hermax project and integrates
 bindings and wrappers around third-party MaxSAT/SAT solvers with their own
-licenses and citation requirements.
+licenses and citation requests. See THIRD_PARTY_LICENSES/ for bundled third-party notices.
 
 Citation request
 ----------------
@@ -27,7 +27,6 @@ Latest available papers (selection)
   with SAT Oracles. SAT 2018.
 - Piotrow. UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems.
   ICTAI 2020.
-- Avellaneda. EvalMaxSAT. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
 - Berg, Demirovic, Stuckey. Core-Boosted Linear Search for Incomplete MaxSAT.
   CPAIOR 2019.
 - Ihalainen, Berg, Jarvisalo. Refined Core Relaxation for Core-Guided MaxSAT

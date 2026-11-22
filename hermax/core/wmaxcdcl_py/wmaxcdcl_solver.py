@@ -18,6 +18,10 @@ class WMaxCDCLSolver(ReplayFormulaSolverBase):
     a fresh WMaxCDCL backend instance on every `solve()` call.
     """
 
+    @classmethod
+    def version(cls):
+        return 'MSE 2024'
+
     nonunit_soft_policy = "relax"
 
     @classmethod

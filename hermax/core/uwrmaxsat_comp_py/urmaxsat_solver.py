@@ -18,6 +18,10 @@ class UWrMaxSATCompSolver(NativeIncrementalSolverBase):
     It is particularly optimized for competition-style benchmarks and 
     provides robust performance across a wide range of MaxSAT problems.
     """
+    @classmethod
+    def version(cls):
+        return "1.4"
+
     def __init__(self, formula: Optional[WCNF] = None, *args, **kwargs):
         self.solver = _urmaxsat.UWrMaxSAT()
         self._last_solve_result: Optional[int] = None

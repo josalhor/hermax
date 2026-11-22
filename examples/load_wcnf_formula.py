@@ -1,12 +1,12 @@
 from pathlib import Path
 
 from hermax.formula import load_formula
-from hermax.incremental import EvalMaxSAT
+from hermax.incremental import CoreTrail
 
 # Existing PySAT WCNF objects can also be supplied directly to Hermax solvers.
 wcnf = load_formula(Path(__file__).parent / "data" / "load_formula.wcnf")
 
-solver = EvalMaxSAT(formula=wcnf)
+solver = CoreTrail(formula=wcnf)
 ok = solver.solve()
 print("feasible:", ok)
 if ok:

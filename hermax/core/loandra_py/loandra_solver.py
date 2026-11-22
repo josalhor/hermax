@@ -11,6 +11,10 @@ from hermax.core.utils import extract_wcnf_data, normalize_wcnf_formula
 
 
 class LoandraSolver(IPAMIRSolver):
+
+    @classmethod
+    def version(cls) -> str:
+        return "1.0"
     @classmethod
     def is_available(cls) -> bool:
         try:

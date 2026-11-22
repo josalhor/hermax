@@ -30,15 +30,9 @@ Since the version 1.4 you can use the solver as a library with the IPAMIR interf
         make lib  
         cd ..
 
-4. build the SCIP solver library (if you want to use it)  
-    * 4.1 get sources of scipoptsuite from https://scipopt.org/index.php#download  
-    * 4.2 untar and build a static library it:  
-        tar zxvf scipoptsuite-8.1.0.tgz  
-        cd scipoptsuite-8.1.0  
-        mkdir build && cd build  
-        cmake -DSHARED=off -DNO_EXTERNAL_CODE=on -DSOPLEX=on -DTPI=tny ..  
-        cmake --build . --config Release --target libscip libsoplex-pic  
-        cd ../..  
+4. SCIP integration is disabled in Hermax builds. The historical standalone
+   upstream build can use an independently obtained SCIP Optimization Suite.
+   The SCIP suite is no longer bundled with Hermax.
 
 5. build the UWrMaxSat solver (release version, statically linked):  
         cd uwrmaxsat  

@@ -1123,10 +1123,6 @@ class CMakeBuildURMaxSAT(CMakeBuild):
             return self.build_imaxhs(ext)
         if ext.name == "hermax.core.maxhs_py":
             return self.build_maxhs(ext)
-        if ext.name == "hermax.core.evalmaxsat_latest":
-            return self.build_evalmaxsat_latest(ext)
-        if ext.name == "hermax.core.evalmaxsat_incr":
-            return self.build_evalmaxsat_incr(ext)
         return super().build_extension(ext)
 
     def build_aperture(self, ext):
@@ -1335,83 +1331,6 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         subprocess.check_call(["cmake", "--build", ".", "--config", "Release"], cwd=build_temp_path, env=env)
         self.verify_abi(ext, extdir, abi_tag)
 
-
-    def build_evalmaxsat_incr(self, ext):
-        abi_tag = sysconfig.get_config_var("SOABI") or f"cp{sys.version_info.major}{sys.version_info.minor}"
-        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
-        build_temp_path = os.path.join(self.build_temp, f"build_{ext.name}_{abi_tag}")
-        os.makedirs(build_temp_path, exist_ok=True)
-        env = self.get_base_env()
-        eval_src_dir = os.path.abspath("solvers/EvalMaxSAT2022")
-        eval_lib = os.path.join(eval_src_dir, "libipamirEvalMaxSAT2022.a")
-        adapter_lib = self._cached_core_artifacts("evalmaxsat-incr", ["libevalmaxsat_incr_adapter.a"], env)[0]
-        source_roots = [eval_src_dir, os.path.abspath("bindings/evalmaxsat-incr-py")]
-        core_artifacts = [eval_lib, adapter_lib]
-        if not self._can_reuse_native_core("evalmaxsat-incr", core_artifacts, env, source_roots):
-            cfg = os.path.join(eval_src_dir, "build_lib.sh")
-            with self._preserve_files(cfg):
-                st = os.stat(cfg).st_mode
-                os.chmod(cfg, st | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-                self._bash(["./build_lib.sh"], cwd=eval_src_dir, env=env)
-            adapter_obj = os.path.join(os.path.dirname(adapter_lib), "evalmaxsat_incr_native.o")
-            adapter_cpp = os.path.abspath("bindings/evalmaxsat-incr-py/evalmaxsat_incr_native.cpp")
-            compile_cmd = self._native_adapter_compile_command(env, "17") + ["-I", eval_src_dir, "-c", adapter_cpp, "-o", adapter_obj]
-            subprocess.check_call(compile_cmd, env=env)
-            ar = self._which_mingw_tool("ar", env) if platform.system() == "Windows" else shutil.which("ar", path=env.get("PATH"))
-            if not ar:
-                raise RuntimeError("ar not found for EvalMaxSAT incremental adapter archive")
-            subprocess.check_call([ar, "rcs", adapter_lib, adapter_obj], env=env)
-        if not os.path.exists(eval_lib):
-            raise RuntimeError(f"EvalMaxSAT incremental archive not produced at {eval_lib}")
-        self._ranlib(eval_lib, env=env)
-        self._ranlib(adapter_lib, env=env)
-        self._mark_native_core("evalmaxsat-incr", core_artifacts, env, source_roots)
-        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DEVALMAXSAT_INCR_LIB_ABS={eval_lib}", f"-DEVALMAXSAT_INCR_ADAPTER_LIB_ABS={adapter_lib}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
-        subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
-        subprocess.check_call(["cmake", "--build", "."], cwd=build_temp_path, env=env)
-        self.verify_abi(ext, extdir, abi_tag)
-
-    def build_evalmaxsat_latest(self, ext):
-        abi_tag = sysconfig.get_config_var("SOABI") or f"cp{sys.version_info.major}{sys.version_info.minor}"
-        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
-        build_temp_path = os.path.join(self.build_temp, f"build_{ext.name}_{abi_tag}")
-        os.makedirs(build_temp_path, exist_ok=True)
-        env = self.get_base_env()
-        eval_src_dir = os.path.abspath("solvers/evalmaxsat")
-        source_roots = [eval_src_dir, os.path.abspath("bindings/evalmaxsat-latest-py")]
-        adapter_lib = self._cached_core_artifacts("evalmaxsat-latest", ["libevalmaxsat_latest_adapter.a"], env)[0]
-        if self._native_core_reuse_enabled():
-            eval_build_dir = str(self._native_core_cache_dir(env) / "evalmaxsat-latest")
-        else:
-            eval_build_dir = os.path.join(eval_src_dir, f"build_{abi_tag}")
-        eval_lib = os.path.join(eval_build_dir, "lib", "EvalMaxSAT", "libEvalMaxSAT.a")
-        glucose_lib = os.path.join(eval_build_dir, "lib", "glucose", "libglucose.a")
-        cadical_lib = os.path.join(eval_build_dir, "lib", "cadical", "libcadical.a")
-        core_artifacts = [eval_lib, glucose_lib, cadical_lib, adapter_lib]
-        if not self._can_reuse_native_core("evalmaxsat-latest", core_artifacts, env, source_roots):
-            shutil.rmtree(eval_build_dir, ignore_errors=True)
-            os.makedirs(eval_build_dir, exist_ok=True)
-            subprocess.check_call(["cmake", eval_src_dir, "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"], cwd=eval_build_dir, env=env)
-            subprocess.check_call(["cmake", "--build", ".", "--config", "Release"], cwd=eval_build_dir, env=env)
-            adapter_obj = os.path.join(eval_build_dir, "evalmaxsat_native.o")
-            adapter_cpp = os.path.abspath("bindings/evalmaxsat-latest-py/evalmaxsat_native.cpp")
-            include_dirs = [os.path.join(eval_src_dir, "lib", d, "src") for d in ["EvalMaxSAT", "MaLib", "cadical", "glucose"]]
-            compile_cmd = self._native_adapter_compile_command(env, "20") + [*[arg for inc in include_dirs for arg in ("-I", inc)], "-c", adapter_cpp, "-o", adapter_obj]
-            subprocess.check_call(compile_cmd, env=env)
-            ar = self._which_mingw_tool("ar", env) if platform.system() == "Windows" else shutil.which("ar", path=env.get("PATH"))
-            if not ar:
-                raise RuntimeError("ar not found for EvalMaxSAT latest adapter archive")
-            subprocess.check_call([ar, "rcs", adapter_lib, adapter_obj], env=env)
-        if not all(os.path.exists(path) for path in core_artifacts):
-            raise RuntimeError("EvalMaxSAT latest build did not produce all required static archives")
-        self._mark_native_core("evalmaxsat-latest", core_artifacts, env, source_roots)
-        # CMake handles ranlib automatically, but we keep it for consistency if needed
-        eval_inc, malib_inc, cadical_inc, glucose_inc = [os.path.join(eval_src_dir, "lib", d, "src") for d in ["EvalMaxSAT", "MaLib", "cadical", "glucose"]]
-        cmake_args = [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}", f"-DPython3_EXECUTABLE={sys.executable}", f"-DPython3_ROOT_DIR={sys.exec_prefix}", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_BUILD_TYPE=Release", f"-DEVALMAXSAT_LIB_ABS={eval_lib}", f"-DEVALMAXSAT_ADAPTER_LIB_ABS={adapter_lib}", f"-DGLUCOSE_LIB_ABS={glucose_lib}", f"-DCADICAL_LIB_ABS={cadical_lib}", f"-DEVALMAXSAT_INC_DIR={eval_inc}", f"-DMALIB_INC_DIR={malib_inc}", f"-DCADICAL_INC_DIR={cadical_inc}", f"-DGLUCOSE_INC_DIR={glucose_inc}", "-DCMAKE_C_STANDARD=11", "-DCMAKE_CXX_STANDARD=17", f"-DCMAKE_CXX_FLAGS={env.get('CXXFLAGS','')}", f"-DCMAKE_C_FLAGS={env.get('CFLAGS','')}"]
-        subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp_path, env=env)
-        subprocess.check_call(["cmake", "--build", "."], cwd=build_temp_path, env=env)
-        self.verify_abi(ext, extdir, abi_tag)
-
     def build_cashwmaxsat(self, ext):
         abi_tag = sysconfig.get_config_var("SOABI") or f"cp{sys.version_info.major}{sys.version_info.minor}"
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
@@ -1423,7 +1342,7 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         cominisatps_dir = os.path.join(cash_dir, "cominisatps")
         cadical_dir = os.path.join(cash_dir, "cadical")
         uwr_dir = os.path.join(cash_dir, "uwrmaxsat")
-        # CASHWMaxSAT also vendors SCIP, which is not part of these archives.
+        # The Hermax CASHW build uses these three solver trees with SCIP disabled.
         # Fingerprint only the three solver trees that feed this native core.
         source_roots = [cominisatps_dir, cadical_dir, uwr_dir]
         cached_artifacts = self._cached_core_artifacts(
@@ -1503,8 +1422,6 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         self.verify_abi(ext, extdir, abi_tag)
 
     def build_urmaxsat_comp(self, ext):
-        import urllib.request
-        import zipfile
 
         abi_tag = sysconfig.get_config_var("SOABI") or f"cp{sys.version_info.major}{sys.version_info.minor}"
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
@@ -1516,22 +1433,8 @@ class CMakeBuildURMaxSAT(CMakeBuild):
         cominisatps_dir = os.path.join(uwr_dir, "cominisatps")
         cominisatps_simp_dir = os.path.join(cominisatps_dir, "simp")
 
-        if not os.path.exists(cominisatps_dir):
-            url = "https://github.com/satcompetition/2016/raw/refs/heads/main/solvers/main/COMiniSatPSChandrasekharDRUP.zip"
-            zip_path = os.path.join(uwr_dir, "cominisatps.zip")
-            urllib.request.urlretrieve(url, zip_path)
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref: zip_ref.extractall(uwr_dir)
-            os.remove(zip_path)
-            src_extracted = os.path.join(uwr_dir, "COMiniSatPS Chandrasekhar DRUP", "cominisatps")
-            if os.path.exists(src_extracted):
-                shutil.move(src_extracted, cominisatps_dir)
-                shutil.rmtree(os.path.join(uwr_dir, "COMiniSatPS Chandrasekhar DRUP"))
-            patch_file = os.path.join(uwr_dir, "cominisatps.patch")
-            if os.path.exists(patch_file):
-                self._bash(["patch", "-p1", "-N", "-r", "-", "-i", patch_file], cwd=cominisatps_dir, env=env)
-            hdr = os.path.join(cominisatps_dir, "minisat", "mtl", "Vec.h")
-            if not os.path.exists(hdr):
-                raise RuntimeError(f"Missing header: {hdr}")
+        if not os.path.isfile(os.path.join(cominisatps_dir, "minisat", "mtl", "Vec.h")):
+            raise RuntimeError(f"Missing bundled COMiniSatPS sources in {cominisatps_dir}")
 
         source_roots = [uwr_dir]
         cached_artifacts = self._cached_core_artifacts(
@@ -1952,8 +1855,6 @@ SOLVER_EXTENSIONS = _filter_solver_extensions([
     CMakeExtension('hermax.core.urmaxsat_py', sourcedir='solvers/urmaxsat-py'),
     CMakeExtension('hermax.core.urmaxsat_comp_py', sourcedir='solvers/urmaxsat-comp-py'),
     CMakeExtension('hermax.core.cashwmaxsat', sourcedir='bindings/cashwmaxsat-py'),
-    CMakeExtension('hermax.core.evalmaxsat_latest', sourcedir='bindings/evalmaxsat-latest-py'),
-    CMakeExtension('hermax.core.evalmaxsat_incr', sourcedir='bindings/evalmaxsat-incr-py'),
     CMakeExtension('hermax.core.wmaxcdcl', sourcedir='bindings/wmaxcdcl-py'),
     CMakeExtension('hermax.core.spb_maxsat_c_fps', sourcedir='bindings/spb-maxsat-c-fps-py'),
     CMakeExtension('hermax.core.nuwls_c_ibr', sourcedir='bindings/nuwls-c-ibr-py'),

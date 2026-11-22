@@ -7,8 +7,6 @@ scenarios.
 """
 from hermax.core.rc2 import RC2Reentrant
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompReentrant
-from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestReentrant
-from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrReentrant as _EvalMaxSATIncrReentrantCore
 from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
 from hermax.core.cgss_py import CGSSSolver
 # from hermax.core.cgss_py import CGSSPMRESSolver
@@ -34,19 +32,8 @@ class UWrMaxSATCompetition(UWrMaxSATCompReentrant):
     """
     pass
 
-class EvalMaxSAT(EvalMaxSATLatestReentrant):
-    """
-    EvalMaxSAT: Latest version of EvalMaxSAT, wrapped for 
-    reentrant incremental use.
-    """
-    pass
 
 
-class EvalMaxSATIncrReentrant(_EvalMaxSATIncrReentrantCore):
-    """
-    EvalMaxSAT-Incr backend exposed as a rebuild-on-solve reentrant wrapper.
-    """
-    pass
 
 
 class MaxHS(MaxHSSolver):
@@ -84,6 +71,10 @@ if WMaxCDCLReentrant is not None:
         pass
 else:
     class WMaxCDCL:  # pragma: no cover - import-time fallback
+        @classmethod
+        def version(cls):
+            return "MSE 2024"
+
         def __init__(self, *args, **kwargs):
             raise RuntimeError("WMaxCDCL native module is not available in this environment.")
 
@@ -124,15 +115,11 @@ class OpenWBO(AutoOpenWBOSolver):
 
 UWrMaxSATComp = UWrMaxSATCompetition
 OpenWBOAuto = OpenWBO
-EvalMaxSATIncrSolver = EvalMaxSATIncrReentrant
 
 __all__ = [
     "RC2",
     # "UWrMaxSATCompetition",
-    "EvalMaxSAT",
-    "EvalMaxSATIncrReentrant",
     "MaxHS",
-    "EvalMaxSATIncrSolver",
     "CASHWMaxSAT",
     # "CASHWMaxSATNoSCIP",
     "WMaxCDCL",

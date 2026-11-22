@@ -15,6 +15,10 @@ _UINT64_MAX = (1 << 64) - 1
 class RC2Reentrant(ReplayFormulaSolverBase):
     """RC2 replay baseline wrapper (rebuild per solve)."""
 
+    @classmethod
+    def version(cls):
+        return 'modified PySAT (2026-02)'
+
     nonunit_soft_policy = "store"
     supports_float_weights = True
 

@@ -11,7 +11,6 @@ SOLVERS = [
     ("openwbo_inc", "OpenWBOInc"), ("tt_openwbo_inc", "TTOpenWBOInc"),
     ("urmaxsat_py", "UWrMaxSAT"), ("urmaxsat_comp_py", "UWrMaxSAT"),
     ("cashwmaxsat", "CASHWMaxSAT"),
-    ("evalmaxsat_latest", "EvalMaxSAT"), ("evalmaxsat_incr", "EvalMaxSATIncr"),
     ("wmaxcdcl", "WMaxCDCL"), ("spb_maxsat_c_fps", "SPBMaxSATCFPS"),
     ("nuwls_c_ibr", "NuWLSCIBR"), ("loandra", "Loandra"),
     ("maxhs_py", "MaxHS"), ("imaxhs_py", "IMaxHS"),
@@ -42,20 +41,6 @@ def test_native_clauses_reject_literal_that_cannot_be_negated(module, name):
     add = getattr(solver, "addClause", None) or solver.add_clause
     with pytest.raises((ValueError, OverflowError)):
         add([-2**31])
-
-
-def test_evalmaxsat_incremental_rejects_negative_unsigned_weight():
-    solver = native_type("evalmaxsat_incr", "EvalMaxSATIncr")()
-    with pytest.raises((ValueError, OverflowError)):
-        solver.addSoftLit(lit=1, weight=-1)
-
-
-def test_evalmaxsat_incremental_preserves_keyword_arguments():
-    solver = native_type("evalmaxsat_incr", "EvalMaxSATIncr")()
-    solver.addClause(clause=[1])
-    solver.assume(assumptions=[1])
-    assert solver.solve() == 30
-    assert solver.getValue(lit=1) is True
 
 
 def test_integer_sum_state_counter_preserves_64_bit_weights():

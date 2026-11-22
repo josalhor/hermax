@@ -10,6 +10,10 @@ from hermax.core.ipamir_solver_interface import SolveStatus
 class _OpenWBOSolverBase(ReplayFormulaSolverBase):
     """Replay base for OpenWBO solver variants."""
 
+    @classmethod
+    def version(cls):
+        return "2.1"
+
     nonunit_soft_policy = "relax"
 
     def __init__(self, formula: Optional[WCNF] = None, solver_backend=None, *args, **kwargs):

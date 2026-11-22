@@ -17,6 +17,10 @@ class ApertureSolver(NativeIncrementalSolverBase):
     """Incremental MaxSAT adapter for the native Aperture IPAMIR backend."""
 
     @classmethod
+    def version(cls):
+        return "0.1.0dev1"
+
+    @classmethod
     def is_available(cls) -> bool:
         return importlib.util.find_spec("hermax.core._aperture_native") is not None
 

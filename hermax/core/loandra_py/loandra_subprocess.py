@@ -11,6 +11,10 @@ from hermax.core.ipamir_subprocess_replay_base import OneShotSubprocessReplaySol
 class Loandra(OneShotSubprocessReplaySolverBase):
     """Loandra fake-incremental wrapper with one-shot subprocess isolation."""
 
+    @classmethod
+    def version(cls) -> str:
+        return "1.0"
+
     pass_assumptions_to_worker = False
 
     @property

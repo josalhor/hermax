@@ -22,6 +22,10 @@ def _import_backend():
 class MaxHSSolver(ReplayFormulaSolverBase):
     """Re-encoding wrapper around MaxHS with replay-per-solve semantics."""
 
+    @classmethod
+    def version(cls):
+        return 'source:2022'
+
     nonunit_soft_policy = "store"
 
     @classmethod

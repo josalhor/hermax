@@ -9,7 +9,6 @@ List of Classes
 
    hermax.non_incremental.RC2
    hermax.non_incremental.UWrMaxSATCompetition
-   hermax.non_incremental.EvalMaxSAT
    hermax.non_incremental.MaxHS
    hermax.non_incremental.CASHWMaxSAT
    hermax.non_incremental.CGSS
@@ -35,8 +34,6 @@ Backend mapping:
   ``hermax.core.rc2.RC2Reentrant`` (re-encoding wrapper around RC2 [1]_ [2]_ [8]_).
 * :class:`hermax.non_incremental.UWrMaxSATCompetition`:
   ``hermax.core.uwrmaxsat_comp_py.UWrMaxSATCompReentrant`` [4]_.
-* :class:`hermax.non_incremental.EvalMaxSAT`:
-  ``hermax.core.evalmaxsat_latest_py.EvalMaxSATLatestReentrant`` [5]_.
 * :class:`hermax.non_incremental.MaxHS`:
   ``hermax.core.maxhs_wrapper_py.MaxHSSolver`` (optional CPLEX-backed MaxHS wrapper [9]_).
 * :class:`hermax.non_incremental.CASHWMaxSAT`:
@@ -47,26 +44,24 @@ Backend mapping:
 
 * :class:`hermax.non_incremental.CGSS`:
   ``hermax.core.cgss_py.CGSSSolver`` (RC2WCE/CGSS wrapper [7]_ [8]_).
+
 .. * :class:`hermax.non_incremental.CGSSPMRES`:
 ..   ``hermax.core.cgss_py.CGSSPMRESSolver`` (PMRES variant [7]_ [8]_ [10_]).
+
 * :class:`hermax.non_incremental.OpenWBOOLL`:
   ``hermax.core.openwbo_py.OLLSolver`` (Open-WBO OLL backend [8]_).
 * :class:`hermax.non_incremental.OpenWBOPartMSU3`:
-  ``hermax.core.openwbo_py.PartMSU3Solver`` (Open-WBO PartMSU3 backend [11_] [12_]).
+  ``hermax.core.openwbo_py.PartMSU3Solver`` (Open-WBO PartMSU3 backend [11]_ [12]_).
 * :class:`hermax.non_incremental.OpenWBO`:
   ``hermax.core.openwbo_py.AutoOpenWBOSolver`` (Open-WBO auto routing: OLL/PartMSU3/MSU3).
 
 .. warning::
-   In Hermax package builds, ``UWrMaxSATCompetition`` and  ``CASHWMaxSAT`` is compiled with SCIP
+   In Hermax package builds, ``UWrMaxSATCompetition`` and ``CASHWMaxSAT`` are compiled with SCIP
    disabled.
 
 .. warning::
    Preprocessing is disabled for ``UWrMaxSATCompetition`` due to
    undefined behavior (UB) that can cause native crashes.
-
-.. warning::
-   On macOS, preprocessing is disabled for EvalMaxSAT backends due to
-   possible native crashes.
 
 API Details
 -----------
@@ -79,13 +74,6 @@ API Details
    :special-members: __init__
 
 .. autoclass:: hermax.non_incremental.UWrMaxSATCompetition
-   :members:
-   :inherited-members:
-   :undoc-members:
-   :show-inheritance:
-   :special-members: __init__
-
-.. autoclass:: hermax.non_incremental.EvalMaxSAT
    :members:
    :inherited-members:
    :undoc-members:
@@ -154,9 +142,8 @@ References
 .. [1] Alexey Ignatiev, Antonio Morgado, Joao Marques-Silva. *RC2: An Efficient MaxSAT Solver*. JSAT 11(1), 2019.
 .. [2] Alexey Ignatiev, Antonio Morgado, Joao Marques-Silva. *PySAT: A Python Toolkit for Prototyping with SAT Oracles*. SAT 2018.
 .. [4] Marek Piotrów. *UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems*. ICTAI 2020.
-.. [5] Florent Avellaneda. *EvalMaxSAT*. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
 .. [6] Shiwei Pan, Yiyuan Wang, Shaowei Cai. *An Efficient Core-Guided Solver for Weighted Partial MaxSAT*. IJCAI 2025.
-.. [7] Hannes Ihalainen, Jeremias Berg, Matti Jarvisalo. *Refined Core Relaxation for Core-Guided MaxSAT Solving*. CP 2021.
+.. [7] Hannes Ihalainen, Jeremias Berg, Matti Järvisalo. *Refined Core Relaxation for Core-Guided MaxSAT Solving*. CP 2021
 .. [8] Benjamin Andres, Benjamin Kaufmann, Oliver Matheis, Torsten Schaub. *Unsatisfiability-based Optimization in clasp*. ICLP 2012 Technical Communications.
 .. [9] Jessica Davies, Fahiem Bacchus. *Exploiting the power of MIP solvers in MAXSAT*. International Conference on Theory and Applications of Satisfiability Testing, 2013.
 .. [10] Nina Narodytska, Fahiem Bacchus. *Maximum satisfiability using core-guided MaxSAT resolution*. Proceedings of the AAAI Conference on Artificial Intelligence 28(1), 2014.

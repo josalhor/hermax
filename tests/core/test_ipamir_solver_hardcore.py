@@ -1752,13 +1752,11 @@ class TestIPAMIRSolverHardcore(unittest.TestCase):
 
 
 
-from hermax.core import RC2Reentrant, EvalMaxSATLatestSolver, UWrMaxSATSolver
+from hermax.core import RC2Reentrant, UWrMaxSATSolver
 from hermax.core import IMaxHSSolver, MaxHSSolver
 from hermax.non_incremental import CGSS
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
 from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
-from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestSolver
-from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrSolver, EvalMaxSATIncrReentrant
 from hermax.core import ApertureSolver, CoreTrailSolver
 from hermax.core.openwbo_py import OLLSolver, PartMSU3Solver, AutoOpenWBOSolver
 from hermax.non_incremental.incomplete import SPBMaxSATCFPS, OpenWBOInc, TTOpenWBOInc, NuWLSCIBR, Loandra
@@ -1849,30 +1847,10 @@ class TestCGSSTerminationCallback(TestIPAMIRSolverHardcore):
 # class TestCGSSPMRESTerminationCallback(TestIPAMIRSolverHardcore):
 #     SOLVER_CLASS = CGSSPMRES
 
-class TestEvalMaxSATLatestCompatTerminationCallback(TestIPAMIRSolverHardcore):
-    SOLVER_CLASS = EvalMaxSATLatestSolver
-
-    def test_040_termination_interrupt_and_raise_flag(self):
-        self.skipTest("EvalMaxSAT does not support set_terminate")
-
-class TestEvalMaxSATLatestSolverTerminationCallback(TestIPAMIRSolverHardcore):
-    SOLVER_CLASS = EvalMaxSATLatestSolver
-
-    def test_040_termination_interrupt_and_raise_flag(self):
-        self.skipTest("EvalMaxSATLatest does not support set_terminate")
-
-class TestEvalMaxSATIncrSolverTerminationCallback(TestIPAMIRSolverHardcore):
-    SOLVER_CLASS = EvalMaxSATIncrSolver
-
-    def test_040_termination_interrupt_and_raise_flag(self):
-        self.skipTest("EvalMaxSATIncr does not support set_terminate")
 
 
-class TestEvalMaxSATIncrReentrantTerminationCallback(TestIPAMIRSolverHardcore):
-    SOLVER_CLASS = EvalMaxSATIncrReentrant
 
-    def test_040_termination_interrupt_and_raise_flag(self):
-        self.skipTest("EvalMaxSATIncrReentrant does not support set_terminate")
+
 
 
 class TestIMaxHSSolverTerminationCallback(TestIPAMIRSolverHardcore):

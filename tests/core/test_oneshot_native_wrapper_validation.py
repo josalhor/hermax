@@ -4,7 +4,6 @@ from hermax.core.loandra_py.loandra_solver import LoandraSolver
 from hermax.core.openwbo_inc_py.openwbo_inc_solver import OpenWBOIncSolver
 from hermax.core.tt_openwbo_inc_py.tt_openwbo_inc_solver import TTOpenWBOIncSolver
 from hermax.core.aperture_py.aperture_solver import ApertureSolver
-from hermax.core.evalmaxsat_incr_py.evalmaxsat_solver import EvalMaxSATIncrSolver
 from hermax.core.imaxhs_wrapper_py.imaxhs import IMaxHSSolver
 from hermax.core.uwrmaxsat_comp_py.urmaxsat_solver import UWrMaxSATCompSolver
 from hermax.core.uwrmaxsat_py.urmaxsat_solver import UWrMaxSATSolver
@@ -94,7 +93,6 @@ def test_openwbo_inc_rejects_boolean_val_literals():
     "wrapper",
     [
         ApertureSolver,
-        EvalMaxSATIncrSolver,
         IMaxHSSolver,
         UWrMaxSATSolver,
         UWrMaxSATCompSolver,

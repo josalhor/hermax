@@ -10,8 +10,6 @@ List of Classes
    hermax.incremental.CoreTrail
    hermax.incremental.UWrMaxSAT
    hermax.incremental.UWrMaxSATCompetition
-   hermax.incremental.EvalMaxSAT
-   hermax.incremental.EvalMaxSATIncremental
    hermax.incremental.IMaxHS
 
 Module Description
@@ -31,10 +29,6 @@ The classes map to the following backends:
   ``hermax.core.uwrmaxsat_py.UWrMaxSATSolver`` (UWrMaxSAT family [2]_).
 * :class:`hermax.incremental.UWrMaxSATCompetition`:
   ``hermax.core.uwrmaxsat_comp_py.UWrMaxSATCompSolver`` (competition branch of UWrMaxSAT [2]_).
-* :class:`hermax.incremental.EvalMaxSAT`:
-  ``hermax.core.evalmaxsat_latest_py.EvalMaxSATLatestSolver`` (EvalMaxSAT family [3]_).
-* :class:`hermax.incremental.EvalMaxSATIncremental`:
-  ``hermax.core.evalmaxsat_incr_py.EvalMaxSATIncrSolver`` (incremental EvalMaxSAT backend [3]_).
 * :class:`hermax.incremental.IMaxHS`:
   ``hermax.core.imaxhs_wrapper_py.IMaxHSSolver`` (optional CPLEX-backed iMaxHS backend [4]_).
 * :class:`hermax.incremental.CoreTrail`:
@@ -51,17 +45,12 @@ The classes map to the following backends:
    ``UWrMaxSATCompetition`` due to upstream undefined behavior (UB) that can
    cause native crashes.
 
-.. warning::
-   On macOS, preprocessing is disabled for EvalMaxSAT backends due to
-   possible native crashes.
-
 Incremental MaxSAT
 ------------------
 
 Incremental MaxSAT behavior differs substantially across solver families [1]_:
 
 * UWrMaxSAT is a trutly incremental MaxSAT solver based on PB optimization [2]_.
-* EvalMaxSAT uses a copy and re-solve strategy [3]_.
 * CoreTrail keeps native core-guided state and supports cooperative
   ``time_limit`` interruption followed by a later resume of the same query.
 
@@ -77,20 +66,6 @@ API Details
    :special-members: __init__
 
 .. autoclass:: hermax.incremental.UWrMaxSATCompetition
-   :members:
-   :inherited-members:
-   :undoc-members:
-   :show-inheritance:
-   :special-members: __init__
-
-.. autoclass:: hermax.incremental.EvalMaxSAT
-   :members:
-   :inherited-members:
-   :undoc-members:
-   :show-inheritance:
-   :special-members: __init__
-
-.. autoclass:: hermax.incremental.EvalMaxSATIncremental
    :members:
    :inherited-members:
    :undoc-members:
@@ -116,7 +91,6 @@ References
 
 .. [1] Andreas Niskanen, Jeremias Berg, Matti Järvisalo. *Incremental Maximum Satisfiability*. SAT 2022.
 .. [2] Marek Piotrów. *UWrMaxSat: Efficient Solver for MaxSAT and Pseudo-Boolean Problems*. ICTAI 2020.
-.. [3] Florent Avellaneda. *EvalMaxSAT*. MaxSAT Evaluation: Solver and Benchmark Descriptions, 2023.
 .. [4] Andreas Niskanen, Jeremias Berg, Matti Järvisalo. *Enabling Incrementality in the Implicit Hitting Set Approach to MaxSAT Under Changing Weights*. CP 2021.
 .. [5] Josep Maria Salvia Hornos, Alexey Ignatiev, Joao Marques-Silva.
    *CoreTrail and ShareTrail: Incremental Core-Guided MaxSAT Solvers*.

@@ -150,5 +150,5 @@ the [documentation acknowledgments](https://hermax.readthedocs.io/en/latest/ackn
 
 ## License
 
-This repository is licensed under Apache License 2.0. See `LICENSE`.
-Third-party integrated solvers may have additional license terms.
+Hermax original code is licensed under Apache 2.0. Bundled third party code
+retains its own terms. See [bundled third-party notices](THIRD_PARTY_LICENSES/).

@@ -6,15 +6,13 @@ between solve calls.
 """
 from hermax.core.uwrmaxsat_py import UWrMaxSATSolver
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
-from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestSolver
-from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrSolver
 from hermax.core.imaxhs_wrapper_py import IMaxHSSolver
 from hermax.core.aperture_py import ApertureSolver
 from hermax.core.coretrail_py import CoreTrailSolver
 
 class UWrMaxSAT(UWrMaxSATSolver):
     """
-    UWrMaxSAT: an efficient MaxSAT solver based on the UWrMaxSAT 1.8 solver.
+    UWrMaxSAT: an efficient MaxSAT solver with bundled version marker 1.7.3.
     This solver provides native incremental support through the IPAMIR interface.
 
     UWrMaxSAT is known for its efficiency in handling various MaxSAT instances, 
@@ -39,20 +37,7 @@ class UWrMaxSATCompetition(UWrMaxSATCompSolver):
     """
     pass
 
-class EvalMaxSAT(EvalMaxSATLatestSolver):
-    """
-    EvalMaxSAT: Latest version of EvalMaxSAT with native IPAMIR support.
-    
-    EvalMaxSAT is a state-of-the-art solver known for its performance 
-    in MaxSAT competitions.
-    """
-    pass
 
-class EvalMaxSATIncremental(EvalMaxSATIncrSolver):
-    """
-    EvalMaxSAT (Incremental): Specialized incremental version of EvalMaxSAT.
-    """
-    pass
 
 
 class IMaxHS(IMaxHSSolver):
@@ -78,16 +63,12 @@ class CoreTrail(CoreTrailSolver):
 
 # Compatible aliases for historical public names.
 UWrMaxSATComp = UWrMaxSATCompetition
-EvalMaxSATIncr = EvalMaxSATIncremental
 
 __all__ = [
     "UWrMaxSAT",
     "UWrMaxSATCompetition",
-    "EvalMaxSAT",
-    "EvalMaxSATIncremental",
     "IMaxHS",
     "Aperture",
     "CoreTrail",
     # "UWrMaxSATComp",
-    # "EvalMaxSATIncr",
 ]

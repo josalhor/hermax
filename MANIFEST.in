@@ -1,14 +1,19 @@
-recursive-include solvers *
-recursive-include bindings *
-recursive-include encodings *
-recursive-include eval-py *
-recursive-include hermax *
-include CMakeLists.txt
-include setup.py
-include pyproject.toml
-include COMPILE.md
-include MANIFEST.in
-include README.md
-include LICENSE
-include NOTICE
-include CITATION.cff
+graft solvers
+graft bindings
+graft encodings
+recursive-include hermax *.py *.pyi *.c *.cc *.cpp *.h *.hpp LICENSE* LICENCE* COPYING* NOTICE*
+graft THIRD_PARTY_LICENSES
+include CMakeLists.txt setup.py pyproject.toml MANIFEST.in README.md LICENSE NOTICE CITATION.cff
+prune solvers/Aperture/external/acnfuzz/solvers
+exclude solvers/Aperture/external/acnfuzz/run_acnfuzz.py
+exclude solvers/CASHWMaxSAT/starexec_build
+global-exclude *.a *.o *.obj *.lo *.la *.so *.so.* *.dylib *.dll *.lib *.pdb *.exp *.ilk *.pyd *.exe *.wasm *.pyc *.pyo *.zip *.tgz *.tar *.tar.gz *.tar.bz2 *.tar.xz ._*
+global-exclude .git .gitmodules .gitignore CMakeCache.txt cmake_install.cmake compile_commands.json
+prune urmaxsat-comp-py
+prune urmaxsat-py
+prune solvers/**/build
+prune solvers/**/CMakeFiles
+global-exclude *.or *.od *.op *.os *.oh *.d *.log
+exclude solvers/Loandra/code/maxpre/satsolver/testsat
+exclude solvers/maxhs/glucose/simp/glucose
+exclude solvers/open-wbo/open-wbo

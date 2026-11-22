@@ -15,10 +15,6 @@ MATRIX_OUTPUT_SOLVERS = {
     "UWrMaxSAT": ("hermax.core", "UWrMaxSATSolver", False),
     "UWrMaxSATComp": ("hermax.core.uwrmaxsat_comp_py", "UWrMaxSATCompSolver", False),
     "CASHWMaxSAT": ("hermax.core.cashwmaxsat_py", "CASHWMaxSATSolver", False),
-    "EvalMaxSAT": ("hermax.core.evalmaxsat_latest_py", "EvalMaxSATLatestSolver", False),
-    "EvalMaxSATLatest": ("hermax.core.evalmaxsat_latest_py", "EvalMaxSATLatestSolver", False),
-    "EvalMaxSATIncr": ("hermax.core.evalmaxsat_incr_py", "EvalMaxSATIncrSolver", False),
-    "EvalMaxSATIncrReentrant": ("hermax.core.evalmaxsat_incr_py", "EvalMaxSATIncrReentrant", False),
     "IMaxHS": ("hermax.core", "IMaxHSSolver", False),
     "MaxHS": ("hermax.core", "MaxHSSolver", False),
     "RC2Reentrant": ("hermax.core", "RC2Reentrant", False),
@@ -110,19 +106,6 @@ def test_uwrmaxsat_default_is_quiet(capfd):
     _assert_quiet(capfd, run)
 
 
-def test_evalmaxsat_default_is_quiet(capfd):
-    pytest.importorskip("hermax.core.evalmaxsat_latest")
-    from hermax.core.evalmaxsat_latest_py.evalmaxsat_solver import EvalMaxSATLatestSolver
-
-    def run():
-        solver = EvalMaxSATLatestSolver()
-        try:
-            solver.add_clause([1])
-            assert solver.solve()
-        finally:
-            solver.close()
-
-    _assert_quiet(capfd, run)
 
 
 def test_cashwmaxsat_default_is_quiet(capfd):

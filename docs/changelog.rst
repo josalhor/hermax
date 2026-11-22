@@ -1,6 +1,11 @@
 Changelog
 =========
 
+Version 1.3.5
+----------
+
+* Removed EvalMaxSAT and SCIP bundles
+* Added solver version identifiers and included third party notices.
 
 Version 1.3.4
 -------------

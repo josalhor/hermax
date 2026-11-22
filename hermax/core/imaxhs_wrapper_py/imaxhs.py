@@ -20,6 +20,10 @@ def _import_backend():
 
 
 class IMaxHSSolver(NativeIncrementalSolverBase):
+
+    @classmethod
+    def version(cls):
+        return 'git:eabe77b36ecdbc849bd0dcb57c022f49d20a0ad8'
     @classmethod
     def is_available(cls) -> bool:
         if os.environ.get("FORCE_IMAXHS_NOT_COMPILED", "").strip() == "1":

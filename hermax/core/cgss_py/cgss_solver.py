@@ -17,6 +17,10 @@ def _load_cgss_backend():
 class _CGSSBaseSolver(ReplayFormulaSolverBase):
     """Re-encoding wrapper around vendored certified-cgss RC2WCE."""
 
+    @classmethod
+    def version(cls):
+        return "snapshot:2023-05"
+
     _pmres_default = False
     _signature = "CGSS (RC2WCE+SS)"
     nonunit_soft_policy = "store"

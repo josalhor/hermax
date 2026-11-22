@@ -290,13 +290,11 @@ class TestIPAMIRSolver(unittest.TestCase):
         solver.signature()
 
 
-from hermax.core import ApertureSolver, CoreTrailSolver, UWrMaxSATSolver, EvalMaxSATLatestSolver, RC2Reentrant
+from hermax.core import ApertureSolver, CoreTrailSolver, UWrMaxSATSolver, RC2Reentrant
 from hermax.core import IMaxHSSolver, MaxHSSolver
 from hermax.non_incremental import CGSS
 from hermax.core.uwrmaxsat_comp_py import UWrMaxSATCompSolver
 from hermax.core.cashwmaxsat_py import CASHWMaxSATSolver
-from hermax.core.evalmaxsat_latest_py import EvalMaxSATLatestSolver
-from hermax.core.evalmaxsat_incr_py import EvalMaxSATIncrSolver, EvalMaxSATIncrReentrant
 from hermax.core.openwbo_py import OLLSolver, PartMSU3Solver, AutoOpenWBOSolver
 from hermax.non_incremental.incomplete import SPBMaxSATCFPS, OpenWBOInc, TTOpenWBOInc, NuWLSCIBR, Loandra
 from hermax.core import WMaxCDCLSolver
@@ -435,44 +433,11 @@ class TestCASHWMaxSATSolverTerminationCallback(TestIPAMIRSolver):
         self.skipTest("CASHWMaxSAT termination interrupt semantics are not reliable across builds.")
 
 
-class TestEvalMaxSATLatestCompatTerminationCallback(TestIPAMIRSolver):
-    SOLVER_CLASS = EvalMaxSATLatestSolver
-
-    def test_termination_callback(self):
-        """Override to skip termination callback test for EvalMaxSAT (not supported)."""
-        self.skipTest("EvalMaxSAT does not support termination callbacks.")
-
-    def test_solve_raise_on_abnormal(self):
-        self.skipTest("EvalMaxSATLatest rebuilds backend on solve; mock injection abnormal-path test is not applicable.")
-
-class TestEvalMaxSATLatestSolverTerminationCallback(TestIPAMIRSolver):
-    SOLVER_CLASS = EvalMaxSATLatestSolver
-
-    def test_termination_callback(self):
-        self.skipTest("EvalMaxSATLatest does not support termination callbacks.")
-
-    def test_solve_raise_on_abnormal(self):
-        self.skipTest("EvalMaxSATLatest does not support Interrupted status handling.")
 
 
-class TestEvalMaxSATIncrSolverTerminationCallback(TestIPAMIRSolver):
-    SOLVER_CLASS = EvalMaxSATIncrSolver
-
-    def test_termination_callback(self):
-        self.skipTest("EvalMaxSATIncr does not support termination callbacks.")
-
-    def test_solve_raise_on_abnormal(self):
-        self.skipTest("EvalMaxSATIncr does not support Interrupted status handling.")
 
 
-class TestEvalMaxSATIncrReentrantTerminationCallback(TestIPAMIRSolver):
-    SOLVER_CLASS = EvalMaxSATIncrReentrant
 
-    def test_termination_callback(self):
-        self.skipTest("EvalMaxSATIncrReentrant does not support termination callbacks.")
-
-    def test_solve_raise_on_abnormal(self):
-        self.skipTest("EvalMaxSATIncrReentrant does not support Interrupted status handling.")
 
 
 class TestIMaxHSSolverTerminationCallback(TestIPAMIRSolver):

@@ -92,38 +92,6 @@ CASES: list[SolverCase] = [
         ],
     ),
     SolverCase(
-        "EvalMaxSAT",
-        [
-            "core/test_ipamir_solver.py::TestEvalMaxSATLatestCompatTerminationCallback",
-            "core/test_ipamir_solver_hardcore.py::TestEvalMaxSATLatestCompatTerminationCallback",
-            "core/test_evalmaxsat.py",
-        ],
-    ),
-    SolverCase(
-        "EvalMaxSATLatest",
-        [
-            "core/test_ipamir_solver.py::TestEvalMaxSATLatestSolverTerminationCallback",
-            "core/test_ipamir_solver_hardcore.py::TestEvalMaxSATLatestSolverTerminationCallback",
-            "test_evalmaxsat_latest.py",
-            "test_evalmaxsat_latest_reentrant.py",
-        ],
-    ),
-    SolverCase(
-        "EvalMaxSATIncr",
-        [
-            "core/test_ipamir_solver.py::TestEvalMaxSATIncrSolverTerminationCallback",
-            "core/test_ipamir_solver_hardcore.py::TestEvalMaxSATIncrSolverTerminationCallback",
-            "test_evalmaxsat_incr.py",
-        ],
-    ),
-    SolverCase(
-        "EvalMaxSATIncrReentrant",
-        [
-            "core/test_ipamir_solver.py::TestEvalMaxSATIncrReentrantTerminationCallback",
-            "core/test_ipamir_solver_hardcore.py::TestEvalMaxSATIncrReentrantTerminationCallback",
-        ],
-    ),
-    SolverCase(
         "IMaxHS",
         [
             "core/test_ipamir_solver.py::TestIMaxHSSolverTerminationCallback",
@@ -519,73 +487,6 @@ def _collect_crash_diagnostics(case: SolverCase, log_dir: Path, safe: str) -> No
         )
     )
 
-    if case.name in {"EvalMaxSAT", "EvalMaxSATLatest", "EvalMaxSATIncr", "EvalMaxSATIncrReentrant"}:
-        diag.append(
-            _run_diag(
-                [
-                    sys.executable,
-                    "-X",
-                    "faulthandler",
-                    "-c",
-                    (
-                        "import sysconfig,glob,os; "
-                        "print('EXT_SUFFIX=', sysconfig.get_config_var('EXT_SUFFIX')); "
-                        "paths=sorted(glob.glob('hermax/core/evalmaxsat_latest*')+glob.glob('hermax/core/evalmaxsat_incr*')); "
-                        "print('candidates='); "
-                        "print('\\n'.join(paths) if paths else '(none)')"
-                    ),
-                ],
-                cwd=TESTS_DIR,
-                env=env,
-            )
-        )
-        diag.append(
-            _run_diag(
-                [
-                    sys.executable,
-                    "-X",
-                    "faulthandler",
-                    "-c",
-                    "import hermax.core.evalmaxsat_latest as m; print(m.__file__)",
-                ],
-                cwd=TESTS_DIR,
-                env=env,
-            )
-        )
-        diag.append(
-            _run_diag(
-                [
-                    sys.executable,
-                    "-X",
-                    "faulthandler",
-                    "-c",
-                    (
-                        "import hermax.core.evalmaxsat_latest as m; "
-                        "s=m.EvalMaxSAT(); "
-                        "a=s.newVar(); b=s.newVar(); "
-                        "s.addClause([a],1); s.addClause([-a,b],None); "
-                        "print('pre-solve-ok'); "
-                        "print('solve=', s.solve()); "
-                        "print('cost=', s.getCost())"
-                    ),
-                ],
-                cwd=TESTS_DIR,
-                env=env,
-            )
-        )
-        diag.append(
-            _run_diag(
-                [
-                    sys.executable,
-                    "-X",
-                    "faulthandler",
-                    "-c",
-                    "import hermax.core.evalmaxsat_incr as m; print(m.__file__)",
-                ],
-                cwd=TESTS_DIR,
-                env=env,
-            )
-        )
 
     diag.append(
         _run_diag(

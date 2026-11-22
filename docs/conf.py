@@ -49,8 +49,6 @@ autodoc_mock_imports = [
     'hermax.core.urmaxsat_py',
     'hermax.core.urmaxsat_comp_py',
     'hermax.core.cashwmaxsat',
-    'hermax.core.evalmaxsat_latest',
-    'hermax.core.evalmaxsat_incr',
     'hermax.core.openwbo',
     'hermax.core.openwbo_inc',
     'hermax.core.spb_maxsat_c_fps',

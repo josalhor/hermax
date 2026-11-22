@@ -22,6 +22,10 @@ _MAX_I64 = (1 << 63) - 1
 class CoreTrailSolver(IPAMIRStateMixin, IPAMIRSolver):
     """Thin IPAMIR adapter for the native resumable CoreTrail backend."""
 
+    @classmethod
+    def version(cls):
+        return '1.1'
+
     supports_float_weights = True
 
     @classmethod

@@ -1,1 +1,0 @@
-#define SPX_GITHASH "950b1658"

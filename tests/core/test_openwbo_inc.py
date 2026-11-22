@@ -21,7 +21,7 @@ def test_openwbo():
     solver.addClause([a, -c], 1)      # a or !c
     solver.addClause([b, -c], 1)      # b or !c
 
-    print("------ EvalMaxSAT Python Binding Test ------")
+    print("------ Open-WBO-Inc Python Binding Test ------")
     print(f"Variables created: a={a}, b={b}, c={c}")
 
     if not solver.solve():

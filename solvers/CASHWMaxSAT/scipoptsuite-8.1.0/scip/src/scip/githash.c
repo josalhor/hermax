@@ -1,1 +1,0 @@
-#define SCIP_GITHASH "6129793871"
